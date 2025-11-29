@@ -1,0 +1,6 @@
+packages:
+  - "packages/*"
+  - "examples/*"
+
+catalog:
+  effect: ^3.19.8
