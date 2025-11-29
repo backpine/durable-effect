@@ -1,0 +1,22 @@
+{
+  "name": "effect-worker",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "cf-typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.5.2",
+    "wrangler": "^4.51.0"
+  },
+  "dependencies": {
+    "@durable-effect/workflow": "0.0.1-next.0",
+    "@effect/platform": "catalog:",
+    "@effect/schema": "catalog:",
+    "effect": "catalog:"
+  }
+}

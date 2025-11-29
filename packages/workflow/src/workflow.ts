@@ -308,7 +308,7 @@ export namespace Workflow {
   ): Effect.Effect<void, PauseSignal | UnknownException, ExecutionContext> {
     return Effect.gen(function* () {
       const ctx = yield* ExecutionContext;
-
+      yield* Effect.log("Sleeping for " + duration);
       const durationMs = Duration.toMillis(Duration.decode(duration));
       const resumeAt = Date.now() + durationMs;
 

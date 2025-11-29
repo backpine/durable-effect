@@ -1,0 +1,110 @@
+import { Effect, Option } from "effect";
+import { UnknownException } from "effect/Cause";
+import type { ExecutionContextService } from "@durable-effect/core";
+import type { WorkflowContextService } from "@/services/workflow-context";
+import type { WorkflowStatus } from "@/types";
+import { MockStorage } from "./storage";
+
+/**
+ * Create a mock ExecutionContext service.
+ */
+export function createMockExecutionContext(
+  storage: MockStorage,
+): ExecutionContextService {
+  return {
+    storage: storage as unknown as DurableObjectStorage,
+    setAlarm: (time: number) =>
+      Effect.tryPromise({
+        try: () => storage.setAlarm(time),
+        catch: (e) => new UnknownException(e),
+      }),
+  };
+}
+
+/**
+ * Create a mock WorkflowContext service.
+ */
+export function createMockWorkflowContext(
+  storage: MockStorage,
+  options: {
+    workflowId?: string;
+    workflowName?: string;
+    input?: unknown;
+  } = {},
+): WorkflowContextService {
+  const {
+    workflowId = "test-workflow-id",
+    workflowName = "testWorkflow",
+    input = {},
+  } = options;
+
+  return {
+    workflowId,
+    workflowName,
+    input,
+
+    getMeta: <T>(key: string) =>
+      Effect.tryPromise({
+        try: () => storage.get<T>(`workflow:meta:${key}`),
+        catch: (e) => new UnknownException(e),
+      }).pipe(
+        Effect.map((value) =>
+          value !== undefined ? Option.some(value) : Option.none<T>(),
+        ),
+      ),
+
+    setMeta: <T>(key: string, value: T) =>
+      Effect.tryPromise({
+        try: () => storage.put(`workflow:meta:${key}`, value),
+        catch: (e) => new UnknownException(e),
+      }),
+
+    completedSteps: Effect.tryPromise({
+      try: () => storage.get<string[]>("workflow:completedSteps"),
+      catch: (e) => new UnknownException(e),
+    }).pipe(Effect.map((steps) => steps ?? [])),
+
+    status: Effect.tryPromise({
+      try: () => storage.get<WorkflowStatus>("workflow:status"),
+      catch: (e) => new UnknownException(e),
+    }).pipe(
+      Effect.map((status) => status ?? ({ _tag: "Pending" } as const)),
+    ),
+
+    hasCompleted: (stepName: string) =>
+      Effect.tryPromise({
+        try: () => storage.get<string[]>("workflow:completedSteps"),
+        catch: (e) => new UnknownException(e),
+      }).pipe(Effect.map((steps) => steps?.includes(stepName) ?? false)),
+  };
+}
+
+/**
+ * Options for creating a test context.
+ */
+export interface TestContextOptions {
+  workflowId?: string;
+  workflowName?: string;
+  input?: unknown;
+  seedData?: Record<string, unknown>;
+}
+
+/**
+ * Create both contexts with a shared storage for testing.
+ */
+export function createTestContexts(options: TestContextOptions = {}) {
+  const storage = new MockStorage();
+
+  if (options.seedData) {
+    storage.seed(options.seedData);
+  }
+
+  const executionContext = createMockExecutionContext(storage);
+  const workflowContext = createMockWorkflowContext(storage, options);
+
+  return {
+    storage,
+    executionContext,
+    workflowContext,
+  };
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "effect-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-11-28",
+  "observability": {
+    "enabled": true
+  },
+
+  // Durable Objects
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKFLOWS",
+        "class_name": "Workflows"
+      }
+    ]
+  },
+
+  // Migrations for Durable Objects
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["Workflows"]
+    }
+  ]
+}
