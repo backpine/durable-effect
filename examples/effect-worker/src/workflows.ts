@@ -63,6 +63,15 @@ const processOrderWorkflow = Workflow.make("processOrder", (orderId: string) =>
     console.log("[workflow] Starting processOrder workflow, orderId:", orderId);
     const order = yield* Workflow.step("Fetch order", fetchOrder(orderId));
     console.log("[workflow] Fetch order step completed");
+
+    yield* Workflow.step(
+      "Vaidate",
+      Effect.gen(function* () {
+        yield* Effect.log(`basic order: ${order}`);
+        yield* Effect.sleep("10 seconds");
+        return { sent: true };
+      }),
+    );
     // yield* Effect.log(`Sleeping for order ${orderId}`);
     // const pauseIndex = yield* workflowCtx.nextPauseIndex;
     // const completedIndex = yield* workflowCtx.completedPauseIndex;
