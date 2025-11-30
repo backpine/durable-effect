@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Duration, Effect, Exit } from "effect";
 import { UnknownException } from "effect/Cause";
 import { ExecutionContext, PauseSignal } from "@durable-effect/core";
+import { WorkflowContext } from "@/services/workflow-context";
 import { Workflow } from "@/workflow";
 import { createTestContexts, MockStorage } from "./mocks";
 
@@ -10,11 +11,15 @@ describe("Workflow.sleep", () => {
   let executionContext: ReturnType<
     typeof createTestContexts
   >["executionContext"];
+  let workflowContext: ReturnType<
+    typeof createTestContexts
+  >["workflowContext"];
 
   beforeEach(() => {
     const contexts = createTestContexts();
     storage = contexts.storage;
     executionContext = contexts.executionContext;
+    workflowContext = contexts.workflowContext;
     vi.useFakeTimers();
   });
 
@@ -23,17 +28,18 @@ describe("Workflow.sleep", () => {
   });
 
   /**
-   * Helper to run a sleep effect with context provided.
+   * Helper to run a sleep effect with contexts provided.
    */
   function runSleep(
     sleepEffect: Effect.Effect<
       void,
       PauseSignal | UnknownException,
-      ExecutionContext
+      ExecutionContext | WorkflowContext
     >,
   ) {
     return sleepEffect.pipe(
       Effect.provideService(ExecutionContext, executionContext),
+      Effect.provideService(WorkflowContext, workflowContext),
       Effect.runPromiseExit,
     );
   }

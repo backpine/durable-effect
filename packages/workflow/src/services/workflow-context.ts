@@ -16,10 +16,15 @@ export interface WorkflowContextService {
   readonly input: unknown;
 
   /** Get workflow-level metadata */
-  readonly getMeta: <T>(key: string) => Effect.Effect<Option.Option<T>, UnknownException>;
+  readonly getMeta: <T>(
+    key: string,
+  ) => Effect.Effect<Option.Option<T>, UnknownException>;
 
   /** Set workflow-level metadata */
-  readonly setMeta: <T>(key: string, value: T) => Effect.Effect<void, UnknownException>;
+  readonly setMeta: <T>(
+    key: string,
+    value: T,
+  ) => Effect.Effect<void, UnknownException>;
 
   /** Get list of completed step names */
   readonly completedSteps: Effect.Effect<ReadonlyArray<string>, UnknownException>;
@@ -28,7 +33,49 @@ export interface WorkflowContextService {
   readonly status: Effect.Effect<WorkflowStatus, UnknownException>;
 
   /** Check if a step has completed */
-  readonly hasCompleted: (stepName: string) => Effect.Effect<boolean, UnknownException>;
+  readonly hasCompleted: (
+    stepName: string,
+  ) => Effect.Effect<boolean, UnknownException>;
+
+  // ============================================================
+  // Pause Point Tracking
+  // ============================================================
+
+  /**
+   * Get the next pause index (increments internal counter).
+   * The counter resets each workflow execution.
+   */
+  readonly nextPauseIndex: Effect.Effect<number, never>;
+
+  /**
+   * Get the completed pause index from storage.
+   * This is the highest pause point index that has completed.
+   */
+  readonly completedPauseIndex: Effect.Effect<number, UnknownException>;
+
+  /**
+   * Set the completed pause index.
+   */
+  readonly setCompletedPauseIndex: (
+    index: number,
+  ) => Effect.Effect<void, UnknownException>;
+
+  /**
+   * Get the pending resume timestamp (when the current pause should resume).
+   */
+  readonly pendingResumeAt: Effect.Effect<Option.Option<number>, UnknownException>;
+
+  /**
+   * Set the pending resume timestamp.
+   */
+  readonly setPendingResumeAt: (
+    time: number,
+  ) => Effect.Effect<void, UnknownException>;
+
+  /**
+   * Clear the pending resume timestamp.
+   */
+  readonly clearPendingResumeAt: Effect.Effect<void, UnknownException>;
 }
 
 /**
@@ -54,6 +101,9 @@ export function createWorkflowContext(
   input: unknown,
   storage: DurableObjectStorage,
 ): WorkflowContextService {
+  // Runtime pause counter - resets each workflow execution
+  let pauseCounter = 0;
+
   return {
     workflowId,
     workflowName,
@@ -83,15 +133,50 @@ export function createWorkflowContext(
     status: Effect.tryPromise({
       try: () => storage.get<WorkflowStatus>(workflowKey("status")),
       catch: (e) => new UnknownException(e),
-    }).pipe(
-      Effect.map((status) => status ?? { _tag: "Pending" as const }),
-    ),
+    }).pipe(Effect.map((status) => status ?? { _tag: "Pending" as const })),
 
     hasCompleted: (stepName: string) =>
       Effect.tryPromise({
         try: () => storage.get<string[]>(workflowKey("completedSteps")),
         catch: (e) => new UnknownException(e),
       }).pipe(Effect.map((steps) => steps?.includes(stepName) ?? false)),
+
+    // ============================================================
+    // Pause Point Tracking
+    // ============================================================
+
+    nextPauseIndex: Effect.sync(() => ++pauseCounter),
+
+    completedPauseIndex: Effect.tryPromise({
+      try: () => storage.get<number>(workflowKey("completedPauseIndex")),
+      catch: (e) => new UnknownException(e),
+    }).pipe(Effect.map((n) => n ?? 0)),
+
+    setCompletedPauseIndex: (index: number) =>
+      Effect.tryPromise({
+        try: () => storage.put(workflowKey("completedPauseIndex"), index),
+        catch: (e) => new UnknownException(e),
+      }),
+
+    pendingResumeAt: Effect.tryPromise({
+      try: () => storage.get<number>(workflowKey("pendingResumeAt")),
+      catch: (e) => new UnknownException(e),
+    }).pipe(
+      Effect.map((t) =>
+        t !== undefined ? Option.some(t) : Option.none<number>(),
+      ),
+    ),
+
+    setPendingResumeAt: (time: number) =>
+      Effect.tryPromise({
+        try: () => storage.put(workflowKey("pendingResumeAt"), time),
+        catch: (e) => new UnknownException(e),
+      }),
+
+    clearPendingResumeAt: Effect.tryPromise({
+      try: () => storage.delete(workflowKey("pendingResumeAt")),
+      catch: (e) => new UnknownException(e),
+    }),
   };
 }
 

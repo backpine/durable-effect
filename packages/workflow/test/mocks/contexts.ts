@@ -38,6 +38,9 @@ export function createMockWorkflowContext(
     input = {},
   } = options;
 
+  // Runtime pause counter - resets each workflow execution
+  let pauseCounter = 0;
+
   return {
     workflowId,
     workflowName,
@@ -76,6 +79,43 @@ export function createMockWorkflowContext(
         try: () => storage.get<string[]>("workflow:completedSteps"),
         catch: (e) => new UnknownException(e),
       }).pipe(Effect.map((steps) => steps?.includes(stepName) ?? false)),
+
+    // ============================================================
+    // Pause Point Tracking
+    // ============================================================
+
+    nextPauseIndex: Effect.sync(() => ++pauseCounter),
+
+    completedPauseIndex: Effect.tryPromise({
+      try: () => storage.get<number>("workflow:completedPauseIndex"),
+      catch: (e) => new UnknownException(e),
+    }).pipe(Effect.map((n) => n ?? 0)),
+
+    setCompletedPauseIndex: (index: number) =>
+      Effect.tryPromise({
+        try: () => storage.put("workflow:completedPauseIndex", index),
+        catch: (e) => new UnknownException(e),
+      }),
+
+    pendingResumeAt: Effect.tryPromise({
+      try: () => storage.get<number>("workflow:pendingResumeAt"),
+      catch: (e) => new UnknownException(e),
+    }).pipe(
+      Effect.map((t) =>
+        t !== undefined ? Option.some(t) : Option.none<number>(),
+      ),
+    ),
+
+    setPendingResumeAt: (time: number) =>
+      Effect.tryPromise({
+        try: () => storage.put("workflow:pendingResumeAt", time),
+        catch: (e) => new UnknownException(e),
+      }),
+
+    clearPendingResumeAt: Effect.tryPromise({
+      try: () => storage.delete("workflow:pendingResumeAt"),
+      catch: (e) => new UnknownException(e),
+    }),
   };
 }
 

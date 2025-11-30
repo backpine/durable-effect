@@ -52,10 +52,8 @@ const sendConfirmation = (email: string, orderId: string) =>
 const processOrderWorkflow = Workflow.make("processOrder", (orderId: string) =>
   Effect.gen(function* () {
     const order = yield* Workflow.step("Fetch order", fetchOrder(orderId));
-    yield* Effect.log(`Sleeping for order ${orderId}`);
-    // yield* Workflow.sleep("1 seconds").pipe(
-    //   Effect.catchAll((error) => Effect.log(`Sleep error: ${error}`)),
-    // );
+    // yield* Effect.log(`Sleeping for order ${orderId}`);
+    yield* Workflow.sleep("1 seconds");
 
     const payment = yield* Workflow.step(
       "Process payment",

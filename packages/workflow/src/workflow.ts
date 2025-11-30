@@ -297,6 +297,9 @@ export namespace Workflow {
   /**
    * Durable sleep that survives workflow restarts.
    *
+   * Uses execution order tracking to ensure each sleep only pauses once.
+   * On resume, completed sleeps are skipped automatically.
+   *
    * @example
    * ```typescript
    * yield* Workflow.sleep('5 seconds');
@@ -305,14 +308,41 @@ export namespace Workflow {
    */
   export function sleep(
     duration: Duration.DurationInput,
-  ): Effect.Effect<void, PauseSignal | UnknownException, ExecutionContext> {
+  ): Effect.Effect<
+    void,
+    PauseSignal | UnknownException,
+    ExecutionContext | WorkflowContext
+  > {
     return Effect.gen(function* () {
       const ctx = yield* ExecutionContext;
-      yield* Effect.log("Sleeping for " + duration);
+      const workflowCtx = yield* WorkflowContext;
+
+      // Get this pause point's index
+      const pauseIndex = yield* workflowCtx.nextPauseIndex;
+      const completedIndex = yield* workflowCtx.completedPauseIndex;
+
+      // Already completed - skip this sleep
+      if (pauseIndex <= completedIndex) {
+        return;
+      }
+
+      // Check if we're resuming from this pause
+      const pendingResumeAt = yield* workflowCtx.pendingResumeAt;
+      if (
+        Option.isSome(pendingResumeAt) &&
+        Date.now() >= pendingResumeAt.value
+      ) {
+        // This is the pause we're resuming from
+        yield* workflowCtx.setCompletedPauseIndex(pauseIndex);
+        yield* workflowCtx.clearPendingResumeAt;
+        return;
+      }
+
+      // New pause - set alarm and pause
       const durationMs = Duration.toMillis(Duration.decode(duration));
       const resumeAt = Date.now() + durationMs;
 
-      // Set alarm for wake-up
+      yield* workflowCtx.setPendingResumeAt(resumeAt);
       yield* ctx.setAlarm(resumeAt);
 
       // Pause workflow - will resume at alarm time
