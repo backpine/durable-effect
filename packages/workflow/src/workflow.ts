@@ -328,10 +328,7 @@ export namespace Workflow {
 
       // Check if we're resuming from this pause
       const pendingResumeAt = yield* workflowCtx.pendingResumeAt;
-      if (
-        Option.isSome(pendingResumeAt) &&
-        Date.now() >= pendingResumeAt.value
-      ) {
+      if (Option.isSome(pendingResumeAt) && Date.now() >= pendingResumeAt.value) {
         // This is the pause we're resuming from
         yield* workflowCtx.setCompletedPauseIndex(pauseIndex);
         yield* workflowCtx.clearPendingResumeAt;

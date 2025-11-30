@@ -27,8 +27,8 @@ importers:
   examples/effect-worker:
     dependencies:
       '@durable-effect/workflow':
-        specifier: 0.0.1-next.2
-        version: 0.0.1-next.2(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)
+        specifier: workspace:*
+        version: link:../../packages/workflow
       '@effect/platform':
         specifier: 'catalog:'
         version: 0.75.4(effect@3.19.8)
@@ -147,18 +147,6 @@ packages:
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
     engines: {node: '>=12'}
-
-  '@durable-effect/core@0.0.1-next.0':
-    resolution: {integrity: sha512-wyxFoeSVsMcOE7fGE7EqTptnUJJlMb9QZ6FEy3QFWsw7FZIoauQXqfzjt6JOVAyEoXPL8Itv2V5JHi4e0nwNIw==}
-    peerDependencies:
-      '@cloudflare/workers-types': ^4.0.0
-      effect: ^3.19.8
-
-  '@durable-effect/workflow@0.0.1-next.2':
-    resolution: {integrity: sha512-xtE3hoBLLzHCOBW1/gtvWMh5011rBfxV4OHEXIYlMbe7yocf3elKxyydmvAaDeiw5F2gUKiNvT4v21SZnll8xg==}
-    peerDependencies:
-      '@cloudflare/workers-types': ^4.0.0
-      effect: ^3.19.8
 
   '@effect/platform@0.75.4':
     resolution: {integrity: sha512-G+kUKGI9zR8vsMu05lR4KWURm0x4Z6wG24uVnj0O0j/stAh8gabVy+xpg2g0T3BNyam0uzfXCJJ+ZJJNbkTYcA==}
@@ -1252,17 +1240,6 @@ snapshots:
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
-
-  '@durable-effect/core@0.0.1-next.0(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)':
-    dependencies:
-      '@cloudflare/workers-types': 4.20251127.0
-      effect: 3.19.8
-
-  '@durable-effect/workflow@0.0.1-next.2(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)':
-    dependencies:
-      '@cloudflare/workers-types': 4.20251127.0
-      '@durable-effect/core': 0.0.1-next.0(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)
-      effect: 3.19.8
 
   '@effect/platform@0.75.4(effect@3.19.8)':
     dependencies:

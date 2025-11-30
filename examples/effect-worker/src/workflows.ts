@@ -1,5 +1,9 @@
 import { Effect } from "effect";
-import { Workflow, createDurableWorkflows } from "@durable-effect/workflow";
+import {
+  Workflow,
+  WorkflowContext,
+  createDurableWorkflows,
+} from "@durable-effect/workflow";
 
 // =============================================================================
 // Example Effects (simulated async operations)
@@ -9,6 +13,11 @@ const fetchOrder = (orderId: string) =>
   Effect.gen(function* () {
     yield* Effect.log(`Fetching order ${orderId}...`);
     yield* Effect.sleep("100 millis");
+    yield* Effect.log(`Inner Sleep 10 seconds ${orderId}...`);
+
+    yield* Workflow.sleep("10 seconds");
+    yield* Effect.log(`done inner sleep`);
+
     return {
       id: orderId,
       amount: 99.99,
@@ -24,7 +33,7 @@ const processPayment = (order: { id: string; amount: number }) =>
     );
 
     // Simulate occasional failure
-    if (Math.random() < 1) {
+    if (Math.random() < 0.1) {
       yield* Effect.log("Payment gateway temporarily unavailable");
       return yield* Effect.fail(
         new Error("Payment gateway temporarily unavailable"),
@@ -41,7 +50,7 @@ const processPayment = (order: { id: string; amount: number }) =>
 const sendConfirmation = (email: string, orderId: string) =>
   Effect.gen(function* () {
     yield* Effect.log(`Sending confirmation to ${email} for order ${orderId}`);
-    yield* Effect.sleep("100 millis");
+    yield* Effect.sleep("10 seconds");
     return { sent: true };
   });
 
@@ -51,9 +60,16 @@ const sendConfirmation = (email: string, orderId: string) =>
 
 const processOrderWorkflow = Workflow.make("processOrder", (orderId: string) =>
   Effect.gen(function* () {
+    console.log("[workflow] Starting processOrder workflow, orderId:", orderId);
     const order = yield* Workflow.step("Fetch order", fetchOrder(orderId));
+    console.log("[workflow] Fetch order step completed");
     // yield* Effect.log(`Sleeping for order ${orderId}`);
-    yield* Workflow.sleep("1 seconds");
+    // const pauseIndex = yield* workflowCtx.nextPauseIndex;
+    // const completedIndex = yield* workflowCtx.completedPauseIndex;
+
+    console.log("[workflow] About to sleep for 3 seconds");
+    yield* Workflow.sleep("5 seconds");
+    console.log("[workflow] Sleep completed - should only see this once!");
 
     const payment = yield* Workflow.step(
       "Process payment",
@@ -61,16 +77,28 @@ const processOrderWorkflow = Workflow.make("processOrder", (orderId: string) =>
         Workflow.retry({ maxAttempts: 2, delay: "2 seconds" }),
       ),
     ).pipe(Effect.tapError((error) => Effect.log(`payment error: ${error}`)));
-
+    console.log("[workflow] About to sleep for 1 seconds");
+    yield* Workflow.sleep("1 seconds");
+    console.log("[workflow] Sleep completed - should only see this once!");
     yield* Workflow.step(
       "Send confirmation",
       sendConfirmation(order.email, order.id).pipe(
-        Workflow.timeout("30 seconds"),
+        Workflow.timeout("40 seconds"),
+        Workflow.retry({ maxAttempts: 3, delay: "1 second" }),
+      ),
+    ).pipe(
+      Effect.tapError((error) =>
+        Effect.log(`[[[confirmation error]]]: ${error}`),
       ),
     );
-  }).pipe(
-    Effect.tapError((error) => Effect.log(`processOrder error: ${error}`)),
-  ),
+    console.log("[workflow] About to sleep for 4 seconds");
+    yield* Workflow.sleep("4 seconds");
+    console.log("[workflow] About to sleep for 5 seconds");
+    yield* Workflow.sleep("5 seconds");
+    console.log("[workflow] About to sleep for 6 seconds");
+    yield* Workflow.sleep("6 seconds");
+    console.log("[workflow] done");
+  }),
 );
 
 const greetWorkflow = Workflow.make("greet", (input: { name: string }) =>
