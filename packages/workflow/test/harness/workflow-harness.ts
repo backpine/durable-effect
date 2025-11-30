@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import { Effect } from "effect";
 import { ExecutionContext, PauseSignal } from "@durable-effect/core";
 import {
