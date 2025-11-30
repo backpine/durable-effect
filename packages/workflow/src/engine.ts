@@ -4,6 +4,7 @@ import {
   ExecutionContext,
   PauseSignal,
   createExecutionContext,
+  createBaseEvent,
 } from "@durable-effect/core";
 import {
   WorkflowContext,
@@ -12,6 +13,8 @@ import {
   storeWorkflowMeta,
   loadWorkflowMeta,
 } from "@/services/workflow-context";
+import { emitEvent } from "@/tracker";
+import { StepError } from "@/errors";
 import type {
   DurableWorkflowInstance,
   WorkflowCall,
@@ -162,6 +165,13 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       const setupEffect = Effect.gen(function* () {
         yield* storeWorkflowMeta(storage, String(workflowName), input);
         yield* setWorkflowStatus(storage, { _tag: "Running" });
+
+        // Emit workflow started event
+        yield* emitEvent({
+          ...createBaseEvent(workflowId, String(workflowName)),
+          type: "workflow.started",
+          input,
+        });
       });
 
       await Effect.runPromise(setupEffect);
@@ -194,14 +204,24 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       }
 
       const workflowId = this.ctx.id.toString();
+      const workflowName = meta.workflowName;
+      const storage = this.ctx.storage;
 
-      // Set status to running
+      // Set status to running and emit resumed event
       await Effect.runPromise(
-        setWorkflowStatus(this.ctx.storage, { _tag: "Running" }),
+        Effect.gen(function* () {
+          yield* setWorkflowStatus(storage, { _tag: "Running" });
+
+          // Emit workflow resumed event
+          yield* emitEvent({
+            ...createBaseEvent(workflowId, workflowName),
+            type: "workflow.resumed",
+          });
+        }),
       );
 
       // Resume execution
-      await this.#executeWorkflow(workflowId, meta.workflowName, meta.input);
+      await this.#executeWorkflow(workflowId, workflowName, meta.input);
     }
 
     /**
@@ -242,14 +262,28 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
         );
 
       // Execute and handle results
+      const startTime = Date.now();
       const result = await Effect.runPromiseExit(workflowEffect);
+      const storage = this.ctx.storage;
 
       if (result._tag === "Success") {
         // Workflow completed successfully
+        const completedSteps = await this.getCompletedSteps();
+
         await Effect.runPromise(
-          setWorkflowStatus(this.ctx.storage, {
-            _tag: "Completed",
-            completedAt: Date.now(),
+          Effect.gen(function* () {
+            yield* setWorkflowStatus(storage, {
+              _tag: "Completed",
+              completedAt: Date.now(),
+            });
+
+            // Emit workflow completed event
+            yield* emitEvent({
+              ...createBaseEvent(workflowId, workflowName),
+              type: "workflow.completed",
+              completedSteps,
+              durationMs: Date.now() - startTime,
+            });
           }),
         );
       } else {
@@ -259,10 +293,23 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
         if (failure._tag === "Fail" && failure.error instanceof PauseSignal) {
           const signal = failure.error;
           await Effect.runPromise(
-            setWorkflowStatus(this.ctx.storage, {
-              _tag: "Paused",
-              reason: signal.reason,
-              resumeAt: signal.resumeAt,
+            Effect.gen(function* () {
+              yield* setWorkflowStatus(storage, {
+                _tag: "Paused",
+                reason: signal.reason,
+                resumeAt: signal.resumeAt,
+              });
+
+              // Emit workflow paused event
+              yield* emitEvent({
+                ...createBaseEvent(workflowId, workflowName),
+                type: "workflow.paused",
+                reason: signal.reason,
+                resumeAt: signal.resumeAt
+                  ? new Date(signal.resumeAt).toISOString()
+                  : undefined,
+                stepName: signal.stepName,
+              });
             }),
           );
           // Alarm should already be set by the step/sleep that raised PauseSignal
@@ -275,11 +322,44 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
                 ? failure.defect
                 : failure;
 
+          const completedSteps = await this.getCompletedSteps();
+
+          // Extract error details
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : typeof error === "string"
+                ? error
+                : JSON.stringify(error);
+
+          const errorStack = error instanceof Error ? error.stack : undefined;
+
+          // Extract step info if it's a StepError
+          const stepName =
+            error instanceof StepError ? error.stepName : undefined;
+          const attempt =
+            error instanceof StepError ? error.attempt : undefined;
+
           await Effect.runPromise(
-            setWorkflowStatus(this.ctx.storage, {
-              _tag: "Failed",
-              error,
-              failedAt: Date.now(),
+            Effect.gen(function* () {
+              yield* setWorkflowStatus(storage, {
+                _tag: "Failed",
+                error,
+                failedAt: Date.now(),
+              });
+
+              // Emit workflow failed event
+              yield* emitEvent({
+                ...createBaseEvent(workflowId, workflowName),
+                type: "workflow.failed",
+                error: {
+                  message: errorMessage,
+                  stack: errorStack,
+                  stepName,
+                  attempt,
+                },
+                completedSteps,
+              });
             }),
           );
         }

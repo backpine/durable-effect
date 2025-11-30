@@ -2,7 +2,11 @@
 export { Workflow } from "@/workflow";
 
 // Engine
-export { createDurableWorkflows, type TypedWorkflowEngine, type WorkflowRunResult } from "@/engine";
+export {
+  createDurableWorkflows,
+  type TypedWorkflowEngine,
+  type WorkflowRunResult,
+} from "@/engine";
 
 // Services
 export {
@@ -11,6 +15,16 @@ export {
   type WorkflowContextService,
   type StepContextService,
 } from "@/services";
+
+// Tracker
+export {
+  EventTracker,
+  createHttpBatchTracker,
+  emitEvent,
+  flushEvents,
+  type EventTrackerService,
+  type EventTrackerConfig,
+} from "@/tracker";
 
 // Types
 export type {
