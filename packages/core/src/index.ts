@@ -1,9 +1,28 @@
 // Errors
 export { PauseSignal } from "./errors";
 
-// Events
+// Event Schemas
 export {
+  // Helper
   createBaseEvent,
+  // Schemas
+  BaseEventSchema,
+  WorkflowStartedEventSchema,
+  WorkflowCompletedEventSchema,
+  WorkflowFailedEventSchema,
+  WorkflowPausedEventSchema,
+  WorkflowResumedEventSchema,
+  StepStartedEventSchema,
+  StepCompletedEventSchema,
+  StepFailedEventSchema,
+  RetryScheduledEventSchema,
+  RetryExhaustedEventSchema,
+  SleepStartedEventSchema,
+  SleepCompletedEventSchema,
+  TimeoutSetEventSchema,
+  TimeoutExceededEventSchema,
+  WorkflowEventSchema,
+  // Types
   type BaseEvent,
   type WorkflowEvent,
   type WorkflowEventType,
