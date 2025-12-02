@@ -24,7 +24,10 @@ import {
   HttpClientRequest,
   HttpClientResponse,
 } from "@effect/platform";
-import type { InternalWorkflowEvent, WorkflowEvent } from "@durable-effect/core";
+import type {
+  InternalWorkflowEvent,
+  WorkflowEvent,
+} from "@durable-effect/core";
 import { enrichEvent } from "@durable-effect/core";
 import type { EventTrackerConfig } from "./types";
 
@@ -172,33 +175,32 @@ export const createHttpBatchTracker = (
           enrichEvent(event, env, serviceKey),
         );
 
-        yield* Effect.log(`Sending ${enrichedEvents.length} events`);
-        // yield* HttpClientRequest.post(config.url).pipe(
-        //   HttpClientRequest.bodyJson({ events: enrichedEvents }),
-        //   Effect.flatMap((request) =>
-        //     request.pipe(
-        //       HttpClientRequest.bearerToken(config.accessToken),
-        //       httpClient.execute,
-        //       Effect.flatMap(HttpClientResponse.filterStatusOk),
-        //       Effect.scoped,
-        //       Effect.timeout(Duration.millis(timeoutMs)),
-        //     ),
-        //   ),
-        //   // Retry with exponential backoff
-        //   Effect.retry(
-        //     Schedule.exponential(Duration.millis(initialDelay), 2).pipe(
-        //       Schedule.intersect(Schedule.recurs(maxRetries)),
-        //       Schedule.upTo(Duration.millis(maxDelay)),
-        //     ),
-        //   ),
-        //   // CRITICAL: Catch all errors - tracker failures must never propagate
-        //   Effect.catchAll((error) =>
-        //     Effect.logWarning(
-        //       `Event tracker failed to send batch of ${enrichedEvents.length} events: ${error}`,
-        //     ),
-        //   ),
-        //   Effect.asVoid,
-        // );
+        yield* HttpClientRequest.post(config.url).pipe(
+          HttpClientRequest.bodyJson({ events: enrichedEvents }),
+          Effect.flatMap((request) =>
+            request.pipe(
+              HttpClientRequest.bearerToken(config.accessToken),
+              httpClient.execute,
+              Effect.flatMap(HttpClientResponse.filterStatusOk),
+              Effect.scoped,
+              Effect.timeout(Duration.millis(timeoutMs)),
+            ),
+          ),
+          // Retry with exponential backoff
+          Effect.retry(
+            Schedule.exponential(Duration.millis(initialDelay), 2).pipe(
+              Schedule.intersect(Schedule.recurs(maxRetries)),
+              Schedule.upTo(Duration.millis(maxDelay)),
+            ),
+          ),
+          // CRITICAL: Catch all errors - tracker failures must never propagate
+          Effect.catchAll((error) =>
+            Effect.logWarning(
+              `Event tracker failed to send batch of ${enrichedEvents.length} events: ${error}`,
+            ),
+          ),
+          Effect.asVoid,
+        );
       });
 
     /**

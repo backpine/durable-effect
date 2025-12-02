@@ -158,7 +158,7 @@ export const Workflows = createDurableWorkflows(workflows, {
     env: "prod",
     serviceKey: "test-service",
     accessToken: "your-access-token",
-    url: "https://example.com",
+    url: "http://localhost:3000/sync",
     batch: {
       maxSize: 5,
       maxWaitMs: 200,
