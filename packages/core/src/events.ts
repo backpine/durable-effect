@@ -3,25 +3,32 @@
  *
  * These events represent all lifecycle points in a durable workflow
  * and are used by the optional event tracker service.
+ *
+ * All events are defined as Effect Schemas for runtime validation.
  */
 
+import { Schema } from "effect";
+
 // =============================================================================
-// Base Event
+// Base Event Schema
 // =============================================================================
 
 /**
- * Base event shape - all events include these fields.
+ * Base event fields - all events include these.
  */
-export interface BaseEvent {
+const BaseEventFields = {
   /** Unique event ID for deduplication */
-  readonly eventId: string;
+  eventId: Schema.String,
   /** ISO timestamp when event occurred */
-  readonly timestamp: string;
+  timestamp: Schema.String,
   /** Durable Object ID */
-  readonly workflowId: string;
+  workflowId: Schema.String,
   /** Workflow definition name */
-  readonly workflowName: string;
-}
+  workflowName: Schema.String,
+};
+
+export const BaseEventSchema = Schema.Struct(BaseEventFields);
+export type BaseEvent = Schema.Schema.Type<typeof BaseEventSchema>;
 
 // =============================================================================
 // Workflow Events
@@ -30,50 +37,65 @@ export interface BaseEvent {
 /**
  * Emitted when a workflow starts execution.
  */
-export interface WorkflowStartedEvent extends BaseEvent {
-  readonly type: "workflow.started";
-  readonly input: unknown;
-}
+export const WorkflowStartedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("workflow.started"),
+  input: Schema.Unknown,
+});
+export type WorkflowStartedEvent = Schema.Schema.Type<typeof WorkflowStartedEventSchema>;
 
 /**
  * Emitted when a workflow completes successfully.
  */
-export interface WorkflowCompletedEvent extends BaseEvent {
-  readonly type: "workflow.completed";
-  readonly completedSteps: ReadonlyArray<string>;
-  readonly durationMs: number;
-}
+export const WorkflowCompletedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("workflow.completed"),
+  completedSteps: Schema.Array(Schema.String),
+  durationMs: Schema.Number,
+});
+export type WorkflowCompletedEvent = Schema.Schema.Type<typeof WorkflowCompletedEventSchema>;
+
+/**
+ * Error details schema for workflow failures.
+ */
+const WorkflowErrorSchema = Schema.Struct({
+  message: Schema.String,
+  stack: Schema.optional(Schema.String),
+  stepName: Schema.optional(Schema.String),
+  attempt: Schema.optional(Schema.Number),
+});
 
 /**
  * Emitted when a workflow fails permanently.
  */
-export interface WorkflowFailedEvent extends BaseEvent {
-  readonly type: "workflow.failed";
-  readonly error: {
-    readonly message: string;
-    readonly stack?: string;
-    readonly stepName?: string;
-    readonly attempt?: number;
-  };
-  readonly completedSteps: ReadonlyArray<string>;
-}
+export const WorkflowFailedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("workflow.failed"),
+  error: WorkflowErrorSchema,
+  completedSteps: Schema.Array(Schema.String),
+});
+export type WorkflowFailedEvent = Schema.Schema.Type<typeof WorkflowFailedEventSchema>;
 
 /**
  * Emitted when a workflow pauses (sleep or retry).
  */
-export interface WorkflowPausedEvent extends BaseEvent {
-  readonly type: "workflow.paused";
-  readonly reason: "sleep" | "retry";
-  readonly resumeAt?: string;
-  readonly stepName?: string;
-}
+export const WorkflowPausedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("workflow.paused"),
+  reason: Schema.Literal("sleep", "retry"),
+  resumeAt: Schema.optional(Schema.String),
+  stepName: Schema.optional(Schema.String),
+});
+export type WorkflowPausedEvent = Schema.Schema.Type<typeof WorkflowPausedEventSchema>;
 
 /**
  * Emitted when a workflow resumes from a pause.
  */
-export interface WorkflowResumedEvent extends BaseEvent {
-  readonly type: "workflow.resumed";
-}
+export const WorkflowResumedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("workflow.resumed"),
+});
+export type WorkflowResumedEvent = Schema.Schema.Type<typeof WorkflowResumedEventSchema>;
 
 // =============================================================================
 // Step Events
@@ -82,38 +104,49 @@ export interface WorkflowResumedEvent extends BaseEvent {
 /**
  * Emitted when a step starts execution.
  */
-export interface StepStartedEvent extends BaseEvent {
-  readonly type: "step.started";
-  readonly stepName: string;
-  readonly attempt: number;
-}
+export const StepStartedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("step.started"),
+  stepName: Schema.String,
+  attempt: Schema.Number,
+});
+export type StepStartedEvent = Schema.Schema.Type<typeof StepStartedEventSchema>;
 
 /**
  * Emitted when a step completes successfully.
  */
-export interface StepCompletedEvent extends BaseEvent {
-  readonly type: "step.completed";
-  readonly stepName: string;
-  readonly attempt: number;
-  readonly durationMs: number;
+export const StepCompletedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("step.completed"),
+  stepName: Schema.String,
+  attempt: Schema.Number,
+  durationMs: Schema.Number,
   /** True if result was returned from cache */
-  readonly cached: boolean;
-}
+  cached: Schema.Boolean,
+});
+export type StepCompletedEvent = Schema.Schema.Type<typeof StepCompletedEventSchema>;
+
+/**
+ * Error details schema for step failures.
+ */
+const StepErrorSchema = Schema.Struct({
+  message: Schema.String,
+  stack: Schema.optional(Schema.String),
+});
 
 /**
  * Emitted when a step fails.
  */
-export interface StepFailedEvent extends BaseEvent {
-  readonly type: "step.failed";
-  readonly stepName: string;
-  readonly attempt: number;
-  readonly error: {
-    readonly message: string;
-    readonly stack?: string;
-  };
+export const StepFailedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("step.failed"),
+  stepName: Schema.String,
+  attempt: Schema.Number,
+  error: StepErrorSchema,
   /** True if the step will be retried */
-  readonly willRetry: boolean;
-}
+  willRetry: Schema.Boolean,
+});
+export type StepFailedEvent = Schema.Schema.Type<typeof StepFailedEventSchema>;
 
 // =============================================================================
 // Retry Events
@@ -122,22 +155,26 @@ export interface StepFailedEvent extends BaseEvent {
 /**
  * Emitted when a retry is scheduled.
  */
-export interface RetryScheduledEvent extends BaseEvent {
-  readonly type: "retry.scheduled";
-  readonly stepName: string;
-  readonly attempt: number;
-  readonly nextAttemptAt: string;
-  readonly delayMs: number;
-}
+export const RetryScheduledEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("retry.scheduled"),
+  stepName: Schema.String,
+  attempt: Schema.Number,
+  nextAttemptAt: Schema.String,
+  delayMs: Schema.Number,
+});
+export type RetryScheduledEvent = Schema.Schema.Type<typeof RetryScheduledEventSchema>;
 
 /**
  * Emitted when all retry attempts are exhausted.
  */
-export interface RetryExhaustedEvent extends BaseEvent {
-  readonly type: "retry.exhausted";
-  readonly stepName: string;
-  readonly attempts: number;
-}
+export const RetryExhaustedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("retry.exhausted"),
+  stepName: Schema.String,
+  attempts: Schema.Number,
+});
+export type RetryExhaustedEvent = Schema.Schema.Type<typeof RetryExhaustedEventSchema>;
 
 // =============================================================================
 // Sleep Events
@@ -146,19 +183,23 @@ export interface RetryExhaustedEvent extends BaseEvent {
 /**
  * Emitted when a sleep starts.
  */
-export interface SleepStartedEvent extends BaseEvent {
-  readonly type: "sleep.started";
-  readonly durationMs: number;
-  readonly resumeAt: string;
-}
+export const SleepStartedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("sleep.started"),
+  durationMs: Schema.Number,
+  resumeAt: Schema.String,
+});
+export type SleepStartedEvent = Schema.Schema.Type<typeof SleepStartedEventSchema>;
 
 /**
  * Emitted when a sleep completes.
  */
-export interface SleepCompletedEvent extends BaseEvent {
-  readonly type: "sleep.completed";
-  readonly durationMs: number;
-}
+export const SleepCompletedEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("sleep.completed"),
+  durationMs: Schema.Number,
+});
+export type SleepCompletedEvent = Schema.Schema.Type<typeof SleepCompletedEventSchema>;
 
 // =============================================================================
 // Timeout Events
@@ -167,49 +208,60 @@ export interface SleepCompletedEvent extends BaseEvent {
 /**
  * Emitted when a timeout deadline is set.
  */
-export interface TimeoutSetEvent extends BaseEvent {
-  readonly type: "timeout.set";
-  readonly stepName: string;
-  readonly deadline: string;
-  readonly timeoutMs: number;
-}
+export const TimeoutSetEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("timeout.set"),
+  stepName: Schema.String,
+  deadline: Schema.String,
+  timeoutMs: Schema.Number,
+});
+export type TimeoutSetEvent = Schema.Schema.Type<typeof TimeoutSetEventSchema>;
 
 /**
  * Emitted when a timeout deadline is exceeded.
  */
-export interface TimeoutExceededEvent extends BaseEvent {
-  readonly type: "timeout.exceeded";
-  readonly stepName: string;
-  readonly timeoutMs: number;
-}
+export const TimeoutExceededEventSchema = Schema.Struct({
+  ...BaseEventFields,
+  type: Schema.Literal("timeout.exceeded"),
+  stepName: Schema.String,
+  timeoutMs: Schema.Number,
+});
+export type TimeoutExceededEvent = Schema.Schema.Type<typeof TimeoutExceededEventSchema>;
 
 // =============================================================================
-// Union Type
+// Union Schema
 // =============================================================================
+
+/**
+ * Schema for all possible workflow tracking events.
+ * Uses discriminated union on the `type` field.
+ */
+export const WorkflowEventSchema = Schema.Union(
+  // Workflow lifecycle
+  WorkflowStartedEventSchema,
+  WorkflowCompletedEventSchema,
+  WorkflowFailedEventSchema,
+  WorkflowPausedEventSchema,
+  WorkflowResumedEventSchema,
+  // Step lifecycle
+  StepStartedEventSchema,
+  StepCompletedEventSchema,
+  StepFailedEventSchema,
+  // Retry
+  RetryScheduledEventSchema,
+  RetryExhaustedEventSchema,
+  // Sleep
+  SleepStartedEventSchema,
+  SleepCompletedEventSchema,
+  // Timeout
+  TimeoutSetEventSchema,
+  TimeoutExceededEventSchema,
+);
 
 /**
  * All possible workflow tracking events.
  */
-export type WorkflowEvent =
-  // Workflow lifecycle
-  | WorkflowStartedEvent
-  | WorkflowCompletedEvent
-  | WorkflowFailedEvent
-  | WorkflowPausedEvent
-  | WorkflowResumedEvent
-  // Step lifecycle
-  | StepStartedEvent
-  | StepCompletedEvent
-  | StepFailedEvent
-  // Retry
-  | RetryScheduledEvent
-  | RetryExhaustedEvent
-  // Sleep
-  | SleepStartedEvent
-  | SleepCompletedEvent
-  // Timeout
-  | TimeoutSetEvent
-  | TimeoutExceededEvent;
+export type WorkflowEvent = Schema.Schema.Type<typeof WorkflowEventSchema>;
 
 /**
  * Event type discriminator values.
