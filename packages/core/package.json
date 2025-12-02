@@ -1,6 +1,6 @@
 {
   "name": "@durable-effect/core",
-  "version": "0.0.1-next.3",
+  "version": "0.0.1-next.4",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,6 +17,9 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "uuid": "^11.0.3"
   },
   "peerDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

@@ -15,6 +15,7 @@
  */
 
 import { Schema } from "effect";
+import { v7 as uuidv7 } from "uuid";
 
 // =============================================================================
 // Internal Base Event Schema (used by workflow code)
@@ -465,7 +466,7 @@ export function createBaseEvent(
   workflowName: string,
 ): InternalBaseEvent {
   return {
-    eventId: crypto.randomUUID(),
+    eventId: uuidv7(),
     timestamp: new Date().toISOString(),
     workflowId,
     workflowName,

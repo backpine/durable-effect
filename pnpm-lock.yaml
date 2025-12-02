@@ -27,8 +27,8 @@ importers:
   examples/effect-worker:
     dependencies:
       '@durable-effect/workflow':
-        specifier: 0.0.1-next.8
-        version: 0.0.1-next.8(@cloudflare/workers-types@4.20251127.0)(@effect/platform@0.75.4(effect@3.19.8))(effect@3.19.8)
+        specifier: 0.0.1-next.10
+        version: 0.0.1-next.10(@cloudflare/workers-types@4.20251127.0)(@effect/platform@0.75.4(effect@3.19.8))(effect@3.19.8)
       '@effect/platform':
         specifier: 'catalog:'
         version: 0.75.4(effect@3.19.8)
@@ -69,6 +69,10 @@ importers:
         version: 4.51.0(@cloudflare/workers-types@4.20251127.0)
 
   packages/core:
+    dependencies:
+      uuid:
+        specifier: ^11.0.3
+        version: 11.1.0
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20241127.0
@@ -151,14 +155,14 @@ packages:
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
     engines: {node: '>=12'}
 
-  '@durable-effect/core@0.0.1-next.1':
-    resolution: {integrity: sha512-XZ/k2gK1F6fZgzn4om5e5bAyz0NxECeNpY/imc91Hd2pgwWuatJZJnwmka0m4JsdVnqp2g8lHgYwDS9+qVaz6w==}
+  '@durable-effect/core@0.0.1-next.3':
+    resolution: {integrity: sha512-2KgLkSD4EKlQVSKD4eMbTB/lsyHUrHXbkXkjB2wDv9gf6K+oZlqtQepi+uCwv3I8Nce4pdPJh2hj/Rlc0PGNPA==}
     peerDependencies:
       '@cloudflare/workers-types': ^4.0.0
       effect: ^3.19.8
 
-  '@durable-effect/workflow@0.0.1-next.8':
-    resolution: {integrity: sha512-Y68W1J+N+HXkdF2FdE8/KfxoJGapSUJt5YwBa3+CkKTaU961oUlgw7SNgiw9ndntQx8LhepRmOwAu5sA1nUwUw==}
+  '@durable-effect/workflow@0.0.1-next.10':
+    resolution: {integrity: sha512-LtqwRbrmaBg+EWmX7Dct9yxFXwU1tW3/SNVH/rWsyIzzzxt53tKd3N/KRB5/DlxHOC+VD1B+xo+Rfuy/gDBJuQ==}
     peerDependencies:
       '@cloudflare/workers-types': ^4.0.0
       '@effect/platform': ^0.75.0
@@ -1122,6 +1126,10 @@ packages:
   unenv@2.0.0-rc.24:
     resolution: {integrity: sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw==}
 
+  uuid@11.1.0:
+    resolution: {integrity: sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A==}
+    hasBin: true
+
   vite-node@2.1.9:
     resolution: {integrity: sha512-AM9aQ/IPrW/6ENLQg3AGY4K1N2TGZdR5e4gu/MmmR2xR3Ll1+dib+nook92g4TV3PXVyeyxdWwtaCAiUL0hMxA==}
     engines: {node: ^18.0.0 || >=20.0.0}
@@ -1257,15 +1265,15 @@ snapshots:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
 
-  '@durable-effect/core@0.0.1-next.1(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)':
+  '@durable-effect/core@0.0.1-next.3(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)':
     dependencies:
       '@cloudflare/workers-types': 4.20251127.0
       effect: 3.19.8
 
-  '@durable-effect/workflow@0.0.1-next.8(@cloudflare/workers-types@4.20251127.0)(@effect/platform@0.75.4(effect@3.19.8))(effect@3.19.8)':
+  '@durable-effect/workflow@0.0.1-next.10(@cloudflare/workers-types@4.20251127.0)(@effect/platform@0.75.4(effect@3.19.8))(effect@3.19.8)':
     dependencies:
       '@cloudflare/workers-types': 4.20251127.0
-      '@durable-effect/core': 0.0.1-next.1(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)
+      '@durable-effect/core': 0.0.1-next.3(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)
       '@effect/platform': 0.75.4(effect@3.19.8)
       effect: 3.19.8
 
@@ -2054,6 +2062,8 @@ snapshots:
   unenv@2.0.0-rc.24:
     dependencies:
       pathe: 2.0.3
+
+  uuid@11.1.0: {}
 
   vite-node@2.1.9:
     dependencies:

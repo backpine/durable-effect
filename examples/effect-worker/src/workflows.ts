@@ -155,6 +155,8 @@ const workflows = {
 
 export const Workflows = createDurableWorkflows(workflows, {
   tracker: {
+    env: "prod",
+    serviceKey: "test-service",
     accessToken: "your-access-token",
     url: "https://example.com",
     batch: {
