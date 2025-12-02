@@ -66,7 +66,7 @@ export const postGreet = (request: Request, env: Env) =>
 
     return Response.json({
       success: true,
-      workflowId: result.id,
+      workflowId: "result.id",
       name,
     });
   });
@@ -93,7 +93,7 @@ export const postScheduled = (request: Request, env: Env) =>
 
     return Response.json({
       success: true,
-      workflowId: result.id,
+      workflowId: "result.id",
       taskId,
     });
   });

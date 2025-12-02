@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Duration, Effect, Option } from "effect";
 import { ExecutionContext } from "@durable-effect/core";
 import { StepContext } from "@/services/step-context";
+import { WorkflowContext } from "@/services/workflow-context";
 import { StepTimeoutError } from "@/errors";
 import { Workflow } from "@/workflow";
 import { createTestContexts, MockStorage } from "./mocks";
@@ -11,11 +12,15 @@ describe("Workflow.timeout", () => {
   let executionContext: ReturnType<
     typeof createTestContexts
   >["executionContext"];
+  let workflowContext: ReturnType<
+    typeof createTestContexts
+  >["workflowContext"];
 
   beforeEach(() => {
     const contexts = createTestContexts();
     storage = contexts.storage;
     executionContext = contexts.executionContext;
+    workflowContext = contexts.workflowContext;
     vi.useFakeTimers();
     vi.setSystemTime(0);
   });
@@ -70,12 +75,13 @@ describe("Workflow.timeout", () => {
    * Helper to run a timeout effect with contexts provided.
    */
   function runTimeout<T, E>(
-    effect: Effect.Effect<T, E | StepTimeoutError, ExecutionContext | StepContext>,
+    effect: Effect.Effect<T, E | StepTimeoutError, ExecutionContext | StepContext | WorkflowContext>,
     stepContext: StepContext["Type"],
   ) {
     return effect.pipe(
       Effect.provideService(ExecutionContext, executionContext),
       Effect.provideService(StepContext, stepContext),
+      Effect.provideService(WorkflowContext, workflowContext),
       Effect.runPromiseExit,
     );
   }

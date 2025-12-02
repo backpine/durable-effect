@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { Duration, Effect } from "effect";
 import { ExecutionContext, PauseSignal } from "@durable-effect/core";
 import { StepContext } from "@/services/step-context";
+import { WorkflowContext } from "@/services/workflow-context";
 import { Workflow } from "@/workflow";
 import { createTestContexts, MockStorage } from "./mocks";
 
@@ -10,11 +11,15 @@ describe("Workflow.retry", () => {
   let executionContext: ReturnType<
     typeof createTestContexts
   >["executionContext"];
+  let workflowContext: ReturnType<
+    typeof createTestContexts
+  >["workflowContext"];
 
   beforeEach(() => {
     const contexts = createTestContexts();
     storage = contexts.storage;
     executionContext = contexts.executionContext;
+    workflowContext = contexts.workflowContext;
     vi.useFakeTimers();
     vi.setSystemTime(0);
   });
@@ -48,12 +53,13 @@ describe("Workflow.retry", () => {
    * Helper to run a retry effect with contexts provided.
    */
   function runRetry<T, E>(
-    effect: Effect.Effect<T, E | PauseSignal, ExecutionContext | StepContext>,
+    effect: Effect.Effect<T, E | PauseSignal, ExecutionContext | StepContext | WorkflowContext>,
     stepContext: StepContext["Type"],
   ) {
     return effect.pipe(
       Effect.provideService(ExecutionContext, executionContext),
       Effect.provideService(StepContext, stepContext),
+      Effect.provideService(WorkflowContext, workflowContext),
       Effect.runPromiseExit,
     );
   }

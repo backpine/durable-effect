@@ -1,12 +1,13 @@
 import { vi } from "vitest";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { ExecutionContext, PauseSignal } from "@durable-effect/core";
 import {
   WorkflowContext,
   createWorkflowContext,
 } from "@/services/workflow-context";
+import { EventTracker } from "@/tracker";
 import type { DurableWorkflow, WorkflowStatus } from "@/types";
-import { MockStorage, createMockExecutionContext } from "../mocks";
+import { MockStorage, createMockExecutionContext, SimpleEventCapture } from "../mocks";
 
 /**
  * Result returned when starting a workflow.
@@ -16,12 +17,23 @@ export interface WorkflowRunResult {
 }
 
 /**
+ * Options for creating a workflow test harness.
+ */
+export interface WorkflowHarnessOptions {
+  /** Event capture for testing tracker events */
+  readonly eventCapture?: SimpleEventCapture;
+}
+
+/**
  * Test harness for workflow-level testing.
  * Simulates the run → pause → alarm → resume cycle.
  */
 export interface WorkflowTestHarness<Input> {
   /** The mock storage instance */
   readonly storage: MockStorage;
+
+  /** Event capture (if provided) */
+  readonly eventCapture?: SimpleEventCapture;
 
   /** Run the workflow (simulates initial run()) */
   run(input: Input): Promise<WorkflowRunResult>;
@@ -47,9 +59,11 @@ export interface WorkflowTestHarness<Input> {
  */
 export function createWorkflowHarness<Input, E>(
   workflow: DurableWorkflow<string, Input, E>,
+  options?: WorkflowHarnessOptions,
 ): WorkflowTestHarness<Input> {
   const storage = new MockStorage();
   const workflowId = "test-workflow-id";
+  const eventCapture = options?.eventCapture;
 
   /**
    * Execute the workflow with fresh contexts.
@@ -67,10 +81,15 @@ export function createWorkflowHarness<Input, E>(
     );
 
     // Execute workflow effect
-    const effect = workflow.definition(input).pipe(
+    let effect = workflow.definition(input).pipe(
       Effect.provideService(ExecutionContext, execCtx),
       Effect.provideService(WorkflowContext, workflowCtx),
     );
+
+    // Provide tracker layer if event capture is provided
+    if (eventCapture) {
+      effect = effect.pipe(Effect.provide(eventCapture.createLayer()));
+    }
 
     const result = await Effect.runPromiseExit(effect);
 
@@ -101,6 +120,7 @@ export function createWorkflowHarness<Input, E>(
 
   return {
     storage,
+    eventCapture,
 
     async run(input: Input): Promise<WorkflowRunResult> {
       await storage.put("workflow:name", workflow.name);

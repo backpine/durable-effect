@@ -15,7 +15,6 @@ const fetchOrder = (orderId: string) =>
     yield* Effect.sleep("100 millis");
     yield* Effect.log(`Inner Sleep 10 seconds ${orderId}...`);
 
-    yield* Workflow.sleep("10 seconds");
     yield* Effect.log(`done inner sleep`);
 
     return {
@@ -154,6 +153,15 @@ const workflows = {
   scheduled: scheduledWorkflow,
 } as const;
 
-export const Workflows = createDurableWorkflows(workflows);
+export const Workflows = createDurableWorkflows(workflows, {
+  tracker: {
+    accessToken: "your-access-token",
+    url: "https://example.com",
+    batch: {
+      maxSize: 5,
+      maxWaitMs: 200,
+    },
+  },
+});
 
 export type WorkflowsType = InstanceType<typeof Workflows>;

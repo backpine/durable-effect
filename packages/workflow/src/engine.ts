@@ -1,9 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient } from "@effect/platform";
 import {
   ExecutionContext,
   PauseSignal,
   createExecutionContext,
+  createBaseEvent,
 } from "@durable-effect/core";
 import {
   WorkflowContext,
@@ -12,12 +14,30 @@ import {
   storeWorkflowMeta,
   loadWorkflowMeta,
 } from "@/services/workflow-context";
+import {
+  EventTracker,
+  emitEvent,
+  createHttpBatchTracker,
+  type EventTrackerConfig,
+} from "@/tracker";
+import { StepError } from "@/errors";
 import type {
   DurableWorkflowInstance,
   WorkflowCall,
   WorkflowRegistry,
   WorkflowStatus,
 } from "@/types";
+
+/**
+ * Options for creating a durable workflow engine.
+ */
+export interface CreateDurableWorkflowsOptions {
+  /**
+   * Optional event tracker configuration.
+   * If provided, workflow events will be sent to the specified endpoint.
+   */
+  readonly tracker?: EventTrackerConfig;
+}
 
 /**
  * Result returned when starting a workflow.
@@ -85,8 +105,16 @@ export interface TypedWorkflowEngine<W extends WorkflowRegistry> {
  *   ),
  * } as const;
  *
- * // Create the Durable Object class
+ * // Create the Durable Object class (without tracking)
  * export const MyWorkflows = createDurableWorkflows(workflows);
+ *
+ * // Create with event tracking
+ * export const TrackedWorkflows = createDurableWorkflows(workflows, {
+ *   tracker: {
+ *     url: "https://tracker.example.com/api/events",
+ *     accessToken: "your-token",
+ *   },
+ * });
  *
  * // Usage from Worker
  * const id = env.MY_WORKFLOWS.idFromName('order-123');
@@ -103,7 +131,10 @@ export interface TypedWorkflowEngine<W extends WorkflowRegistry> {
  */
 export function createDurableWorkflows<const T extends WorkflowRegistry>(
   workflows: T,
+  options?: CreateDurableWorkflowsOptions,
 ): new (state: DurableObjectState, env: unknown) => DurableWorkflowInstance<T> {
+  const trackerConfig = options?.tracker;
+
   return class DurableWorkflowEngine
     extends DurableObject
     implements TypedWorkflowEngine<T>
@@ -111,16 +142,17 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
     /** The workflows registry */
     readonly #workflows: T = workflows;
 
-    /** Currently active workflow name (if any) */
-    #currentWorkflow: keyof T | undefined;
+    /** Event tracker layer (if configured) */
+    readonly #trackerLayer: Layer.Layer<EventTracker> | undefined =
+      trackerConfig
+        ? Layer.scoped(
+            EventTracker,
+            createHttpBatchTracker(trackerConfig),
+          ).pipe(Layer.provide(FetchHttpClient.layer))
+        : undefined;
 
     constructor(state: DurableObjectState, env: unknown) {
       super(state, env as never);
-
-      // Load current workflow from storage on initialization
-      state.blockConcurrencyWhile(async () => {
-        this.#currentWorkflow = await this.ctx.storage.get("workflow:name");
-      });
     }
 
     /**
@@ -162,10 +194,16 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       const setupEffect = Effect.gen(function* () {
         yield* storeWorkflowMeta(storage, String(workflowName), input);
         yield* setWorkflowStatus(storage, { _tag: "Running" });
+
+        // Emit workflow started event
+        yield* emitEvent({
+          ...createBaseEvent(workflowId, String(workflowName)),
+          type: "workflow.started",
+          input,
+        });
       });
 
       await Effect.runPromise(setupEffect);
-      this.#currentWorkflow = workflowName;
 
       // Execute the workflow
       await this.#executeWorkflow(workflowId, String(workflowName), input);
@@ -194,14 +232,24 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       }
 
       const workflowId = this.ctx.id.toString();
+      const workflowName = meta.workflowName;
+      const storage = this.ctx.storage;
 
-      // Set status to running
+      // Set status to running and emit resumed event
       await Effect.runPromise(
-        setWorkflowStatus(this.ctx.storage, { _tag: "Running" }),
+        Effect.gen(function* () {
+          yield* setWorkflowStatus(storage, { _tag: "Running" });
+
+          // Emit workflow resumed event
+          yield* emitEvent({
+            ...createBaseEvent(workflowId, workflowName),
+            type: "workflow.resumed",
+          });
+        }),
       );
 
       // Resume execution
-      await this.#executeWorkflow(workflowId, meta.workflowName, meta.input);
+      await this.#executeWorkflow(workflowId, workflowName, meta.input);
     }
 
     /**
@@ -234,22 +282,43 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       );
 
       // Build the workflow effect with services provided
-      const workflowEffect = workflowDef
+      let workflowEffect = workflowDef
         .definition(input)
         .pipe(
           Effect.provideService(ExecutionContext, execCtx),
           Effect.provideService(WorkflowContext, workflowCtx),
         );
 
+      // Provide tracker layer if configured
+      if (this.#trackerLayer) {
+        workflowEffect = workflowEffect.pipe(
+          Effect.provide(this.#trackerLayer),
+        );
+      }
+
       // Execute and handle results
+      const startTime = Date.now();
       const result = await Effect.runPromiseExit(workflowEffect);
+      const storage = this.ctx.storage;
 
       if (result._tag === "Success") {
         // Workflow completed successfully
+        const completedSteps = await this.getCompletedSteps();
+
         await Effect.runPromise(
-          setWorkflowStatus(this.ctx.storage, {
-            _tag: "Completed",
-            completedAt: Date.now(),
+          Effect.gen(function* () {
+            yield* setWorkflowStatus(storage, {
+              _tag: "Completed",
+              completedAt: Date.now(),
+            });
+
+            // Emit workflow completed event
+            yield* emitEvent({
+              ...createBaseEvent(workflowId, workflowName),
+              type: "workflow.completed",
+              completedSteps,
+              durationMs: Date.now() - startTime,
+            });
           }),
         );
       } else {
@@ -259,10 +328,23 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
         if (failure._tag === "Fail" && failure.error instanceof PauseSignal) {
           const signal = failure.error;
           await Effect.runPromise(
-            setWorkflowStatus(this.ctx.storage, {
-              _tag: "Paused",
-              reason: signal.reason,
-              resumeAt: signal.resumeAt,
+            Effect.gen(function* () {
+              yield* setWorkflowStatus(storage, {
+                _tag: "Paused",
+                reason: signal.reason,
+                resumeAt: signal.resumeAt,
+              });
+
+              // Emit workflow paused event
+              yield* emitEvent({
+                ...createBaseEvent(workflowId, workflowName),
+                type: "workflow.paused",
+                reason: signal.reason,
+                resumeAt: signal.resumeAt
+                  ? new Date(signal.resumeAt).toISOString()
+                  : undefined,
+                stepName: signal.stepName,
+              });
             }),
           );
           // Alarm should already be set by the step/sleep that raised PauseSignal
@@ -275,11 +357,44 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
                 ? failure.defect
                 : failure;
 
+          const completedSteps = await this.getCompletedSteps();
+
+          // Extract error details
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : typeof error === "string"
+                ? error
+                : JSON.stringify(error);
+
+          const errorStack = error instanceof Error ? error.stack : undefined;
+
+          // Extract step info if it's a StepError
+          const stepName =
+            error instanceof StepError ? error.stepName : undefined;
+          const attempt =
+            error instanceof StepError ? error.attempt : undefined;
+
           await Effect.runPromise(
-            setWorkflowStatus(this.ctx.storage, {
-              _tag: "Failed",
-              error,
-              failedAt: Date.now(),
+            Effect.gen(function* () {
+              yield* setWorkflowStatus(storage, {
+                _tag: "Failed",
+                error,
+                failedAt: Date.now(),
+              });
+
+              // Emit workflow failed event
+              yield* emitEvent({
+                ...createBaseEvent(workflowId, workflowName),
+                type: "workflow.failed",
+                error: {
+                  message: errorMessage,
+                  stack: errorStack,
+                  stepName,
+                  attempt,
+                },
+                completedSteps,
+              });
             }),
           );
         }

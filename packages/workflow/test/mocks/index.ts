@@ -5,3 +5,9 @@ export {
   createTestContexts,
   type TestContextOptions,
 } from "./contexts";
+export {
+  createMockTracker,
+  MockTrackerLayer,
+  SimpleEventCapture,
+  type MockTrackerService,
+} from "./tracker";
