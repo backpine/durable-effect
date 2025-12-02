@@ -2,9 +2,13 @@
   "name": "durable-effect",
   "private": true,
   "scripts": {
-    "build": "pnpm -r build",
+    "build": "pnpm -r --sort build",
     "clean": "pnpm -r clean",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "publish:core": "pnpm build && pnpm --filter @durable-effect/core publish --access public --no-git-checks",
+    "publish:workflow": "pnpm build && pnpm --filter @durable-effect/workflow publish --access public --no-git-checks",
+    "publish:all": "pnpm build && pnpm -r publish --access public --no-git-checks"
   },
   "devDependencies": {
     "typescript": "^5.6.0"
