@@ -19,6 +19,20 @@ export interface EventTrackerConfig {
   readonly accessToken: string;
 
   /**
+   * Environment identifier.
+   * Included in all emitted events for filtering/routing.
+   * e.g., "production", "staging", "development"
+   */
+  readonly env: string;
+
+  /**
+   * User-defined service key.
+   * Identifies this service across all workflows.
+   * e.g., "order-service", "payment-processor"
+   */
+  readonly serviceKey: string;
+
+  /**
    * Batching configuration.
    */
   readonly batch?: {

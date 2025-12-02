@@ -1,5 +1,5 @@
 import { Effect, Queue, Layer } from "effect";
-import type { WorkflowEvent } from "@durable-effect/core";
+import type { InternalWorkflowEvent } from "@durable-effect/core";
 import { EventTracker, type EventTrackerService } from "@/tracker";
 
 /**
@@ -7,7 +7,7 @@ import { EventTracker, type EventTrackerService } from "@/tracker";
  */
 export interface MockTrackerService extends EventTrackerService {
   /** Get all captured events */
-  readonly getEvents: Effect.Effect<ReadonlyArray<WorkflowEvent>>;
+  readonly getEvents: Effect.Effect<ReadonlyArray<InternalWorkflowEvent>>;
   /** Clear captured events */
   readonly clearEvents: Effect.Effect<void>;
 }
@@ -16,14 +16,14 @@ export interface MockTrackerService extends EventTrackerService {
  * Create a mock tracker that captures events instead of sending them.
  */
 export const createMockTracker = Effect.gen(function* () {
-  const events = yield* Queue.unbounded<WorkflowEvent>();
+  const events = yield* Queue.unbounded<InternalWorkflowEvent>();
 
   const service: MockTrackerService = {
-    emit: (event: WorkflowEvent) => Queue.offer(events, event).pipe(Effect.asVoid),
+    emit: (event: InternalWorkflowEvent) => Queue.offer(events, event).pipe(Effect.asVoid),
     flush: Effect.void,
     pendingCount: Queue.size(events),
     getEvents: Effect.gen(function* () {
-      const all: WorkflowEvent[] = [];
+      const all: InternalWorkflowEvent[] = [];
       let size = yield* Queue.size(events);
       while (size > 0) {
         const event = yield* Queue.take(events);
@@ -55,11 +55,11 @@ export const MockTrackerLayer = Layer.effect(EventTracker, createMockTracker);
  * Simple in-memory tracker for synchronous testing.
  */
 export class SimpleEventCapture {
-  readonly events: WorkflowEvent[] = [];
+  readonly events: InternalWorkflowEvent[] = [];
 
   createService(): EventTrackerService {
     return {
-      emit: (event: WorkflowEvent) => {
+      emit: (event: InternalWorkflowEvent) => {
         this.events.push(event);
         return Effect.void;
       },
@@ -72,11 +72,11 @@ export class SimpleEventCapture {
     return Layer.succeed(EventTracker, this.createService());
   }
 
-  getEventsByType<T extends WorkflowEvent["type"]>(
+  getEventsByType<T extends InternalWorkflowEvent["type"]>(
     type: T,
-  ): Extract<WorkflowEvent, { type: T }>[] {
+  ): Extract<InternalWorkflowEvent, { type: T }>[] {
     return this.events.filter((e) => e.type === type) as Extract<
-      WorkflowEvent,
+      InternalWorkflowEvent,
       { type: T }
     >[];
   }

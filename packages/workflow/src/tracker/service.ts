@@ -3,6 +3,9 @@
  *
  * Uses an Effect Queue for batching events and sends them
  * via HTTP POST to an external tracking service.
+ *
+ * The tracker enriches internal events with env and serviceKey
+ * before sending them over the wire.
  */
 
 import {
@@ -21,7 +24,8 @@ import {
   HttpClientRequest,
   HttpClientResponse,
 } from "@effect/platform";
-import type { WorkflowEvent } from "@durable-effect/core";
+import type { InternalWorkflowEvent, WorkflowEvent } from "@durable-effect/core";
+import { enrichEvent } from "@durable-effect/core";
 import type { EventTrackerConfig } from "./types";
 
 // =============================================================================
@@ -30,13 +34,17 @@ import type { EventTrackerConfig } from "./types";
 
 /**
  * Event tracker service interface.
+ *
+ * Accepts internal events (without env/serviceKey) and enriches them
+ * with the configured env and serviceKey before sending.
  */
 export interface EventTrackerService {
   /**
    * Emit a single event.
    * Non-blocking - event is queued for batching.
+   * The tracker automatically adds env and serviceKey.
    */
-  readonly emit: (event: WorkflowEvent) => Effect.Effect<void>;
+  readonly emit: (event: InternalWorkflowEvent) => Effect.Effect<void>;
 
   /**
    * Flush all pending events immediately.
@@ -66,7 +74,7 @@ export class EventTracker extends Context.Tag("@durable-effect/EventTracker")<
  * Safely emit an event.
  * If tracker is not configured, this is a no-op.
  */
-export const emitEvent = (event: WorkflowEvent): Effect.Effect<void> =>
+export const emitEvent = (event: InternalWorkflowEvent): Effect.Effect<void> =>
   Effect.gen(function* () {
     const maybeTracker = yield* Effect.serviceOption(EventTracker);
 
@@ -98,6 +106,9 @@ export const flushEvents: Effect.Effect<void> = Effect.gen(function* () {
  * 1. `maxSize` events are collected, OR
  * 2. `maxWaitMs` elapses since the first event in the batch
  *
+ * The tracker automatically enriches events with env and serviceKey
+ * from the config before sending them.
+ *
  * @example
  * ```typescript
  * const program = Effect.scoped(
@@ -105,10 +116,13 @@ export const flushEvents: Effect.Effect<void> = Effect.gen(function* () {
  *     const tracker = yield* createHttpBatchTracker({
  *       url: "https://tracker.example.com/api/events",
  *       accessToken: "your-token",
+ *       env: "production",
+ *       serviceKey: "order-service",
  *       batch: { maxSize: 50, maxWaitMs: 1000 },
  *     });
  *
- *     yield* tracker.emit(event);
+ *     // Events are enriched with env/serviceKey automatically
+ *     yield* tracker.emit(internalEvent);
  *     yield* tracker.flush;
  *   })
  * ).pipe(Effect.provide(FetchHttpClient.layer));
@@ -122,6 +136,9 @@ export const createHttpBatchTracker = (
   Scope.Scope | HttpClient.HttpClient
 > =>
   Effect.gen(function* () {
+    // Capture env and serviceKey for event enrichment
+    const { env, serviceKey } = config;
+
     // Apply defaults
     const maxSize = config.batch?.maxSize ?? 50;
     const maxWaitMs = config.batch?.maxWaitMs ?? 1000;
@@ -134,22 +151,30 @@ export const createHttpBatchTracker = (
     const httpClient = yield* HttpClient.HttpClient;
 
     // Sliding queue - drops oldest events when full (back-pressure protection)
-    const eventQueue = yield* Queue.sliding<WorkflowEvent>(1000);
+    // Stores internal events (without env/serviceKey)
+    const eventQueue = yield* Queue.sliding<InternalWorkflowEvent>(1000);
 
     // Signal for manual flush
     const flushSignal = yield* Queue.unbounded<void>();
 
     /**
      * Send a batch of events via HTTP POST.
+     * Enriches internal events with env and serviceKey before sending.
      */
     const sendBatch = (
-      events: ReadonlyArray<WorkflowEvent>,
+      events: ReadonlyArray<InternalWorkflowEvent>,
     ): Effect.Effect<void> =>
       Effect.gen(function* () {
         if (events.length === 0) return;
-        yield* Effect.log(`Sending ${events.length} events`);
+
+        // Enrich all events with env and serviceKey
+        const enrichedEvents: WorkflowEvent[] = events.map((event) =>
+          enrichEvent(event, env, serviceKey),
+        );
+
+        yield* Effect.log(`Sending ${enrichedEvents.length} events`);
         // yield* HttpClientRequest.post(config.url).pipe(
-        //   HttpClientRequest.bodyJson({ events }),
+        //   HttpClientRequest.bodyJson({ events: enrichedEvents }),
         //   Effect.flatMap((request) =>
         //     request.pipe(
         //       HttpClientRequest.bearerToken(config.accessToken),
@@ -169,7 +194,7 @@ export const createHttpBatchTracker = (
         //   // CRITICAL: Catch all errors - tracker failures must never propagate
         //   Effect.catchAll((error) =>
         //     Effect.logWarning(
-        //       `Event tracker failed to send batch of ${events.length} events: ${error}`,
+        //       `Event tracker failed to send batch of ${enrichedEvents.length} events: ${error}`,
         //     ),
         //   ),
         //   Effect.asVoid,
@@ -186,7 +211,7 @@ export const createHttpBatchTracker = (
       while (true) {
         // Wait for first event (blocks until available)
         const firstEvent = yield* Queue.take(eventQueue);
-        const batch: WorkflowEvent[] = [firstEvent];
+        const batch: InternalWorkflowEvent[] = [firstEvent];
         const batchStartTime = Date.now();
 
         // Collect more events until maxSize or maxWaitMs
@@ -217,7 +242,7 @@ export const createHttpBatchTracker = (
           }
         }
 
-        // Send the collected batch
+        // Send the collected batch (enrichment happens inside sendBatch)
         yield* sendBatch(batch);
       }
     });
@@ -248,7 +273,7 @@ export const createHttpBatchTracker = (
 
     // Return service implementation
     return {
-      emit: (event: WorkflowEvent): Effect.Effect<void> =>
+      emit: (event: InternalWorkflowEvent): Effect.Effect<void> =>
         Queue.offer(eventQueue, event).pipe(Effect.asVoid),
 
       flush: Queue.offer(flushSignal, undefined).pipe(Effect.asVoid),

@@ -3,9 +3,29 @@ export { PauseSignal } from "./errors";
 
 // Event Schemas
 export {
-  // Helper
+  // Helper functions
   createBaseEvent,
-  // Schemas
+  enrichEvent,
+
+  // Internal Event Schemas (used by workflow code)
+  InternalBaseEventSchema,
+  InternalWorkflowEventSchema,
+  InternalWorkflowStartedEventSchema,
+  InternalWorkflowCompletedEventSchema,
+  InternalWorkflowFailedEventSchema,
+  InternalWorkflowPausedEventSchema,
+  InternalWorkflowResumedEventSchema,
+  InternalStepStartedEventSchema,
+  InternalStepCompletedEventSchema,
+  InternalStepFailedEventSchema,
+  InternalRetryScheduledEventSchema,
+  InternalRetryExhaustedEventSchema,
+  InternalSleepStartedEventSchema,
+  InternalSleepCompletedEventSchema,
+  InternalTimeoutSetEventSchema,
+  InternalTimeoutExceededEventSchema,
+
+  // Wire Event Schemas (sent to tracking service)
   BaseEventSchema,
   WorkflowStartedEventSchema,
   WorkflowCompletedEventSchema,
@@ -22,7 +42,26 @@ export {
   TimeoutSetEventSchema,
   TimeoutExceededEventSchema,
   WorkflowEventSchema,
-  // Types
+
+  // Internal Types (used by workflow code)
+  type InternalBaseEvent,
+  type InternalWorkflowEvent,
+  type InternalWorkflowStartedEvent,
+  type InternalWorkflowCompletedEvent,
+  type InternalWorkflowFailedEvent,
+  type InternalWorkflowPausedEvent,
+  type InternalWorkflowResumedEvent,
+  type InternalStepStartedEvent,
+  type InternalStepCompletedEvent,
+  type InternalStepFailedEvent,
+  type InternalRetryScheduledEvent,
+  type InternalRetryExhaustedEvent,
+  type InternalSleepStartedEvent,
+  type InternalSleepCompletedEvent,
+  type InternalTimeoutSetEvent,
+  type InternalTimeoutExceededEvent,
+
+  // Wire Types (sent to tracking service)
   type BaseEvent,
   type WorkflowEvent,
   type WorkflowEventType,

@@ -113,6 +113,8 @@ export interface TypedWorkflowEngine<W extends WorkflowRegistry> {
  *   tracker: {
  *     url: "https://tracker.example.com/api/events",
  *     accessToken: "your-token",
+ *     env: "production",
+ *     serviceKey: "order-service",
  *   },
  * });
  *

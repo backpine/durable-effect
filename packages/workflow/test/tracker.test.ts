@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Effect, Layer } from "effect";
-import type { WorkflowEvent, WorkflowStartedEvent } from "@durable-effect/core";
+import type { InternalWorkflowEvent, InternalWorkflowStartedEvent } from "@durable-effect/core";
 import { EventTracker, emitEvent, flushEvents } from "@/tracker";
 import { SimpleEventCapture } from "./mocks";
 
@@ -8,7 +8,7 @@ describe("EventTracker", () => {
   describe("emitEvent helper", () => {
     it("emits event when tracker is provided", async () => {
       const capture = new SimpleEventCapture();
-      const event: WorkflowStartedEvent = {
+      const event: InternalWorkflowStartedEvent = {
         eventId: "evt-1",
         timestamp: new Date().toISOString(),
         workflowId: "wf-1",
@@ -26,7 +26,7 @@ describe("EventTracker", () => {
     });
 
     it("is a no-op when tracker is not provided", async () => {
-      const event: WorkflowStartedEvent = {
+      const event: InternalWorkflowStartedEvent = {
         eventId: "evt-1",
         timestamp: new Date().toISOString(),
         workflowId: "wf-1",
@@ -41,7 +41,7 @@ describe("EventTracker", () => {
 
     it("emits multiple events in sequence", async () => {
       const capture = new SimpleEventCapture();
-      const events: WorkflowEvent[] = [
+      const events: InternalWorkflowEvent[] = [
         {
           eventId: "evt-1",
           timestamp: new Date().toISOString(),
@@ -121,7 +121,7 @@ describe("EventTracker", () => {
     });
 
     it("captures events by type", async () => {
-      const events: WorkflowEvent[] = [
+      const events: InternalWorkflowEvent[] = [
         {
           eventId: "1",
           timestamp: "",
