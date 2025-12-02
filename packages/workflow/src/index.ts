@@ -4,6 +4,7 @@ export { Workflow } from "@/workflow";
 // Engine
 export {
   createDurableWorkflows,
+  type CreateDurableWorkflowsOptions,
   type TypedWorkflowEngine,
   type WorkflowRunResult,
 } from "@/engine";

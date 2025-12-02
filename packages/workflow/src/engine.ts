@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient } from "@effect/platform";
 import {
   ExecutionContext,
   PauseSignal,
@@ -13,7 +14,12 @@ import {
   storeWorkflowMeta,
   loadWorkflowMeta,
 } from "@/services/workflow-context";
-import { emitEvent } from "@/tracker";
+import {
+  EventTracker,
+  emitEvent,
+  createHttpBatchTracker,
+  type EventTrackerConfig,
+} from "@/tracker";
 import { StepError } from "@/errors";
 import type {
   DurableWorkflowInstance,
@@ -21,6 +27,17 @@ import type {
   WorkflowRegistry,
   WorkflowStatus,
 } from "@/types";
+
+/**
+ * Options for creating a durable workflow engine.
+ */
+export interface CreateDurableWorkflowsOptions {
+  /**
+   * Optional event tracker configuration.
+   * If provided, workflow events will be sent to the specified endpoint.
+   */
+  readonly tracker?: EventTrackerConfig;
+}
 
 /**
  * Result returned when starting a workflow.
@@ -88,8 +105,16 @@ export interface TypedWorkflowEngine<W extends WorkflowRegistry> {
  *   ),
  * } as const;
  *
- * // Create the Durable Object class
+ * // Create the Durable Object class (without tracking)
  * export const MyWorkflows = createDurableWorkflows(workflows);
+ *
+ * // Create with event tracking
+ * export const TrackedWorkflows = createDurableWorkflows(workflows, {
+ *   tracker: {
+ *     url: "https://tracker.example.com/api/events",
+ *     accessToken: "your-token",
+ *   },
+ * });
  *
  * // Usage from Worker
  * const id = env.MY_WORKFLOWS.idFromName('order-123');
@@ -106,7 +131,10 @@ export interface TypedWorkflowEngine<W extends WorkflowRegistry> {
  */
 export function createDurableWorkflows<const T extends WorkflowRegistry>(
   workflows: T,
+  options?: CreateDurableWorkflowsOptions,
 ): new (state: DurableObjectState, env: unknown) => DurableWorkflowInstance<T> {
+  const trackerConfig = options?.tracker;
+
   return class DurableWorkflowEngine
     extends DurableObject
     implements TypedWorkflowEngine<T>
@@ -114,16 +142,17 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
     /** The workflows registry */
     readonly #workflows: T = workflows;
 
-    /** Currently active workflow name (if any) */
-    #currentWorkflow: keyof T | undefined;
+    /** Event tracker layer (if configured) */
+    readonly #trackerLayer: Layer.Layer<EventTracker> | undefined =
+      trackerConfig
+        ? Layer.scoped(
+            EventTracker,
+            createHttpBatchTracker(trackerConfig),
+          ).pipe(Layer.provide(FetchHttpClient.layer))
+        : undefined;
 
     constructor(state: DurableObjectState, env: unknown) {
       super(state, env as never);
-
-      // Load current workflow from storage on initialization
-      state.blockConcurrencyWhile(async () => {
-        this.#currentWorkflow = await this.ctx.storage.get("workflow:name");
-      });
     }
 
     /**
@@ -175,7 +204,6 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       });
 
       await Effect.runPromise(setupEffect);
-      this.#currentWorkflow = workflowName;
 
       // Execute the workflow
       await this.#executeWorkflow(workflowId, String(workflowName), input);
@@ -254,12 +282,19 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       );
 
       // Build the workflow effect with services provided
-      const workflowEffect = workflowDef
+      let workflowEffect = workflowDef
         .definition(input)
         .pipe(
           Effect.provideService(ExecutionContext, execCtx),
           Effect.provideService(WorkflowContext, workflowCtx),
         );
+
+      // Provide tracker layer if configured
+      if (this.#trackerLayer) {
+        workflowEffect = workflowEffect.pipe(
+          Effect.provide(this.#trackerLayer),
+        );
+      }
 
       // Execute and handle results
       const startTime = Date.now();
