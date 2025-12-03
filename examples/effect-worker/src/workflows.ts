@@ -158,7 +158,7 @@ export const Workflows = createDurableWorkflows(workflows, {
     env: "prod",
     serviceKey: "test-service",
     accessToken: "your-access-token",
-    url: "http://localhost:3000/sync",
+    url: "https://526449c1c9f6.ngrok-free.app/sync",
     batch: {
       maxSize: 5,
       maxWaitMs: 200,
