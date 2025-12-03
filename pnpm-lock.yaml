@@ -27,8 +27,8 @@ importers:
   examples/effect-worker:
     dependencies:
       '@durable-effect/workflow':
-        specifier: 0.0.1-next.10
-        version: 0.0.1-next.10(@cloudflare/workers-types@4.20251127.0)(@effect/platform@0.75.4(effect@3.19.8))(effect@3.19.8)
+        specifier: 0.0.1-next.13
+        version: 0.0.1-next.13(@cloudflare/workers-types@4.20251127.0)(@effect/platform@0.75.4(effect@3.19.8))(effect@3.19.8)
       '@effect/platform':
         specifier: 'catalog:'
         version: 0.75.4(effect@3.19.8)
@@ -155,14 +155,14 @@ packages:
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
     engines: {node: '>=12'}
 
-  '@durable-effect/core@0.0.1-next.3':
-    resolution: {integrity: sha512-2KgLkSD4EKlQVSKD4eMbTB/lsyHUrHXbkXkjB2wDv9gf6K+oZlqtQepi+uCwv3I8Nce4pdPJh2hj/Rlc0PGNPA==}
+  '@durable-effect/core@0.0.1-next.4':
+    resolution: {integrity: sha512-cGL3L/ry95cGjDwhMEls7w+S4YJfhomHYrApnOD1J1wpE0/fn/+mkMxEQicdoLsZehBbh9Zz37hNTkn+xroMEg==}
     peerDependencies:
       '@cloudflare/workers-types': ^4.0.0
       effect: ^3.19.8
 
-  '@durable-effect/workflow@0.0.1-next.10':
-    resolution: {integrity: sha512-LtqwRbrmaBg+EWmX7Dct9yxFXwU1tW3/SNVH/rWsyIzzzxt53tKd3N/KRB5/DlxHOC+VD1B+xo+Rfuy/gDBJuQ==}
+  '@durable-effect/workflow@0.0.1-next.13':
+    resolution: {integrity: sha512-CO7Go61pBa/JxE0g6kkaLuRfWo2qOTcHYVNDUt1Zt836nXeABzmcvdyfvDVVCNF+i8wmXZ96oSxyN+6slu+ebQ==}
     peerDependencies:
       '@cloudflare/workers-types': ^4.0.0
       '@effect/platform': ^0.75.0
@@ -1265,15 +1265,16 @@ snapshots:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
 
-  '@durable-effect/core@0.0.1-next.3(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)':
+  '@durable-effect/core@0.0.1-next.4(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)':
     dependencies:
       '@cloudflare/workers-types': 4.20251127.0
       effect: 3.19.8
+      uuid: 11.1.0
 
-  '@durable-effect/workflow@0.0.1-next.10(@cloudflare/workers-types@4.20251127.0)(@effect/platform@0.75.4(effect@3.19.8))(effect@3.19.8)':
+  '@durable-effect/workflow@0.0.1-next.13(@cloudflare/workers-types@4.20251127.0)(@effect/platform@0.75.4(effect@3.19.8))(effect@3.19.8)':
     dependencies:
       '@cloudflare/workers-types': 4.20251127.0
-      '@durable-effect/core': 0.0.1-next.3(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)
+      '@durable-effect/core': 0.0.1-next.4(@cloudflare/workers-types@4.20251127.0)(effect@3.19.8)
       '@effect/platform': 0.75.4(effect@3.19.8)
       effect: 3.19.8
 

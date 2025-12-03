@@ -99,13 +99,13 @@ const processOrderWorkflow = Workflow.make("processOrder", (orderId: string) =>
         Effect.log(`[[[confirmation error]]]: ${error}`),
       ),
     );
-    console.log("[workflow] About to sleep for 4 seconds");
-    yield* Workflow.sleep("4 seconds");
-    console.log("[workflow] About to sleep for 5 seconds");
-    yield* Workflow.sleep("5 seconds");
-    console.log("[workflow] About to sleep for 6 seconds");
-    yield* Workflow.sleep("6 seconds");
-    console.log("[workflow] done");
+    // console.log("[workflow] About to sleep for 4 seconds");
+    // yield* Workflow.sleep("4 seconds");
+    // console.log("[workflow] About to sleep for 5 seconds");
+    // yield* Workflow.sleep("5 seconds");
+    // console.log("[workflow] About to sleep for 6 seconds");
+    // yield* Workflow.sleep("6 seconds");
+    // console.log("[workflow] done");
   }),
 );
 
