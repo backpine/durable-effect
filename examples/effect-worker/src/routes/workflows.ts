@@ -30,9 +30,9 @@ export const postProcessOrder = (request: Request, env: Env) =>
     yield* Effect.log(`Starting workflow for order ${orderId}`);
     const result = yield* Effect.tryPromise({
       try: () =>
-        stub.run({
+        stub.runAsync({
           workflow: "processOrder",
-          input: orderId,
+          input: "test it",
         }),
       catch: (e) => new Error(`Failed to start workflow: ${e}`),
     });

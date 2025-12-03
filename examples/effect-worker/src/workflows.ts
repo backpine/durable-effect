@@ -32,7 +32,7 @@ const processPayment = (order: { id: string; amount: number }) =>
     );
 
     // Simulate occasional failure
-    if (Math.random() < 0.1) {
+    if (Math.random() < 0.3) {
       yield* Effect.log("Payment gateway temporarily unavailable");
       return yield* Effect.fail(
         new Error("Payment gateway temporarily unavailable"),
@@ -99,13 +99,13 @@ const processOrderWorkflow = Workflow.make("processOrder", (orderId: string) =>
         Effect.log(`[[[confirmation error]]]: ${error}`),
       ),
     );
-    console.log("[workflow] About to sleep for 4 seconds");
-    yield* Workflow.sleep("4 seconds");
-    console.log("[workflow] About to sleep for 5 seconds");
-    yield* Workflow.sleep("5 seconds");
-    console.log("[workflow] About to sleep for 6 seconds");
-    yield* Workflow.sleep("6 seconds");
-    console.log("[workflow] done");
+    // console.log("[workflow] About to sleep for 4 seconds");
+    // yield* Workflow.sleep("4 seconds");
+    // console.log("[workflow] About to sleep for 5 seconds");
+    // yield* Workflow.sleep("5 seconds");
+    // console.log("[workflow] About to sleep for 6 seconds");
+    // yield* Workflow.sleep("6 seconds");
+    // console.log("[workflow] done");
   }),
 );
 
@@ -158,7 +158,7 @@ export const Workflows = createDurableWorkflows(workflows, {
     env: "prod",
     serviceKey: "test-service",
     accessToken: "your-access-token",
-    url: "http://localhost:3000/sync",
+    url: "https://526449c1c9f6.ngrok-free.app/sync",
     batch: {
       maxSize: 5,
       maxWaitMs: 200,

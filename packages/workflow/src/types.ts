@@ -39,6 +39,7 @@ export interface TimeoutOptions {
  */
 export type WorkflowStatus =
   | { readonly _tag: "Pending" }
+  | { readonly _tag: "Queued"; readonly queuedAt: number }
   | { readonly _tag: "Running" }
   | {
       readonly _tag: "Paused";
