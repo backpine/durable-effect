@@ -4,6 +4,8 @@ export {
   createHttpBatchTracker,
   emitEvent,
   flushEvents,
+  noopTracker,
+  NoopTrackerLayer,
   type EventTrackerService,
 } from "./service";
 

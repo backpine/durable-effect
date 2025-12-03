@@ -11,6 +11,7 @@
 import {
   Context,
   Effect,
+  Layer,
   Queue,
   Fiber,
   Duration,
@@ -68,6 +69,29 @@ export class EventTracker extends Context.Tag("@durable-effect/EventTracker")<
   EventTracker,
   EventTrackerService
 >() {}
+
+// =============================================================================
+// No-Op Tracker (for when tracking is disabled)
+// =============================================================================
+
+/**
+ * No-op tracker implementation.
+ * Used when tracking is disabled - all operations are silent no-ops.
+ */
+export const noopTracker: EventTrackerService = {
+  emit: () => Effect.void,
+  flush: Effect.void,
+  pendingCount: Effect.succeed(0),
+};
+
+/**
+ * Layer that provides the no-op tracker.
+ * Use this when event tracking is disabled.
+ */
+export const NoopTrackerLayer: Layer.Layer<EventTracker> = Layer.succeed(
+  EventTracker,
+  noopTracker,
+);
 
 // =============================================================================
 // Safe Helpers (use with serviceOption)
