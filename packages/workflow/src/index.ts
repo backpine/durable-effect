@@ -5,9 +5,19 @@ export { Workflow } from "@/workflow";
 export {
   createDurableWorkflows,
   type CreateDurableWorkflowsOptions,
+  type CreateDurableWorkflowsResult,
   type TypedWorkflowEngine,
   type WorkflowRunResult,
 } from "@/engine";
+
+// Client
+export {
+  WorkflowClientError,
+  type WorkflowClientFactory,
+  type WorkflowClientInstance,
+  type WorkflowRunRequest,
+  type ExecutionOptions,
+} from "@/client";
 
 // Services
 export {

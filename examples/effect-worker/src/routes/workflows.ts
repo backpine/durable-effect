@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { WorkflowClient } from "../workflows";
 
 /**
  * GET /workflows - List available workflows
@@ -25,21 +26,20 @@ export const postProcessOrder = (request: Request, env: Env) =>
     const url = new URL(request.url);
     const orderId = url.searchParams.get("orderId") ?? `order-${Date.now()}`;
 
-    const id = env.WORKFLOWS.idFromName(orderId);
-    const stub = env.WORKFLOWS.get(id);
+    const client = WorkflowClient.fromBinding(env.WORKFLOWS);
+
     yield* Effect.log(`Starting workflow for order ${orderId}`);
-    const result = yield* Effect.tryPromise({
-      try: () =>
-        stub.runAsync({
-          workflow: "processOrder",
-          input: "test it",
-        }),
-      catch: (e) => new Error(`Failed to start workflow: ${e}`),
+
+    // Use orderId as the execution ID for idempotency
+    const { id } = yield* client.runAsync({
+      workflow: "processOrder2",
+      input: orderId,
+      execution: { id: orderId },
     });
 
     return Response.json({
       success: true,
-      workflowId: "d",
+      workflowId: id,
       orderId,
     });
   });
@@ -52,21 +52,17 @@ export const postGreet = (request: Request, env: Env) =>
     const url = new URL(request.url);
     const name = url.searchParams.get("name") ?? "World";
 
-    const id = env.WORKFLOWS.idFromName(`greet-${name}`);
-    const stub = env.WORKFLOWS.get(id);
+    const client = WorkflowClient.fromBinding(env.WORKFLOWS);
 
-    const result = yield* Effect.tryPromise({
-      try: () =>
-        stub.run({
-          workflow: "greet",
-          input: { name },
-        }),
-      catch: (e) => new Error(`Failed to start workflow: ${e}`),
+    // No execution config = random ID generated
+    const { id } = yield* client.runAsync({
+      workflow: "greet",
+      input: { name },
     });
 
     return Response.json({
       success: true,
-      workflowId: "result.id",
+      workflowId: id,
       name,
     });
   });
@@ -79,21 +75,18 @@ export const postScheduled = (request: Request, env: Env) =>
     const url = new URL(request.url);
     const taskId = url.searchParams.get("taskId") ?? `task-${Date.now()}`;
 
-    const id = env.WORKFLOWS.idFromName(taskId);
-    const stub = env.WORKFLOWS.get(id);
+    const client = WorkflowClient.fromBinding(env.WORKFLOWS);
 
-    const result = yield* Effect.tryPromise({
-      try: () =>
-        stub.run({
-          workflow: "scheduled",
-          input: taskId,
-        }),
-      catch: (e) => new Error(`Failed to start workflow: ${e}`),
+    // Use taskId as the execution ID
+    const { id } = yield* client.run({
+      workflow: "scheduled",
+      input: taskId,
+      execution: { id: taskId },
     });
 
     return Response.json({
       success: true,
-      workflowId: "result.id",
+      workflowId: id,
       taskId,
     });
   });
@@ -107,17 +100,11 @@ export const getWorkflowStatus = (
   instanceId: string,
 ) =>
   Effect.gen(function* () {
-    const id = env.WORKFLOWS.idFromName(instanceId);
-    const stub = env.WORKFLOWS.get(id);
+    const client = WorkflowClient.fromBinding(env.WORKFLOWS);
 
-    const [status, completedSteps] = yield* Effect.tryPromise({
-      try: async () => {
-        const status = await stub.getStatus();
-        const completedSteps = await stub.getCompletedSteps();
-        return [status, completedSteps] as const;
-      },
-      catch: (e) => new Error(`Failed to get workflow status: ${e}`),
-    });
+    // instanceId should be the full namespaced ID (e.g., "processOrder:order-123")
+    const status = yield* client.status(instanceId);
+    const completedSteps = yield* client.completedSteps(instanceId);
 
     return Response.json({
       instanceId,

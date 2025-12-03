@@ -22,6 +22,10 @@ import {
 } from "@/tracker";
 import { transitionWorkflow } from "@/transitions";
 import { StepError } from "@/errors";
+import {
+  createWorkflowClientFactory,
+  type WorkflowClientFactory,
+} from "@/client";
 import type {
   DurableWorkflowInstance,
   WorkflowCall,
@@ -38,6 +42,24 @@ export interface CreateDurableWorkflowsOptions {
    * If provided, workflow events will be sent to the specified endpoint.
    */
   readonly tracker?: EventTrackerConfig;
+}
+
+/**
+ * Result of creating durable workflows.
+ */
+export interface CreateDurableWorkflowsResult<T extends WorkflowRegistry> {
+  /**
+   * Durable Object class to export for Cloudflare Workers.
+   */
+  Workflows: new (
+    state: DurableObjectState,
+    env: unknown,
+  ) => DurableWorkflowInstance<T>;
+
+  /**
+   * Type-safe client factory for interacting with workflows.
+   */
+  WorkflowClient: WorkflowClientFactory<T>;
 }
 
 /**
@@ -148,12 +170,16 @@ export interface TypedWorkflowEngine<W extends WorkflowRegistry> {
  * // Check status
  * const status = await stub.getStatus();
  * const steps = await stub.getCompletedSteps();
+ *
+ * // Or use the type-safe client
+ * const client = WorkflowClient.fromBinding(env.MY_WORKFLOWS);
+ * yield* client.run({ workflow: 'processOrder', input: 'order-123' });
  * ```
  */
 export function createDurableWorkflows<const T extends WorkflowRegistry>(
   workflows: T,
   options?: CreateDurableWorkflowsOptions,
-): new (state: DurableObjectState, env: unknown) => DurableWorkflowInstance<T> {
+): CreateDurableWorkflowsResult<T> {
   const trackerConfig = options?.tracker;
 
   // Always create a tracker layer - use no-op if not configured
@@ -163,7 +189,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       )
     : NoopTrackerLayer;
 
-  return class DurableWorkflowEngine
+  class DurableWorkflowEngine
     extends DurableObject
     implements TypedWorkflowEngine<T>
   {
@@ -373,6 +399,11 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
     async getMeta<M>(key: string): Promise<M | undefined> {
       return this.ctx.storage.get(`workflow:meta:${key}`);
     }
+  }
+
+  return {
+    Workflows: DurableWorkflowEngine,
+    WorkflowClient: createWorkflowClientFactory<T>(),
   };
 }
 
