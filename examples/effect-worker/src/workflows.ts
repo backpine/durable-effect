@@ -32,7 +32,7 @@ const processPayment = (order: { id: string; amount: number }) =>
     );
 
     // Simulate occasional failure
-    if (Math.random() < 0.1) {
+    if (Math.random() < 0.3) {
       yield* Effect.log("Payment gateway temporarily unavailable");
       return yield* Effect.fail(
         new Error("Payment gateway temporarily unavailable"),

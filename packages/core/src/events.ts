@@ -73,6 +73,16 @@ export const InternalWorkflowStartedEventSchema = Schema.Struct({
 export type InternalWorkflowStartedEvent = Schema.Schema.Type<typeof InternalWorkflowStartedEventSchema>;
 
 /**
+ * Emitted when a workflow is queued for async execution.
+ */
+export const InternalWorkflowQueuedEventSchema = Schema.Struct({
+  ...InternalBaseEventFields,
+  type: Schema.Literal("workflow.queued"),
+  input: Schema.Unknown,
+});
+export type InternalWorkflowQueuedEvent = Schema.Schema.Type<typeof InternalWorkflowQueuedEventSchema>;
+
+/**
  * Emitted when a workflow completes successfully.
  */
 export const InternalWorkflowCompletedEventSchema = Schema.Struct({
@@ -267,6 +277,7 @@ export type InternalTimeoutExceededEvent = Schema.Schema.Type<typeof InternalTim
 export const InternalWorkflowEventSchema = Schema.Union(
   // Workflow lifecycle
   InternalWorkflowStartedEventSchema,
+  InternalWorkflowQueuedEventSchema,
   InternalWorkflowCompletedEventSchema,
   InternalWorkflowFailedEventSchema,
   InternalWorkflowPausedEventSchema,
@@ -302,6 +313,13 @@ export const WorkflowStartedEventSchema = Schema.Struct({
   input: Schema.Unknown,
 });
 export type WorkflowStartedEvent = Schema.Schema.Type<typeof WorkflowStartedEventSchema>;
+
+export const WorkflowQueuedEventSchema = Schema.Struct({
+  ...WireBaseEventFields,
+  type: Schema.Literal("workflow.queued"),
+  input: Schema.Unknown,
+});
+export type WorkflowQueuedEvent = Schema.Schema.Type<typeof WorkflowQueuedEventSchema>;
 
 export const WorkflowCompletedEventSchema = Schema.Struct({
   ...WireBaseEventFields,
@@ -423,6 +441,7 @@ export type TimeoutExceededEvent = Schema.Schema.Type<typeof TimeoutExceededEven
 export const WorkflowEventSchema = Schema.Union(
   // Workflow lifecycle
   WorkflowStartedEventSchema,
+  WorkflowQueuedEventSchema,
   WorkflowCompletedEventSchema,
   WorkflowFailedEventSchema,
   WorkflowPausedEventSchema,

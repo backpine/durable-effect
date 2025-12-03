@@ -35,8 +35,11 @@ export interface WorkflowTestHarness<Input> {
   /** Event capture (if provided) */
   readonly eventCapture?: SimpleEventCapture;
 
-  /** Run the workflow (simulates initial run()) */
+  /** Run the workflow synchronously (simulates run()) */
   run(input: Input): Promise<WorkflowRunResult>;
+
+  /** Queue the workflow for async execution (simulates runAsync()) */
+  runAsync(input: Input): Promise<WorkflowRunResult>;
 
   /** Simulate alarm firing (simulates alarm()) */
   triggerAlarm(): Promise<void>;
@@ -52,6 +55,9 @@ export interface WorkflowTestHarness<Input> {
 
   /** Run workflow to completion (auto-triggering alarms) */
   runToCompletion(input: Input, options?: { maxAlarms?: number }): Promise<void>;
+
+  /** Run workflow async to completion (queue then auto-trigger alarms) */
+  runAsyncToCompletion(input: Input, options?: { maxAlarms?: number }): Promise<void>;
 }
 
 /**
@@ -130,9 +136,23 @@ export function createWorkflowHarness<Input, E>(
       return { id: workflowId };
     },
 
+    async runAsync(input: Input): Promise<WorkflowRunResult> {
+      await storage.put("workflow:name", workflow.name);
+      await storage.put("workflow:input", input);
+      await storage.put("workflow:status", {
+        _tag: "Queued",
+        queuedAt: Date.now(),
+      } as WorkflowStatus);
+      // Schedule alarm 300ms from now (matching engine behavior)
+      await storage.setAlarm(Date.now() + 300);
+      return { id: workflowId };
+    },
+
     async triggerAlarm(): Promise<void> {
       const status = await storage.get<WorkflowStatus>("workflow:status");
-      if (status?._tag !== "Paused") return;
+
+      // Handle both Queued (first run) and Paused (resume)
+      if (status?._tag !== "Paused" && status?._tag !== "Queued") return;
 
       const input = await storage.get<Input>("workflow:input");
       await storage.put("workflow:status", { _tag: "Running" } as WorkflowStatus);
@@ -157,6 +177,29 @@ export function createWorkflowHarness<Input, E>(
     ): Promise<void> {
       const maxAlarms = options.maxAlarms ?? 10;
       await this.run(input);
+
+      for (let i = 0; i < maxAlarms; i++) {
+        const status = await this.getStatus();
+        if (status?._tag === "Completed" || status?._tag === "Failed") {
+          return;
+        }
+
+        const alarm = await storage.getAlarm();
+        if (!alarm) break;
+
+        // Advance time to alarm and trigger
+        vi.setSystemTime(alarm);
+        await storage.deleteAlarm();
+        await this.triggerAlarm();
+      }
+    },
+
+    async runAsyncToCompletion(
+      input: Input,
+      options: { maxAlarms?: number } = {},
+    ): Promise<void> {
+      const maxAlarms = options.maxAlarms ?? 10;
+      await this.runAsync(input);
 
       for (let i = 0; i < maxAlarms; i++) {
         const status = await this.getStatus();
