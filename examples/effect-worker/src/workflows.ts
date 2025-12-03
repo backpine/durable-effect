@@ -153,17 +153,6 @@ const workflows = {
   scheduled: scheduledWorkflow,
 } as const;
 
-export const Workflows = createDurableWorkflows(workflows, {
-  tracker: {
-    env: "prod",
-    serviceKey: "test-service",
-    accessToken: "your-access-token",
-    url: "https://526449c1c9f6.ngrok-free.app/sync",
-    batch: {
-      maxSize: 5,
-      maxWaitMs: 200,
-    },
-  },
-});
+export const Workflows = createDurableWorkflows(workflows);
 
 export type WorkflowsType = InstanceType<typeof Workflows>;
