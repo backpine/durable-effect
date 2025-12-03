@@ -154,6 +154,7 @@ export type WorkflowCall<W extends WorkflowRegistry> = {
 export interface DurableWorkflowInstance<W extends WorkflowRegistry>
   extends Rpc.DurableObjectBranded {
   run(call: WorkflowCall<W>): Promise<{ id: string }>;
+  runAsync(call: WorkflowCall<W>): Promise<{ id: string }>;
   getStatus(): Promise<WorkflowStatus | undefined>;
   getCompletedSteps(): Promise<ReadonlyArray<string>>;
   getMeta<T>(key: string): Promise<T | undefined>;

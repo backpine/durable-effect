@@ -51,12 +51,12 @@ const routes: Route[] = [
     handler: postProcessOrder,
   },
   {
-    method: "POST",
+    method: "GET",
     pattern: /^\/workflows\/greet$/,
     handler: postGreet,
   },
   {
-    method: "POST",
+    method: "GET",
     pattern: /^\/workflows\/scheduled$/,
     handler: postScheduled,
   },

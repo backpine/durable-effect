@@ -112,10 +112,12 @@ const processOrderWorkflow = Workflow.make("processOrder", (orderId: string) =>
 const greetWorkflow = Workflow.make("greet", (input: { name: string }) =>
   Effect.gen(function* () {
     yield* Effect.log(`=== Starting Greet Workflow ===`);
-
+    yield* Workflow.sleep("10 seconds");
     const greeting = yield* Workflow.step(
       "Generate greeting",
-      Effect.succeed(`Hello, ${input.name}!`),
+      Effect.gen(function* () {
+        return `hello ${input.name}`;
+      }),
     );
 
     yield* Effect.log(greeting);
@@ -144,15 +146,22 @@ const scheduledWorkflow = Workflow.make("scheduled", (taskId: string) =>
 );
 
 // =============================================================================
-// Export Durable Object Class
+// Export Durable Object Class and Client
 // =============================================================================
 
 const workflows = {
   processOrder: processOrderWorkflow,
+  processOrder2: processOrderWorkflow,
   greet: greetWorkflow,
   scheduled: scheduledWorkflow,
 } as const;
 
-export const Workflows = createDurableWorkflows(workflows);
-
-export type WorkflowsType = InstanceType<typeof Workflows>;
+export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
+  tracker: {
+    env: "production",
+    serviceKey: "my-app",
+    url: "http://localhost:3000/sync",
+    accessToken: "token",
+  },
+});
+export type WorkflowsType = typeof Workflows;

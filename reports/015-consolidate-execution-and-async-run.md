@@ -244,3 +244,15 @@ export const InternalWorkflowQueuedEventSchema = Schema.Struct({
 7. Add `runAsync()` method
 8. Add `runAsync` to `TypedWorkflowEngine` interface
 9. Tests
+
+
+
+```ts
+export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows);
+// Workflows - durable object class that will be used for cloudflare export
+// WorkflowClient - effecful service that will allow for operations
+
+##### Useage in effect
+const client = WorkflowClient.createFromBinding(env.WORKFLOW);
+yield* client.runAsync("workflowname", { some: "data" })
+```
