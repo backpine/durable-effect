@@ -122,7 +122,7 @@ const workflows = {
 	scheduled: scheduledWorkflow,
 } as const;
 
-export const OrderWorkflows = createDurableWorkflows(workflows);
+export const { Workflows: OrderWorkflows, WorkflowClient } = createDurableWorkflows(workflows);
 
 // Export types for use in index.ts
 export type OrderWorkflowsType = InstanceType<typeof OrderWorkflows>;

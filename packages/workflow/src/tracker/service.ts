@@ -12,11 +12,9 @@ import {
   Context,
   Effect,
   Layer,
-  Queue,
-  Fiber,
+  Ref,
   Duration,
   Schedule,
-  Chunk,
   Scope,
   Option,
 } from "effect";
@@ -127,11 +125,11 @@ export const flushEvents: Effect.Effect<void> = Effect.gen(function* () {
 // =============================================================================
 
 /**
- * Create an EventTrackerService with queue-based HTTP batch delivery.
+ * Create an EventTrackerService with Ref-based HTTP batch delivery.
  *
- * Events are collected into batches and sent when:
- * 1. `maxSize` events are collected, OR
- * 2. `maxWaitMs` elapses since the first event in the batch
+ * Events are accumulated in a Ref and sent synchronously when flush is called.
+ * This approach avoids the race condition that occurs with background consumers
+ * in short-lived Cloudflare Workers environments.
  *
  * The tracker automatically enriches events with env and serviceKey
  * from the config before sending them.
@@ -145,12 +143,11 @@ export const flushEvents: Effect.Effect<void> = Effect.gen(function* () {
  *       accessToken: "your-token",
  *       env: "production",
  *       serviceKey: "order-service",
- *       batch: { maxSize: 50, maxWaitMs: 1000 },
  *     });
  *
  *     // Events are enriched with env/serviceKey automatically
  *     yield* tracker.emit(internalEvent);
- *     yield* tracker.flush;
+ *     yield* tracker.flush; // Send all accumulated events
  *   })
  * ).pipe(Effect.provide(FetchHttpClient.layer));
  * ```
@@ -167,8 +164,6 @@ export const createHttpBatchTracker = (
     const { env, serviceKey } = config;
 
     // Apply defaults
-    const maxSize = config.batch?.maxSize ?? 50;
-    const maxWaitMs = config.batch?.maxWaitMs ?? 1000;
     const maxRetries = config.retry?.maxAttempts ?? 3;
     const initialDelay = config.retry?.initialDelayMs ?? 100;
     const maxDelay = config.retry?.maxDelayMs ?? 5000;
@@ -177,12 +172,8 @@ export const createHttpBatchTracker = (
     // Get HTTP client from context
     const httpClient = yield* HttpClient.HttpClient;
 
-    // Sliding queue - drops oldest events when full (back-pressure protection)
-    // Stores internal events (without env/serviceKey)
-    const eventQueue = yield* Queue.sliding<InternalWorkflowEvent>(1000);
-
-    // Signal for manual flush
-    const flushSignal = yield* Queue.unbounded<void>();
+    // Accumulate events in a Ref (no background consumer needed)
+    const eventsRef = yield* Ref.make<InternalWorkflowEvent[]>([]);
 
     /**
      * Send a batch of events via HTTP POST.
@@ -228,71 +219,18 @@ export const createHttpBatchTracker = (
       });
 
     /**
-     * Background consumer that collects events into batches.
-     * Sends batch when:
-     * 1. maxSize events collected, OR
-     * 2. maxWaitMs elapsed since first event in batch
+     * Flush all accumulated events.
+     * Atomically takes all events and sends them.
      */
-    const consumer: Effect.Effect<void> = Effect.gen(function* () {
-      while (true) {
-        // Wait for first event (blocks until available)
-        const firstEvent = yield* Queue.take(eventQueue);
-        const batch: InternalWorkflowEvent[] = [firstEvent];
-        const batchStartTime = Date.now();
-
-        // Collect more events until maxSize or maxWaitMs
-        while (batch.length < maxSize) {
-          const elapsed = Date.now() - batchStartTime;
-          const remaining = Math.max(0, maxWaitMs - elapsed);
-
-          if (remaining === 0) break;
-
-          // Race: get next event OR flush signal OR timeout
-          const result = yield* Effect.raceAll([
-            Queue.take(eventQueue).pipe(
-              Effect.map((e) => ({ _tag: "event" as const, event: e })),
-            ),
-            Queue.take(flushSignal).pipe(
-              Effect.map(() => ({ _tag: "flush" as const })),
-            ),
-            Effect.sleep(Duration.millis(remaining)).pipe(
-              Effect.map(() => ({ _tag: "timeout" as const })),
-            ),
-          ]);
-
-          if (result._tag === "event") {
-            batch.push(result.event);
-          } else {
-            // Flush signal or timeout - send what we have
-            break;
-          }
-        }
-
-        // Send the collected batch (enrichment happens inside sendBatch)
-        yield* sendBatch(batch);
-      }
+    const flush: Effect.Effect<void> = Effect.gen(function* () {
+      const events = yield* Ref.getAndSet(eventsRef, []);
+      yield* sendBatch(events);
     });
 
-    // Start background consumer
-    const consumerFiber = yield* Effect.fork(consumer);
-
-    // Cleanup on scope close
+    // Cleanup on scope close - flush any remaining events
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
-        // Signal flush for any remaining events
-        yield* Queue.offer(flushSignal, undefined);
-
-        // Take any remaining events and send them
-        const remaining = yield* Queue.takeAll(eventQueue);
-        if (Chunk.size(remaining) > 0) {
-          yield* sendBatch(Chunk.toReadonlyArray(remaining));
-        }
-
-        // Shutdown queues
-        yield* Queue.shutdown(eventQueue);
-        yield* Queue.shutdown(flushSignal);
-        yield* Fiber.interrupt(consumerFiber);
-
+        yield* flush;
         yield* Effect.logDebug("Event tracker shutdown complete");
       }),
     );
@@ -300,10 +238,10 @@ export const createHttpBatchTracker = (
     // Return service implementation
     return {
       emit: (event: InternalWorkflowEvent): Effect.Effect<void> =>
-        Queue.offer(eventQueue, event).pipe(Effect.asVoid),
+        Ref.update(eventsRef, (events) => [...events, event]),
 
-      flush: Queue.offer(flushSignal, undefined).pipe(Effect.asVoid),
+      flush,
 
-      pendingCount: Queue.size(eventQueue),
+      pendingCount: Ref.get(eventsRef).pipe(Effect.map((events) => events.length)),
     };
   });
