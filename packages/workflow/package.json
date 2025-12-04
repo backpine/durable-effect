@@ -1,6 +1,6 @@
 {
   "name": "@durable-effect/workflow",
-  "version": "0.0.1-next.15",
+  "version": "0.0.1-next.16",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",

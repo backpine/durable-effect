@@ -15,6 +15,9 @@ export interface WorkflowContextService {
   /** Input passed to the workflow */
   readonly input: unknown;
 
+  /** Optional user-provided execution ID for correlation (persists across lifecycle) */
+  readonly executionId: string | undefined;
+
   /** Get workflow-level metadata */
   readonly getMeta: <T>(
     key: string,
@@ -94,12 +97,19 @@ const workflowKey = (suffix: string) => `workflow:${suffix}`;
 
 /**
  * Create a WorkflowContext service for a workflow execution.
+ *
+ * @param workflowId - Durable Object ID
+ * @param workflowName - Workflow definition name
+ * @param input - Input passed to the workflow
+ * @param storage - Durable Object storage
+ * @param executionId - Optional user-provided ID for correlation (persists across lifecycle)
  */
 export function createWorkflowContext(
   workflowId: string,
   workflowName: string,
   input: unknown,
   storage: DurableObjectStorage,
+  executionId?: string,
 ): WorkflowContextService {
   // Runtime pause counter - resets each workflow execution
   let pauseCounter = 0;
@@ -108,6 +118,7 @@ export function createWorkflowContext(
     workflowId,
     workflowName,
     input,
+    executionId,
 
     getMeta: <T>(key: string) =>
       Effect.tryPromise({
@@ -194,18 +205,25 @@ export function setWorkflowStatus(
 }
 
 /**
- * Store workflow metadata (name and input) in storage.
+ * Store workflow metadata (name, input, and executionId) in storage.
+ *
+ * @param storage - Durable Object storage
+ * @param workflowName - Workflow definition name
+ * @param input - Input passed to the workflow
+ * @param executionId - Optional user-provided ID for correlation
  */
 export function storeWorkflowMeta(
   storage: DurableObjectStorage,
   workflowName: string,
   input: unknown,
+  executionId?: string,
 ): Effect.Effect<void, UnknownException> {
   return Effect.tryPromise({
     try: () =>
       storage.put({
         [workflowKey("name")]: workflowName,
         [workflowKey("input")]: input,
+        [workflowKey("executionId")]: executionId,
       }),
     catch: (e) => new UnknownException(e),
   });
@@ -213,20 +231,22 @@ export function storeWorkflowMeta(
 
 /**
  * Load workflow metadata from storage.
+ * Returns workflowName, input, and executionId (if stored).
  */
 export function loadWorkflowMeta(
   storage: DurableObjectStorage,
 ): Effect.Effect<
-  { workflowName: string | undefined; input: unknown },
+  { workflowName: string | undefined; input: unknown; executionId: string | undefined },
   UnknownException
 > {
   return Effect.tryPromise({
     try: async () => {
-      const [workflowName, input] = await Promise.all([
+      const [workflowName, input, executionId] = await Promise.all([
         storage.get<string>(workflowKey("name")),
         storage.get<unknown>(workflowKey("input")),
+        storage.get<string>(workflowKey("executionId")),
       ]);
-      return { workflowName, input };
+      return { workflowName, input, executionId };
     },
     catch: (e) => new UnknownException(e),
   });
