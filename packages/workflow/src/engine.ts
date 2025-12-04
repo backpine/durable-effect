@@ -34,24 +34,6 @@ import type {
 } from "@/types";
 
 /**
- * Extract the executionId from a workflowId.
- *
- * The workflowId format is "{workflow}:{executionId}" where executionId
- * is either user-provided or auto-generated UUID.
- *
- * @example
- * extractExecutionId("order:order-123") // => "order-123"
- * extractExecutionId("order:550e8400-e29b-41d4-a716-446655440000") // => "550e8400-e29b-41d4-a716-446655440000"
- */
-function extractExecutionId(workflowId: string): string | undefined {
-  const colonIndex = workflowId.indexOf(":");
-  if (colonIndex === -1) {
-    return undefined;
-  }
-  return workflowId.slice(colonIndex + 1);
-}
-
-/**
  * Options for creating a durable workflow engine.
  */
 export interface CreateDurableWorkflowsOptions {
@@ -226,11 +208,8 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
      * Idempotent - if workflow already running/completed, returns existing state.
      */
     async run(call: WorkflowCall<T>): Promise<WorkflowRunResult> {
-      const { workflow: workflowName, input } = call;
+      const { workflow: workflowName, input, executionId } = call;
       const workflowId = this.ctx.id.toString();
-
-      // Extract executionId from workflowId (format: "{workflow}:{executionId}")
-      const executionId = extractExecutionId(workflowId);
 
       // Check if workflow already exists (idempotent)
       const existingStatus =
@@ -275,12 +254,9 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
      * Returns immediately after queueing - workflow executes via alarm.
      */
     async runAsync(call: WorkflowCall<T>): Promise<WorkflowRunResult> {
-      const { workflow: workflowName, input } = call;
+      const { workflow: workflowName, input, executionId } = call;
       const workflowId = this.ctx.id.toString();
       const storage = this.ctx.storage;
-
-      // Extract executionId from workflowId (format: "{workflow}:{executionId}")
-      const executionId = extractExecutionId(workflowId);
 
       // Check if workflow already exists (idempotent)
       const existingStatus =
