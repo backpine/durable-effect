@@ -23,8 +23,11 @@ export {
 export {
   WorkflowContext,
   StepContext,
+  WorkflowScope,
+  StepSleepForbiddenError,
   type WorkflowContextService,
   type StepContextService,
+  type ForbidWorkflowScope,
 } from "@/services";
 
 // Tracker

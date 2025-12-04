@@ -2,10 +2,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { Effect, Exit } from "effect";
 import { ExecutionContext, PauseSignal } from "@durable-effect/core";
 import { WorkflowContext } from "@/services/workflow-context";
+import { WorkflowScope } from "@/services/workflow-scope";
 import { StepContext } from "@/services/step-context";
 import { Workflow } from "@/workflow";
 import { StepError } from "@/errors";
-import { createTestContexts, MockStorage } from "./mocks";
+import { createTestContexts, testWorkflowScope, MockStorage } from "./mocks";
 
 describe("Workflow.step", () => {
   let storage: MockStorage;
@@ -25,11 +26,12 @@ describe("Workflow.step", () => {
    * Helper to run a step effect with contexts provided.
    */
   function runStep<T, E>(
-    stepEffect: Effect.Effect<T, E, ExecutionContext | WorkflowContext>,
+    stepEffect: Effect.Effect<T, E, WorkflowScope | ExecutionContext | WorkflowContext>,
   ) {
     return stepEffect.pipe(
       Effect.provideService(ExecutionContext, executionContext),
       Effect.provideService(WorkflowContext, workflowContext),
+      Effect.provideService(WorkflowScope, testWorkflowScope),
     );
   }
 
@@ -505,7 +507,10 @@ describe("Workflow.step", () => {
       expect(result).toBe("async-result");
     });
 
-    it("handles Effect.sleep", async () => {
+    it("handles Effect.sleep (allowed for timeout racing)", async () => {
+      // Effect.sleep is allowed inside steps because Effect.timeoutFail
+      // uses it internally for timeout racing. Workflow.sleep is still
+      // forbidden at compile time via ForbidWorkflowScope.
       const step = Workflow.step(
         "SleepStep",
         Effect.gen(function* () {

@@ -7,6 +7,7 @@ import {
   loadStepAttempt,
 } from "@/services/step-context";
 import { WorkflowContext } from "@/services/workflow-context";
+import { WorkflowScope, type ForbidWorkflowScope } from "@/services/workflow-scope";
 import { emitEvent } from "@/tracker";
 import type {
   DurableWorkflow,
@@ -75,11 +76,11 @@ export namespace Workflow {
    */
   export function step<T, E, R>(
     name: string,
-    effect: Effect.Effect<T, E, R>,
+    effect: Effect.Effect<T, E, ForbidWorkflowScope<R>>,
   ): Effect.Effect<
     T,
     E | StepError | PauseSignal | UnknownException,
-    Exclude<R, StepContext> | ExecutionContext | WorkflowContext
+    WorkflowScope | Exclude<R, StepContext> | ExecutionContext | WorkflowContext
   > {
     return Effect.gen(function* () {
       const { storage } = yield* ExecutionContext;
@@ -120,6 +121,9 @@ export namespace Workflow {
       });
 
       // Execute effect with StepContext provided
+      // Note: We don't inject StepClock here because Effect.timeoutFail uses
+      // Effect.sleep internally for timeout racing. Compile-time enforcement
+      // via ForbidWorkflowScope prevents Workflow.sleep and nested Workflow.step.
       const result = yield* effect.pipe(
         Effect.provideService(StepContext, stepCtx),
         Effect.either,
@@ -409,7 +413,7 @@ export namespace Workflow {
   ): Effect.Effect<
     void,
     PauseSignal | UnknownException,
-    ExecutionContext | WorkflowContext
+    WorkflowScope | ExecutionContext | WorkflowContext
   > {
     return Effect.gen(function* () {
       const ctx = yield* ExecutionContext;

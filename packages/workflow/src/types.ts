@@ -1,5 +1,6 @@
 import type { Duration, Effect, Schema } from "effect";
 import type { WorkflowContext } from "@/services/workflow-context";
+import type { WorkflowScope } from "@/services/workflow-scope";
 import type { ExecutionContext } from "@durable-effect/core";
 
 // =============================================================================
@@ -60,7 +61,7 @@ export type WorkflowStatus =
 /**
  * Context requirements provided by the workflow engine.
  */
-export type ProvidedContext = WorkflowContext | ExecutionContext;
+export type ProvidedContext = WorkflowScope | WorkflowContext | ExecutionContext;
 
 /**
  * A workflow definition function.

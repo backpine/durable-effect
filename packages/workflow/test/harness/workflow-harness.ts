@@ -5,9 +5,10 @@ import {
   WorkflowContext,
   createWorkflowContext,
 } from "@/services/workflow-context";
+import { WorkflowScope } from "@/services/workflow-scope";
 import { EventTracker } from "@/tracker";
 import type { DurableWorkflow, WorkflowStatus } from "@/types";
-import { MockStorage, createMockExecutionContext, SimpleEventCapture } from "../mocks";
+import { MockStorage, createMockExecutionContext, testWorkflowScope, SimpleEventCapture } from "../mocks";
 
 /**
  * Result returned when starting a workflow.
@@ -90,6 +91,7 @@ export function createWorkflowHarness<Input, E>(
     let effect = workflow.definition(input).pipe(
       Effect.provideService(ExecutionContext, execCtx),
       Effect.provideService(WorkflowContext, workflowCtx),
+      Effect.provideService(WorkflowScope, testWorkflowScope),
     );
 
     // Provide tracker layer if event capture is provided
