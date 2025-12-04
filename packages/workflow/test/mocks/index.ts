@@ -3,6 +3,8 @@ export {
   createMockExecutionContext,
   createMockWorkflowContext,
   createTestContexts,
+  provideTestContexts,
+  testWorkflowScope,
   type TestContextOptions,
 } from "./contexts";
 export {

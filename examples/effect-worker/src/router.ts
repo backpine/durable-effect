@@ -5,9 +5,7 @@ import { getHealth, getHealthReady } from "./routes/health";
 import {
   getWorkflows,
   getWorkflowStatus,
-  postProcessOrder,
-  postGreet,
-  postScheduled,
+  getProcessOrder,
 } from "./routes/workflows";
 
 /**
@@ -48,17 +46,7 @@ const routes: Route[] = [
   {
     method: "GET",
     pattern: /^\/workflows\/processOrder$/,
-    handler: postProcessOrder,
-  },
-  {
-    method: "GET",
-    pattern: /^\/workflows\/greet$/,
-    handler: postGreet,
-  },
-  {
-    method: "GET",
-    pattern: /^\/workflows\/scheduled$/,
-    handler: postScheduled,
+    handler: getProcessOrder,
   },
   {
     method: "GET",

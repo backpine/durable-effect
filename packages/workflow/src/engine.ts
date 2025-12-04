@@ -13,6 +13,7 @@ import {
   storeWorkflowMeta,
   loadWorkflowMeta,
 } from "@/services/workflow-context";
+import { WorkflowScope } from "@/services/workflow-scope";
 import {
   EventTracker,
   flushEvents,
@@ -373,6 +374,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
           .pipe(
             Effect.provideService(ExecutionContext, execCtx),
             Effect.provideService(WorkflowContext, workflowCtx),
+            Effect.provideService(WorkflowScope, { _brand: "WorkflowScope" as const }),
             Effect.exit,
           );
 

@@ -1,9 +1,15 @@
 import { Effect, Option } from "effect";
 import { UnknownException } from "effect/Cause";
-import type { ExecutionContextService } from "@durable-effect/core";
-import type { WorkflowContextService } from "@/services/workflow-context";
+import { ExecutionContext, type ExecutionContextService } from "@durable-effect/core";
+import { WorkflowContext, type WorkflowContextService } from "@/services/workflow-context";
+import { WorkflowScope } from "@/services/workflow-scope";
 import type { WorkflowStatus } from "@/types";
 import { MockStorage } from "./storage";
+
+/**
+ * WorkflowScope value for testing.
+ */
+export const testWorkflowScope = { _brand: "WorkflowScope" as const };
 
 /**
  * Create a mock ExecutionContext service.
@@ -150,4 +156,19 @@ export function createTestContexts(options: TestContextOptions = {}) {
     executionContext,
     workflowContext,
   };
+}
+
+/**
+ * Helper to run an effect with all workflow contexts provided.
+ * Includes ExecutionContext, WorkflowContext, and WorkflowScope.
+ */
+export function provideTestContexts<T, E>(
+  effect: Effect.Effect<T, E, ExecutionContext | WorkflowContext | WorkflowScope>,
+  contexts: ReturnType<typeof createTestContexts>,
+) {
+  return effect.pipe(
+    Effect.provideService(ExecutionContext, contexts.executionContext),
+    Effect.provideService(WorkflowContext, contexts.workflowContext),
+    Effect.provideService(WorkflowScope, testWorkflowScope),
+  );
 }

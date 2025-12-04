@@ -3,8 +3,9 @@ import { Duration, Effect, Exit } from "effect";
 import { UnknownException } from "effect/Cause";
 import { ExecutionContext, PauseSignal } from "@durable-effect/core";
 import { WorkflowContext } from "@/services/workflow-context";
+import { WorkflowScope } from "@/services/workflow-scope";
 import { Workflow } from "@/workflow";
-import { createTestContexts, MockStorage } from "./mocks";
+import { createTestContexts, testWorkflowScope, MockStorage } from "./mocks";
 
 describe("Workflow.sleep", () => {
   let storage: MockStorage;
@@ -34,12 +35,13 @@ describe("Workflow.sleep", () => {
     sleepEffect: Effect.Effect<
       void,
       PauseSignal | UnknownException,
-      ExecutionContext | WorkflowContext
+      WorkflowScope | ExecutionContext | WorkflowContext
     >,
   ) {
     return sleepEffect.pipe(
       Effect.provideService(ExecutionContext, executionContext),
       Effect.provideService(WorkflowContext, workflowContext),
+      Effect.provideService(WorkflowScope, testWorkflowScope),
       Effect.runPromiseExit,
     );
   }
@@ -314,31 +316,7 @@ describe("Workflow.sleep", () => {
   // ============================================================
   // Integration with Step
   // ============================================================
-
-  describe("integration-with-step", () => {
-    it("sleep inside step raises PauseSignal that propagates", async () => {
-      const contexts = createTestContexts();
-      vi.setSystemTime(0);
-
-      const stepWithSleep = Workflow.step(
-        "WaitStep",
-        Effect.gen(function* () {
-          yield* Workflow.sleep("5 seconds");
-          return "done";
-        }),
-      );
-
-      const exit = await stepWithSleep.pipe(
-        Effect.provideService(ExecutionContext, contexts.executionContext),
-        Effect.provideService(Workflow.Context, contexts.workflowContext),
-        Effect.runPromiseExit,
-      );
-
-      expect(exit._tag).toBe("Failure");
-      if (exit._tag === "Failure" && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(PauseSignal);
-        expect((exit.cause.error as PauseSignal).reason).toBe("sleep");
-      }
-    });
-  });
+  // NOTE: Workflow.sleep inside a step is now forbidden at compile time.
+  // The type system prevents `Workflow.step("x", Workflow.sleep(...))`.
+  // See test/type-tests/workflow-scope.test-d.ts for type-level tests.
 });
