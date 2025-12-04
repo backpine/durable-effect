@@ -208,7 +208,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
      * Idempotent - if workflow already running/completed, returns existing state.
      */
     async run(call: WorkflowCall<T>): Promise<WorkflowRunResult> {
-      const { workflow: workflowName, input } = call;
+      const { workflow: workflowName, input, executionId } = call;
       const workflowId = this.ctx.id.toString();
 
       // Check if workflow already exists (idempotent)
@@ -231,9 +231,9 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
         throw new Error(`Unknown workflow: ${String(workflowName)}`);
       }
 
-      // Store metadata first
+      // Store metadata first (including executionId for persistence across lifecycle)
       await Effect.runPromise(
-        storeWorkflowMeta(this.ctx.storage, String(workflowName), input),
+        storeWorkflowMeta(this.ctx.storage, String(workflowName), input, executionId),
       );
 
       // Execute workflow with Start transition
@@ -243,6 +243,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
         workflowId,
         String(workflowName),
         { _tag: "Start", input },
+        executionId,
       );
 
       return { id: workflowId };
@@ -253,7 +254,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
      * Returns immediately after queueing - workflow executes via alarm.
      */
     async runAsync(call: WorkflowCall<T>): Promise<WorkflowRunResult> {
-      const { workflow: workflowName, input } = call;
+      const { workflow: workflowName, input, executionId } = call;
       const workflowId = this.ctx.id.toString();
       const storage = this.ctx.storage;
 
@@ -273,14 +274,14 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
 
       const name = String(workflowName);
 
-      // Store metadata and transition to queued
+      // Store metadata and transition to queued (executionId persisted for alarm handler)
       await Effect.runPromise(
         Effect.gen(function* () {
-          yield* storeWorkflowMeta(storage, name, input);
+          yield* storeWorkflowMeta(storage, name, input, executionId);
           yield* transitionWorkflow(storage, workflowId, name, {
             _tag: "Queue",
             input,
-          });
+          }, executionId);
         }).pipe(Effect.provide(this.#trackerLayer)),
       );
 
@@ -302,7 +303,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
         return;
       }
 
-      // Load workflow metadata
+      // Load workflow metadata (includes executionId for event correlation)
       const meta = await Effect.runPromise(loadWorkflowMeta(this.ctx.storage));
 
       if (!meta.workflowName) {
@@ -313,6 +314,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       const workflowId = this.ctx.id.toString();
       const workflowName = meta.workflowName;
       const input = meta.input;
+      const executionId = meta.executionId;
 
       const workflowDef = this.#workflows[workflowName as keyof T];
       if (!workflowDef) {
@@ -321,7 +323,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
             _tag: "Fail",
             error: { message: `Unknown workflow: ${workflowName}` },
             completedSteps: [],
-          }).pipe(Effect.provide(this.#trackerLayer)),
+          }, executionId).pipe(Effect.provide(this.#trackerLayer)),
         );
         return;
       }
@@ -336,6 +338,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
         workflowId,
         workflowName,
         transition,
+        executionId,
       );
     }
 
@@ -349,6 +352,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       workflowId: string,
       workflowName: string,
       transition: { _tag: "Start"; input: unknown } | { _tag: "Resume" },
+      executionId?: string,
     ): Promise<void> {
       const storage = this.ctx.storage;
       const execCtx = createExecutionContext(this.ctx);
@@ -357,10 +361,11 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
         workflowName,
         input,
         storage,
+        executionId,
       );
 
       const execution = Effect.gen(function* () {
-        yield* transitionWorkflow(storage, workflowId, workflowName, transition);
+        yield* transitionWorkflow(storage, workflowId, workflowName, transition, executionId);
 
         const startTime = Date.now();
         const result = yield* workflowDef
@@ -377,6 +382,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
           workflowId,
           workflowName,
           startTime,
+          executionId,
         );
 
         yield* flushEvents;
@@ -429,6 +435,7 @@ function handleWorkflowResult<E>(
   workflowId: string,
   workflowName: string,
   startTime: number,
+  executionId?: string,
 ): Effect.Effect<void, UnknownException> {
   return Effect.gen(function* () {
     if (Exit.isSuccess(result)) {
@@ -437,7 +444,7 @@ function handleWorkflowResult<E>(
         _tag: "Complete",
         completedSteps,
         durationMs: Date.now() - startTime,
-      });
+      }, executionId);
       return;
     }
 
@@ -455,7 +462,7 @@ function handleWorkflowResult<E>(
         reason: signal.reason,
         resumeAt: signal.resumeAt,
         stepName: signal.stepName,
-      });
+      }, executionId);
       return;
     }
 
@@ -489,6 +496,6 @@ function handleWorkflowResult<E>(
         attempt,
       },
       completedSteps,
-    });
+    }, executionId);
   });
 }

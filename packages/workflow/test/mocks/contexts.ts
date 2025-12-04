@@ -30,12 +30,14 @@ export function createMockWorkflowContext(
     workflowId?: string;
     workflowName?: string;
     input?: unknown;
+    executionId?: string;
   } = {},
 ): WorkflowContextService {
   const {
     workflowId = "test-workflow-id",
     workflowName = "testWorkflow",
     input = {},
+    executionId,
   } = options;
 
   // Runtime pause counter - resets each workflow execution
@@ -45,6 +47,7 @@ export function createMockWorkflowContext(
     workflowId,
     workflowName,
     input,
+    executionId,
 
     getMeta: <T>(key: string) =>
       Effect.tryPromise({

@@ -58,6 +58,9 @@ export const postGreet = (request: Request, env: Env) =>
     const { id } = yield* client.runAsync({
       workflow: "greet",
       input: { name },
+      execution: {
+        id: "yteste",
+      },
     });
 
     return Response.json({

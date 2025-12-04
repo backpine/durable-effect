@@ -34,6 +34,8 @@ const InternalBaseEventFields = {
   workflowId: Schema.String,
   /** Workflow definition name */
   workflowName: Schema.String,
+  /** Optional user-provided execution ID for correlation */
+  executionId: Schema.optional(Schema.String),
 };
 
 export const InternalBaseEventSchema = Schema.Struct(InternalBaseEventFields);
@@ -479,16 +481,22 @@ export type WorkflowEventType = WorkflowEvent["type"];
 /**
  * Create the base fields for an internal event.
  * Does NOT include env/serviceKey - the tracker adds those.
+ *
+ * @param workflowId - Durable Object ID
+ * @param workflowName - Workflow definition name
+ * @param executionId - Optional user-provided ID for correlation (persists across lifecycle)
  */
 export function createBaseEvent(
   workflowId: string,
   workflowName: string,
+  executionId?: string,
 ): InternalBaseEvent {
   return {
     eventId: uuidv7(),
     timestamp: new Date().toISOString(),
     workflowId,
     workflowName,
+    ...(executionId && { executionId }),
   };
 }
 

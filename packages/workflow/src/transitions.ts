@@ -55,20 +55,26 @@ export type WorkflowTransition =
  * This ensures status and events are always in sync. Every workflow state
  * change goes through this function.
  *
+ * @param storage - Durable Object storage
+ * @param workflowId - Durable Object ID
+ * @param workflowName - Workflow definition name
+ * @param t - The transition to execute
+ * @param executionId - Optional user-provided ID for event correlation
+ *
  * @example
  * ```typescript
  * // Start a workflow
  * yield* transitionWorkflow(storage, workflowId, workflowName, {
  *   _tag: "Start",
  *   input: { orderId: "123" },
- * });
+ * }, executionId);
  *
  * // Complete a workflow
  * yield* transitionWorkflow(storage, workflowId, workflowName, {
  *   _tag: "Complete",
  *   completedSteps: ["step1", "step2"],
  *   durationMs: 1500,
- * });
+ * }, executionId);
  * ```
  */
 export const transitionWorkflow = (
@@ -76,9 +82,10 @@ export const transitionWorkflow = (
   workflowId: string,
   workflowName: string,
   t: WorkflowTransition,
+  executionId?: string,
 ): Effect.Effect<void, UnknownException> =>
   Effect.gen(function* () {
-    const base = createBaseEvent(workflowId, workflowName);
+    const base = createBaseEvent(workflowId, workflowName, executionId);
     const now = Date.now();
 
     switch (t._tag) {

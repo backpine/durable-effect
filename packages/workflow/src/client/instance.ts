@@ -52,7 +52,11 @@ export function createClientInstance<W extends WorkflowRegistry>(
           const { workflow, input, execution } = request;
           const instanceId = resolveInstanceId(workflow, execution?.id);
           const stub = getStub(instanceId);
-          await stub.run({ workflow, input } as Parameters<typeof stub.run>[0]);
+          await stub.run({
+            workflow,
+            input,
+            executionId: execution?.id,
+          } as Parameters<typeof stub.run>[0]);
           return { id: instanceId };
         },
         catch: (e) => new WorkflowClientError("run", e),
@@ -70,6 +74,7 @@ export function createClientInstance<W extends WorkflowRegistry>(
           await stub.runAsync({
             workflow,
             input,
+            executionId: execution?.id,
           } as Parameters<typeof stub.runAsync>[0]);
           return { id: instanceId };
         },

@@ -131,12 +131,17 @@ export type WorkflowErrorMap<W extends WorkflowRegistry> = {
  * @example
  * ```typescript
  * type Call = WorkflowCall<typeof myWorkflows>;
- * // | { workflow: 'processOrder'; input: string }
- * // | { workflow: 'sendEmail'; input: { to: string } }
+ * // | { workflow: 'processOrder'; input: string; executionId?: string }
+ * // | { workflow: 'sendEmail'; input: { to: string }; executionId?: string }
  * ```
  */
 export type WorkflowCall<W extends WorkflowRegistry> = {
-  [K in keyof W & string]: { workflow: K; input: WorkflowInput<W[K]> };
+  [K in keyof W & string]: {
+    workflow: K;
+    input: WorkflowInput<W[K]>;
+    /** Optional user-provided execution ID for event correlation */
+    executionId?: string;
+  };
 }[keyof W & string];
 
 // =============================================================================
