@@ -1,4 +1,4 @@
-import { Clock, Duration, Effect, Option, Schema } from "effect";
+import { Duration, Effect, Option, Schema } from "effect";
 import { UnknownException } from "effect/Cause";
 import { ExecutionContext, PauseSignal, createBaseEvent } from "@durable-effect/core";
 import {
@@ -8,7 +8,6 @@ import {
 } from "@/services/step-context";
 import { WorkflowContext } from "@/services/workflow-context";
 import { WorkflowScope, type ForbidWorkflowScope } from "@/services/workflow-scope";
-import { StepClock } from "@/services/step-clock";
 import { emitEvent } from "@/tracker";
 import type {
   DurableWorkflow,
@@ -121,11 +120,12 @@ export namespace Workflow {
         attempt,
       });
 
-      // Execute effect with StepContext provided and StepClock active
-      // StepClock rejects Effect.sleep calls inside steps
+      // Execute effect with StepContext provided
+      // Note: We don't inject StepClock here because Effect.timeoutFail uses
+      // Effect.sleep internally for timeout racing. Compile-time enforcement
+      // via ForbidWorkflowScope prevents Workflow.sleep and nested Workflow.step.
       const result = yield* effect.pipe(
         Effect.provideService(StepContext, stepCtx),
-        Effect.withClock(StepClock),
         Effect.either,
       );
 

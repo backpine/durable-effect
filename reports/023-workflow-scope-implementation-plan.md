@@ -2,10 +2,11 @@
 
 ## Overview
 
-This plan implements two layers of protection to ensure workflow primitives and sleep operations are only used at the workflow level, not inside steps:
+This plan implements compile-time protection to ensure workflow primitives are only used at the workflow level, not inside steps:
 
-1. **Compile-time:** `WorkflowScope` forbidden context tag prevents `Workflow.step` and `Workflow.sleep` inside steps
-2. **Runtime:** Custom `Clock` service rejects `Effect.sleep` inside steps
+- **Compile-time:** `WorkflowScope` forbidden context tag prevents `Workflow.step` and `Workflow.sleep` inside steps
+
+**Note:** `Effect.sleep` is intentionally allowed inside steps because `Effect.timeoutFail` (used by `Workflow.timeout`) uses it internally for timeout racing.
 
 ## Implementation Steps
 
@@ -411,10 +412,12 @@ describe("Step forbidden operations", () => {
 |-----------|----------|--------------|---------|
 | `Workflow.step` | Inside step | **ERROR** | N/A |
 | `Workflow.sleep` | Inside step | **ERROR** | N/A |
-| `Effect.sleep` | Inside step | Allowed | **ERROR** |
+| `Effect.sleep` | Inside step | Allowed | Allowed |
 | `Workflow.retry` | Inside step | Allowed | Allowed (requires StepContext) |
 | `Workflow.timeout` | Inside step | Allowed | Allowed (requires StepContext) |
 | All primitives | Workflow level | Allowed | Allowed |
+
+**Note on Effect.sleep:** We intentionally allow `Effect.sleep` inside steps because `Effect.timeoutFail` (used by `Workflow.timeout`) uses it internally for timeout racing. Blocking all sleep operations would break the timeout functionality.
 
 ---
 

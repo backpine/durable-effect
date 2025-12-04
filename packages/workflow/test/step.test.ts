@@ -507,9 +507,10 @@ describe("Workflow.step", () => {
       expect(result).toBe("async-result");
     });
 
-    it("rejects Effect.sleep (now forbidden inside steps)", async () => {
-      // Effect.sleep is now forbidden inside steps to ensure steps are atomic.
-      // Use Workflow.sleep at the workflow level between steps instead.
+    it("handles Effect.sleep (allowed for timeout racing)", async () => {
+      // Effect.sleep is allowed inside steps because Effect.timeoutFail
+      // uses it internally for timeout racing. Workflow.sleep is still
+      // forbidden at compile time via ForbidWorkflowScope.
       const step = Workflow.step(
         "SleepStep",
         Effect.gen(function* () {
@@ -518,10 +519,9 @@ describe("Workflow.step", () => {
         }),
       );
 
-      const exit = await Effect.runPromiseExit(runStep(step));
+      const result = await Effect.runPromise(runStep(step));
 
-      // Should fail with StepSleepForbiddenError
-      expect(exit._tag).toBe("Failure");
+      expect(result).toBe("after-sleep");
     });
 
     it("caches async effect results", async () => {

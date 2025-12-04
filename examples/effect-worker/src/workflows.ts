@@ -22,9 +22,10 @@ const processPayment = (order: { id: string; amount: number }) =>
       `Processing payment for order ${order.id}: $${order.amount}`,
     );
 
-    yield* Effect.promise(
-      () => new Promise((resolve) => setTimeout(resolve, 2000)),
-    );
+    // 70% chance of failure
+    if (Math.random() < 0.7) {
+      yield* Effect.fail(new Error("Payment processing failed"));
+    }
 
     return {
       transactionId: `txn_${Date.now()}`,
@@ -61,11 +62,10 @@ const processOrderWorkflow = Workflow.make(
       const payment = yield* Workflow.step(
         "Process payment",
         processPayment(order).pipe(
-          // Workflow.retry({
-          //   maxAttempts: 2,
-          //   delay: "1 second",
-          // }),
-          Workflow.timeout("1 second"),
+          Workflow.retry({
+            maxAttempts: 10,
+            delay: "1 second",
+          }),
         ),
       );
 
