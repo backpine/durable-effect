@@ -82,6 +82,7 @@ describe("Workflow Retry Lifecycle", () => {
     it("fails with original error when maxAttempts reached", async () => {
       let attempts = 0;
 
+      // maxAttempts: 2 means 2 retries allowed (3 total attempts: initial + 2 retries)
       const workflow = Workflow.make("test", (_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
@@ -89,25 +90,25 @@ describe("Workflow Retry Lifecycle", () => {
             Effect.gen(function* () {
               attempts++;
               return yield* Effect.fail(new Error("permanent failure"));
-            }).pipe(Workflow.retry({ maxAttempts: 3, delay: "1 second" })),
+            }).pipe(Workflow.retry({ maxAttempts: 2, delay: "1 second" })),
           );
         }),
       );
 
       const harness = createWorkflowHarness(workflow);
 
-      // Attempt 1
+      // Attempt 0 (initial) - fail, retry scheduled (0 < 2)
       await harness.run(undefined);
       expect(attempts).toBe(1);
       expect(await harness.getStatus()).toMatchObject({ _tag: "Paused" });
 
-      // Attempt 2
+      // Attempt 1 (retry 1) - fail, retry scheduled (1 < 2)
       vi.setSystemTime(1000);
       await harness.triggerAlarm();
       expect(attempts).toBe(2);
       expect(await harness.getStatus()).toMatchObject({ _tag: "Paused" });
 
-      // Attempt 3 - max reached, should fail
+      // Attempt 2 (retry 2) - fail, exhausted (2 >= 2)
       vi.setSystemTime(2000);
       await harness.triggerAlarm();
       expect(attempts).toBe(3);

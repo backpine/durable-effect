@@ -149,12 +149,13 @@ describe("Workflow Tracker Events", () => {
     });
 
     it("emits retry.exhausted when max attempts reached", async () => {
+      // maxAttempts: 1 means 1 retry allowed (2 total attempts: initial + 1 retry)
       const workflow = Workflow.make("test", (_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "exhaustedStep",
             Effect.fail(new Error("permanent")).pipe(
-              Workflow.retry({ maxAttempts: 2, delay: "1 second" }),
+              Workflow.retry({ maxAttempts: 1, delay: "1 second" }),
             ),
           );
         }),
@@ -162,18 +163,18 @@ describe("Workflow Tracker Events", () => {
 
       const harness = createWorkflowHarness(workflow, { eventCapture });
 
-      // Attempt 1
+      // Attempt 0 (initial) - fail, retry scheduled (0 < 1)
       await harness.run(undefined);
       expect(await harness.getStatus()).toMatchObject({ _tag: "Paused" });
 
-      // Attempt 2 - exhausted
+      // Attempt 1 (retry 1) - fail, exhausted (1 >= 1)
       vi.setSystemTime(1000);
       await harness.triggerAlarm();
 
       const exhausted = eventCapture.getEventsByType("retry.exhausted");
       expect(exhausted).toHaveLength(1);
       expect(exhausted[0].stepName).toBe("exhaustedStep");
-      expect(exhausted[0].attempts).toBe(2);
+      expect(exhausted[0].attempts).toBe(1);
 
       expect(await harness.getStatus()).toMatchObject({ _tag: "Failed" });
     });

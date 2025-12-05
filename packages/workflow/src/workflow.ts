@@ -248,10 +248,11 @@ export namespace Workflow {
 
         // Effect failed - check if we should retry
         const error = result.left;
-        const nextAttempt = stepCtx.attempt + 1;
 
         // Check retry conditions
-        if (nextAttempt >= maxAttempts) {
+        // maxAttempts is the number of retries (not including initial attempt)
+        // So if attempt >= maxAttempts, we've exhausted all retries
+        if (stepCtx.attempt >= maxAttempts) {
           // Emit retry exhausted event
           yield* emitEvent({
             ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
