@@ -31,7 +31,7 @@ const processPayment = (order: { id: string; amount: number }) =>
     yield* randomDelay();
 
     // 70% chance of failure
-    if (Math.random() < 0.99) {
+    if (Math.random() < 0.6) {
       yield* Effect.fail(new Error("Payment processing failed"));
     }
 
@@ -100,8 +100,8 @@ const workflows = {
 export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
   tracker: {
     env: "production",
-    serviceKey: "my-app",
-    url: "http://localhost:3000/sync",
+    serviceKey: "finance-workflows",
+    url: "https://tanstack-trpc-on-cloudflare.backpine.workers.dev/sync",
     accessToken: "token",
   },
 });
