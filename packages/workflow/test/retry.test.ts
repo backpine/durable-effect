@@ -150,10 +150,11 @@ describe("Workflow.retry", () => {
 
   describe("max attempts", () => {
     it("fails with original error when maxAttempts reached", async () => {
-      const stepCtx = createMockStepContext("test", 2); // Already at attempt 2
+      // maxAttempts=3 means 3 retries allowed, so at attempt 3 we've exhausted all retries
+      const stepCtx = createMockStepContext("test", 3);
       const originalError = new Error("permanent failure");
       const retryEffect = Effect.fail(originalError).pipe(
-        Workflow.retry({ maxAttempts: 3 }), // nextAttempt would be 3, which >= maxAttempts
+        Workflow.retry({ maxAttempts: 3 }),
       );
 
       const exit = await runRetry(retryEffect, stepCtx);
@@ -166,7 +167,8 @@ describe("Workflow.retry", () => {
     });
 
     it("does NOT set alarm when maxAttempts reached", async () => {
-      const stepCtx = createMockStepContext("test", 2);
+      // maxAttempts=3 means 3 retries, so at attempt 3 we're exhausted
+      const stepCtx = createMockStepContext("test", 3);
       const retryEffect = Effect.fail(new Error("fail")).pipe(
         Workflow.retry({ maxAttempts: 3 }),
       );
@@ -176,8 +178,9 @@ describe("Workflow.retry", () => {
       expect(await storage.getAlarm()).toBeNull();
     });
 
-    it("retries when attempt < maxAttempts - 1", async () => {
-      const stepCtx = createMockStepContext("test", 1); // nextAttempt = 2 < 3
+    it("retries when attempt < maxAttempts", async () => {
+      // maxAttempts=3 means 3 retries, so at attempt 2 we can still retry
+      const stepCtx = createMockStepContext("test", 2);
       const retryEffect = Effect.fail(new Error("fail")).pipe(
         Workflow.retry({ maxAttempts: 3 }),
       );
@@ -353,8 +356,41 @@ describe("Workflow.retry", () => {
   // ============================================================
 
   describe("edge cases", () => {
-    it("handles maxAttempts of 1 (no retries)", async () => {
+    it("handles maxAttempts of 0 (no retries)", async () => {
+      // maxAttempts=0 means 0 retries, so even on first attempt (0) we exhaust
       const stepCtx = createMockStepContext("test", 0);
+      const originalError = new Error("fail");
+      const retryEffect = Effect.fail(originalError).pipe(
+        Workflow.retry({ maxAttempts: 0 }),
+      );
+
+      const exit = await runRetry(retryEffect, stepCtx);
+
+      expect(exit._tag).toBe("Failure");
+      if (exit._tag === "Failure" && exit.cause._tag === "Fail") {
+        expect(exit.cause.error).toBe(originalError);
+      }
+    });
+
+    it("handles maxAttempts of 1 (one retry)", async () => {
+      // maxAttempts=1 means 1 retry allowed
+      const stepCtx = createMockStepContext("test", 0);
+      const retryEffect = Effect.fail(new Error("fail")).pipe(
+        Workflow.retry({ maxAttempts: 1 }),
+      );
+
+      const exit = await runRetry(retryEffect, stepCtx);
+
+      // At attempt 0, we can still retry (0 < 1)
+      expect(exit._tag).toBe("Failure");
+      if (exit._tag === "Failure" && exit.cause._tag === "Fail") {
+        expect(exit.cause.error).toBeInstanceOf(PauseSignal);
+      }
+    });
+
+    it("exhausts after maxAttempts retries", async () => {
+      // maxAttempts=1 means 1 retry, so at attempt 1 we're exhausted
+      const stepCtx = createMockStepContext("test", 1);
       const originalError = new Error("fail");
       const retryEffect = Effect.fail(originalError).pipe(
         Workflow.retry({ maxAttempts: 1 }),

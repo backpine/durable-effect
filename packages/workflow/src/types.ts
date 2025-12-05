@@ -11,7 +11,7 @@ import type { ExecutionContext } from "@durable-effect/core";
  * Retry configuration options.
  */
 export interface RetryOptions {
-  /** Maximum number of attempts (including first try) */
+  /** Maximum number of retries (not including the initial attempt) */
   readonly maxAttempts: number;
 
   /** Delay between retries - Duration or backoff function */
