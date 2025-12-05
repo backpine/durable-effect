@@ -130,17 +130,17 @@ describe("Workflow Tracker Sync", () => {
    */
   async function executeWorkflowWithTracking<Input, E, R>(
     workflow: {
-      readonly name: string;
       readonly definition: (input: Input) => Effect.Effect<unknown, E, R>;
     },
     input: Input,
     trackerLayer: Layer.Layer<EventTracker>,
+    workflowName = "test",
   ): Promise<{ status: WorkflowStatus }> {
     const workflowId = "test-workflow-id";
     const execCtx = createMockExecutionContext(storage);
     const workflowCtx = createWorkflowContext(
       workflowId,
-      workflow.name,
+      workflowName,
       input,
       storage as unknown as DurableObjectStorage,
     );
@@ -151,7 +151,7 @@ describe("Workflow Tracker Sync", () => {
         eventId: "evt-started",
         timestamp: new Date().toISOString(),
         workflowId,
-        workflowName: workflow.name,
+        workflowName,
         type: "workflow.started",
         input,
       });
@@ -173,7 +173,7 @@ describe("Workflow Tracker Sync", () => {
           eventId: "evt-completed",
           timestamp: new Date().toISOString(),
           workflowId,
-          workflowName: workflow.name,
+          workflowName,
           type: "workflow.completed",
           completedSteps,
           durationMs: Date.now(),
@@ -192,7 +192,7 @@ describe("Workflow Tracker Sync", () => {
           eventId: "evt-paused",
           timestamp: new Date().toISOString(),
           workflowId,
-          workflowName: workflow.name,
+          workflowName,
           type: "workflow.paused",
           reason: signal.reason,
           resumeAt: resumeAtStr,
@@ -209,7 +209,7 @@ describe("Workflow Tracker Sync", () => {
           eventId: "evt-failed",
           timestamp: new Date().toISOString(),
           workflowId,
-          workflowName: workflow.name,
+          workflowName,
           type: "workflow.failed",
           error: { message: "Workflow failed" },
           completedSteps: [],
@@ -239,7 +239,7 @@ describe("Workflow Tracker Sync", () => {
       });
 
       // Create a simple fast-finishing workflow
-      const workflow = Workflow.make("fastWorkflow", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step("quickStep", Effect.succeed("done"));
         }),
@@ -274,7 +274,7 @@ describe("Workflow Tracker Sync", () => {
         batchWaitMs: 1000,
       });
 
-      const workflow = Workflow.make("multiStepWorkflow", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step("step1", Effect.succeed("one"));
           yield* Workflow.step("step2", Effect.succeed("two"));
@@ -305,7 +305,7 @@ describe("Workflow Tracker Sync", () => {
         batchWaitMs: 1000,
       });
 
-      const workflow = Workflow.make("failingWorkflow", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step("failStep", Effect.fail(new Error("boom")));
         }),
@@ -333,7 +333,7 @@ describe("Workflow Tracker Sync", () => {
         batchWaitMs: 1000,
       });
 
-      const workflow = Workflow.make("sleepWorkflow", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step("beforeSleep", Effect.succeed("pre"));
           yield* Workflow.sleep("1 second");

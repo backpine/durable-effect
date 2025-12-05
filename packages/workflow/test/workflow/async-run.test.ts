@@ -15,7 +15,7 @@ describe("Workflow Async Run (runAsync)", () => {
 
   describe("basic async execution", () => {
     it("sets status to Queued immediately", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.succeed("done"),
       );
 
@@ -32,7 +32,7 @@ describe("Workflow Async Run (runAsync)", () => {
     });
 
     it("schedules alarm 300ms in the future", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.succeed("done"),
       );
 
@@ -46,7 +46,7 @@ describe("Workflow Async Run (runAsync)", () => {
 
     it("executes workflow when alarm fires", async () => {
       let executed = false;
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.sync(() => {
           executed = true;
           return "done";
@@ -69,7 +69,7 @@ describe("Workflow Async Run (runAsync)", () => {
     });
 
     it("stores input for later execution", async () => {
-      const workflow = Workflow.make("test", (input: { value: number }) =>
+      const workflow = Workflow.make((input: { value: number }) =>
         Effect.succeed(input.value * 2),
       );
 
@@ -86,7 +86,7 @@ describe("Workflow Async Run (runAsync)", () => {
 
   describe("idempotency", () => {
     it("returns same id on duplicate runAsync calls", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.succeed("done"),
       );
 
@@ -99,7 +99,7 @@ describe("Workflow Async Run (runAsync)", () => {
     });
 
     it("does not re-queue if already queued", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.succeed("done"),
       );
 
@@ -121,7 +121,7 @@ describe("Workflow Async Run (runAsync)", () => {
     it("executes steps when alarm fires", async () => {
       let stepExecutions = 0;
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           const value = yield* Workflow.step(
             "compute",
@@ -152,7 +152,7 @@ describe("Workflow Async Run (runAsync)", () => {
 
   describe("async with sleep", () => {
     it("pauses at sleep after initial execution", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.sleep("5 seconds");
           return "done";
@@ -179,7 +179,7 @@ describe("Workflow Async Run (runAsync)", () => {
     });
 
     it("completes after sleep alarm fires", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.sleep("5 seconds");
           return "done";
@@ -207,7 +207,7 @@ describe("Workflow Async Run (runAsync)", () => {
     it("automatically triggers all alarms until complete", async () => {
       const log: string[] = [];
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           log.push("start");
           yield* Workflow.sleep("1 second");
@@ -231,7 +231,7 @@ describe("Workflow Async Run (runAsync)", () => {
     it("handles workflow with steps and sleeps", async () => {
       let stepExecutions = 0;
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           const value = yield* Workflow.step(
             "fetch",
@@ -258,7 +258,7 @@ describe("Workflow Async Run (runAsync)", () => {
     it("runAsync returns before execution, run returns after", async () => {
       const executionLog: string[] = [];
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.sync(() => {
           executionLog.push("executed");
           return "done";
