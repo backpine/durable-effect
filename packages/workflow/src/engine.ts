@@ -234,7 +234,12 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
 
       // Store metadata first (including executionId for persistence across lifecycle)
       await Effect.runPromise(
-        storeWorkflowMeta(this.ctx.storage, String(workflowName), input, executionId),
+        storeWorkflowMeta(
+          this.ctx.storage,
+          String(workflowName),
+          input,
+          executionId,
+        ),
       );
 
       // Execute workflow with Start transition
@@ -279,10 +284,16 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       await Effect.runPromise(
         Effect.gen(function* () {
           yield* storeWorkflowMeta(storage, name, input, executionId);
-          yield* transitionWorkflow(storage, workflowId, name, {
-            _tag: "Queue",
-            input,
-          }, executionId);
+          yield* transitionWorkflow(
+            storage,
+            workflowId,
+            name,
+            {
+              _tag: "Queue",
+              input,
+            },
+            executionId,
+          );
         }).pipe(Effect.provide(this.#trackerLayer)),
       );
 
@@ -320,18 +331,26 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       const workflowDef = this.#workflows[workflowName as keyof T];
       if (!workflowDef) {
         await Effect.runPromise(
-          transitionWorkflow(this.ctx.storage, workflowId, workflowName, {
-            _tag: "Fail",
-            error: { message: `Unknown workflow: ${workflowName}` },
-            completedSteps: [],
-          }, executionId).pipe(Effect.provide(this.#trackerLayer)),
+          transitionWorkflow(
+            this.ctx.storage,
+            workflowId,
+            workflowName,
+            {
+              _tag: "Fail",
+              error: { message: `Unknown workflow: ${workflowName}` },
+              completedSteps: [],
+            },
+            executionId,
+          ).pipe(Effect.provide(this.#trackerLayer)),
         );
         return;
       }
 
       // Determine transition: Queued → Start, Paused → Resume
       const transition: { _tag: "Start"; input: unknown } | { _tag: "Resume" } =
-        status._tag === "Queued" ? { _tag: "Start", input } : { _tag: "Resume" };
+        status._tag === "Queued"
+          ? { _tag: "Start", input }
+          : { _tag: "Resume" };
 
       await this.#executeWorkflow(
         workflowDef,
@@ -366,17 +385,23 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       );
 
       const execution = Effect.gen(function* () {
-        yield* transitionWorkflow(storage, workflowId, workflowName, transition, executionId);
+        yield* transitionWorkflow(
+          storage,
+          workflowId,
+          workflowName,
+          transition,
+          executionId,
+        );
 
         const startTime = Date.now();
-        const result = yield* workflowDef
-          .definition(input)
-          .pipe(
-            Effect.provideService(ExecutionContext, execCtx),
-            Effect.provideService(WorkflowContext, workflowCtx),
-            Effect.provideService(WorkflowScope, { _brand: "WorkflowScope" as const }),
-            Effect.exit,
-          );
+        const result = yield* workflowDef.definition(input).pipe(
+          Effect.provideService(ExecutionContext, execCtx),
+          Effect.provideService(WorkflowContext, workflowCtx),
+          Effect.provideService(WorkflowScope, {
+            _brand: "WorkflowScope" as const,
+          }),
+          Effect.exit,
+        );
 
         yield* handleWorkflowResult(
           result,
@@ -442,11 +467,19 @@ function handleWorkflowResult<E>(
   return Effect.gen(function* () {
     if (Exit.isSuccess(result)) {
       const completedSteps = yield* getCompletedStepsFromStorage(storage);
-      yield* transitionWorkflow(storage, workflowId, workflowName, {
-        _tag: "Complete",
-        completedSteps,
-        durationMs: Date.now() - startTime,
-      }, executionId);
+      yield* transitionWorkflow(
+        storage,
+        workflowId,
+        workflowName,
+        {
+          _tag: "Complete",
+          completedSteps,
+          durationMs: Date.now() - startTime,
+        },
+        executionId,
+      );
+
+      yield* Effect.promise(() => storage.deleteAll());
       return;
     }
 
@@ -459,12 +492,18 @@ function handleWorkflowResult<E>(
       failureOption.value instanceof PauseSignal
     ) {
       const signal = failureOption.value;
-      yield* transitionWorkflow(storage, workflowId, workflowName, {
-        _tag: "Pause",
-        reason: signal.reason,
-        resumeAt: signal.resumeAt,
-        stepName: signal.stepName,
-      }, executionId);
+      yield* transitionWorkflow(
+        storage,
+        workflowId,
+        workflowName,
+        {
+          _tag: "Pause",
+          reason: signal.reason,
+          resumeAt: signal.resumeAt,
+          stepName: signal.stepName,
+        },
+        executionId,
+      );
       return;
     }
 
@@ -489,15 +528,24 @@ function handleWorkflowResult<E>(
     const stepName = error instanceof StepError ? error.stepName : undefined;
     const attempt = error instanceof StepError ? error.attempt : undefined;
 
-    yield* transitionWorkflow(storage, workflowId, workflowName, {
-      _tag: "Fail",
-      error: {
-        message: errorMessage,
-        stack: errorStack,
-        stepName,
-        attempt,
+    yield* transitionWorkflow(
+      storage,
+      workflowId,
+      workflowName,
+      {
+        _tag: "Fail",
+        error: {
+          message: errorMessage,
+          stack: errorStack,
+          stepName,
+          attempt,
+        },
+        completedSteps,
       },
-      completedSteps,
-    }, executionId);
+      executionId,
+    );
+
+    // Clear all storage after permanent failure
+    yield* Effect.promise(() => storage.deleteAll());
   });
 }
