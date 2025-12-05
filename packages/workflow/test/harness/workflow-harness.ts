@@ -6,9 +6,13 @@ import {
   createWorkflowContext,
 } from "@/services/workflow-context";
 import { WorkflowScope } from "@/services/workflow-scope";
-import { EventTracker } from "@/tracker";
 import type { DurableWorkflow, WorkflowStatus } from "@/types";
-import { MockStorage, createMockExecutionContext, testWorkflowScope, SimpleEventCapture } from "../mocks";
+import {
+  MockStorage,
+  createMockExecutionContext,
+  testWorkflowScope,
+  SimpleEventCapture,
+} from "../mocks";
 
 /**
  * Result returned when starting a workflow.
@@ -23,6 +27,8 @@ export interface WorkflowRunResult {
 export interface WorkflowHarnessOptions {
   /** Event capture for testing tracker events */
   readonly eventCapture?: SimpleEventCapture;
+  /** Workflow name (defaults to "test") */
+  readonly name?: string;
 }
 
 /**
@@ -55,10 +61,16 @@ export interface WorkflowTestHarness<Input> {
   getCompletedPauseIndex(): Promise<number>;
 
   /** Run workflow to completion (auto-triggering alarms) */
-  runToCompletion(input: Input, options?: { maxAlarms?: number }): Promise<void>;
+  runToCompletion(
+    input: Input,
+    options?: { maxAlarms?: number },
+  ): Promise<void>;
 
   /** Run workflow async to completion (queue then auto-trigger alarms) */
-  runAsyncToCompletion(input: Input, options?: { maxAlarms?: number }): Promise<void>;
+  runAsyncToCompletion(
+    input: Input,
+    options?: { maxAlarms?: number },
+  ): Promise<void>;
 }
 
 /**
@@ -70,6 +82,7 @@ export function createWorkflowHarness<Input, E>(
 ): WorkflowTestHarness<Input> {
   const storage = new MockStorage();
   const workflowId = "test-workflow-id";
+  const workflowName = options?.name ?? "test";
   const eventCapture = options?.eventCapture;
 
   /**
@@ -82,17 +95,19 @@ export function createWorkflowHarness<Input, E>(
     const execCtx = createMockExecutionContext(storage);
     const workflowCtx = createWorkflowContext(
       workflowId,
-      workflow.name,
+      workflowName,
       input,
       storage as unknown as DurableObjectStorage,
     );
 
     // Execute workflow effect
-    let effect = workflow.definition(input).pipe(
-      Effect.provideService(ExecutionContext, execCtx),
-      Effect.provideService(WorkflowContext, workflowCtx),
-      Effect.provideService(WorkflowScope, testWorkflowScope),
-    );
+    let effect = workflow
+      .definition(input)
+      .pipe(
+        Effect.provideService(ExecutionContext, execCtx),
+        Effect.provideService(WorkflowContext, workflowCtx),
+        Effect.provideService(WorkflowScope, testWorkflowScope),
+      );
 
     // Provide tracker layer if event capture is provided
     if (eventCapture) {
@@ -131,15 +146,17 @@ export function createWorkflowHarness<Input, E>(
     eventCapture,
 
     async run(input: Input): Promise<WorkflowRunResult> {
-      await storage.put("workflow:name", workflow.name);
+      await storage.put("workflow:name", workflowName);
       await storage.put("workflow:input", input);
-      await storage.put("workflow:status", { _tag: "Running" } as WorkflowStatus);
+      await storage.put("workflow:status", {
+        _tag: "Running",
+      } as WorkflowStatus);
       await executeWorkflow(input);
       return { id: workflowId };
     },
 
     async runAsync(input: Input): Promise<WorkflowRunResult> {
-      await storage.put("workflow:name", workflow.name);
+      await storage.put("workflow:name", workflowName);
       await storage.put("workflow:input", input);
       await storage.put("workflow:status", {
         _tag: "Queued",
@@ -157,7 +174,9 @@ export function createWorkflowHarness<Input, E>(
       if (status?._tag !== "Paused" && status?._tag !== "Queued") return;
 
       const input = await storage.get<Input>("workflow:input");
-      await storage.put("workflow:status", { _tag: "Running" } as WorkflowStatus);
+      await storage.put("workflow:status", {
+        _tag: "Running",
+      } as WorkflowStatus);
       await executeWorkflow(input!);
     },
 

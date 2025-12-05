@@ -61,7 +61,10 @@ export type WorkflowStatus =
 /**
  * Context requirements provided by the workflow engine.
  */
-export type ProvidedContext = WorkflowScope | WorkflowContext | ExecutionContext;
+export type ProvidedContext =
+  | WorkflowScope
+  | WorkflowContext
+  | ExecutionContext;
 
 /**
  * A workflow definition function.
@@ -76,7 +79,6 @@ export type WorkflowDefinition<Input, E = never> = (
  */
 export interface DurableWorkflow<Name extends string, Input, E> {
   readonly _tag: "DurableWorkflow";
-  readonly name: Name;
   readonly definition: WorkflowDefinition<Input, E>;
   readonly inputSchema?: Schema.Schema<Input, unknown>;
 }

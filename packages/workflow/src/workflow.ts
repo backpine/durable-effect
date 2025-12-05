@@ -1,13 +1,20 @@
 import { Duration, Effect, Option, Schema } from "effect";
 import { UnknownException } from "effect/Cause";
-import { ExecutionContext, PauseSignal, createBaseEvent } from "@durable-effect/core";
+import {
+  ExecutionContext,
+  PauseSignal,
+  createBaseEvent,
+} from "@durable-effect/core";
 import {
   StepContext,
   createStepContext,
   loadStepAttempt,
 } from "@/services/step-context";
 import { WorkflowContext } from "@/services/workflow-context";
-import { WorkflowScope, type ForbidWorkflowScope } from "@/services/workflow-scope";
+import {
+  WorkflowScope,
+  type ForbidWorkflowScope,
+} from "@/services/workflow-scope";
 import { emitEvent } from "@/tracker";
 import type {
   DurableWorkflow,
@@ -35,13 +42,11 @@ export namespace Workflow {
    * ```
    */
   export function make<const Name extends string, Input, E>(
-    name: Name,
     definition: WorkflowDefinition<Input, E>,
     options?: { readonly input?: Schema.Schema<Input, unknown> },
   ): DurableWorkflow<Name, Input, E> {
     return {
       _tag: "DurableWorkflow",
-      name,
       definition,
       inputSchema: options?.input,
     };
@@ -97,7 +102,10 @@ export namespace Workflow {
         if (Option.isSome(cached)) {
           // Emit step completed (cached)
           yield* emitEvent({
-            ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
+            ...createBaseEvent(
+              workflowCtx.workflowId,
+              workflowCtx.workflowName,
+            ),
             type: "step.completed",
             stepName: name,
             attempt,
@@ -255,7 +263,10 @@ export namespace Workflow {
         if (stepCtx.attempt >= maxAttempts) {
           // Emit retry exhausted event
           yield* emitEvent({
-            ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
+            ...createBaseEvent(
+              workflowCtx.workflowId,
+              workflowCtx.workflowName,
+            ),
             type: "retry.exhausted",
             stepName: stepCtx.stepName,
             attempts: maxAttempts,
@@ -341,7 +352,10 @@ export namespace Workflow {
 
           // Emit timeout set event
           yield* emitEvent({
-            ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
+            ...createBaseEvent(
+              workflowCtx.workflowId,
+              workflowCtx.workflowName,
+            ),
             type: "timeout.set",
             stepName: stepCtx.stepName,
             deadline: new Date(deadline).toISOString(),
@@ -353,7 +367,10 @@ export namespace Workflow {
         if (Date.now() > deadline) {
           // Emit timeout exceeded event
           yield* emitEvent({
-            ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
+            ...createBaseEvent(
+              workflowCtx.workflowId,
+              workflowCtx.workflowName,
+            ),
             type: "timeout.exceeded",
             stepName: stepCtx.stepName,
             timeoutMs,
@@ -381,7 +398,10 @@ export namespace Workflow {
         if (result._tag === "Left" && result.left instanceof StepTimeoutError) {
           // Emit timeout exceeded event for runtime timeout
           yield* emitEvent({
-            ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
+            ...createBaseEvent(
+              workflowCtx.workflowId,
+              workflowCtx.workflowName,
+            ),
             type: "timeout.exceeded",
             stepName: stepCtx.stepName,
             timeoutMs,
@@ -432,7 +452,10 @@ export namespace Workflow {
 
       // Check if we're resuming from this pause
       const pendingResumeAt = yield* workflowCtx.pendingResumeAt;
-      if (Option.isSome(pendingResumeAt) && Date.now() >= pendingResumeAt.value) {
+      if (
+        Option.isSome(pendingResumeAt) &&
+        Date.now() >= pendingResumeAt.value
+      ) {
         // This is the pause we're resuming from
         yield* workflowCtx.setCompletedPauseIndex(pauseIndex);
         yield* workflowCtx.clearPendingResumeAt;

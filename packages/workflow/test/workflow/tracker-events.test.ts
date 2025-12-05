@@ -23,7 +23,7 @@ describe("Workflow Tracker Events", () => {
 
   describe("step events", () => {
     it("emits step.started and step.completed on successful step", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step("myStep", Effect.succeed("result"));
         }),
@@ -47,7 +47,7 @@ describe("Workflow Tracker Events", () => {
     });
 
     it("emits step.completed with cached=true on replay", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step("cachedStep", Effect.succeed("data"));
           yield* Workflow.sleep("1 second");
@@ -73,7 +73,7 @@ describe("Workflow Tracker Events", () => {
     });
 
     it("emits step.failed when step fails without retry", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step("failingStep", Effect.fail(new Error("oops")));
         }),
@@ -91,7 +91,7 @@ describe("Workflow Tracker Events", () => {
     });
 
     it("emits events for multiple steps in sequence", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step("step1", Effect.succeed(1));
           yield* Workflow.step("step2", Effect.succeed(2));
@@ -121,7 +121,7 @@ describe("Workflow Tracker Events", () => {
     it("emits retry.scheduled when step fails and retry is pending", async () => {
       let attempts = 0;
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "retryStep",
@@ -150,7 +150,7 @@ describe("Workflow Tracker Events", () => {
 
     it("emits retry.exhausted when max attempts reached", async () => {
       // maxAttempts: 1 means 1 retry allowed (2 total attempts: initial + 1 retry)
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "exhaustedStep",
@@ -182,7 +182,7 @@ describe("Workflow Tracker Events", () => {
     it("does not emit retry.exhausted when retry succeeds", async () => {
       let attempts = 0;
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "eventualSuccess",
@@ -217,7 +217,7 @@ describe("Workflow Tracker Events", () => {
 
   describe("sleep events", () => {
     it("emits sleep.started when sleep begins", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.sleep("5 seconds");
         }),
@@ -233,7 +233,7 @@ describe("Workflow Tracker Events", () => {
     });
 
     it("emits sleep.completed when sleep resumes", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.sleep("3 seconds");
         }),
@@ -253,7 +253,7 @@ describe("Workflow Tracker Events", () => {
     });
 
     it("emits events for multiple sleeps", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.sleep("1 second");
           yield* Workflow.sleep("2 seconds");
@@ -285,7 +285,7 @@ describe("Workflow Tracker Events", () => {
 
   describe("timeout events", () => {
     it("emits timeout.set when deadline is established", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "timedStep",
@@ -305,7 +305,7 @@ describe("Workflow Tracker Events", () => {
 
     it("emits timeout.exceeded when deadline passes on resume", async () => {
       // Test timeout exceeded by having deadline pass between runs
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "slowStep",
@@ -322,7 +322,7 @@ describe("Workflow Tracker Events", () => {
       // Manually set up a scenario where deadline passes
       // Use a step that fails first, then we advance time past deadline
       let attempts = 0;
-      const workflowWithFail = Workflow.make("test", (_: void) =>
+      const workflowWithFail = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "slowStep",
@@ -369,7 +369,7 @@ describe("Workflow Tracker Events", () => {
     it("emits events in correct order for step with retry", async () => {
       let attempts = 0;
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "orderedStep",
@@ -406,13 +406,13 @@ describe("Workflow Tracker Events", () => {
     });
 
     it("includes workflowId and workflowName in all events", async () => {
-      const workflow = Workflow.make("myWorkflow", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step("s1", Effect.succeed(1));
         }),
       );
 
-      const harness = createWorkflowHarness(workflow, { eventCapture });
+      const harness = createWorkflowHarness(workflow, { eventCapture, name: "myWorkflow" });
       await harness.run(undefined);
 
       for (const event of eventCapture.events) {

@@ -15,7 +15,7 @@ describe("Workflow Sleep Lifecycle", () => {
 
   describe("single sleep", () => {
     it("pauses at sleep and resumes after alarm", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.sleep("5 seconds");
           return "done";
@@ -43,7 +43,7 @@ describe("Workflow Sleep Lifecycle", () => {
     it("sleep is skipped on resume (not re-executed)", async () => {
       let sleepReached = 0;
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           sleepReached++;
           yield* Workflow.sleep("1 second");
@@ -69,7 +69,7 @@ describe("Workflow Sleep Lifecycle", () => {
     it("handles two sequential sleeps", async () => {
       const log: string[] = [];
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           log.push("before-sleep-1");
           yield* Workflow.sleep("5 seconds");
@@ -125,7 +125,7 @@ describe("Workflow Sleep Lifecycle", () => {
     it("steps are cached, sleeps are tracked independently", async () => {
       let stepExecutions = 0;
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           const value = yield* Workflow.step(
             "fetch",
@@ -158,7 +158,7 @@ describe("Workflow Sleep Lifecycle", () => {
 
   describe("runToCompletion helper", () => {
     it("automatically triggers alarms until complete", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.sleep("1 second");
           yield* Workflow.sleep("2 seconds");

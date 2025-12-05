@@ -1,5 +1,22 @@
-import { Effect } from "effect";
+import { Effect, Data } from "effect";
 import { Workflow, createDurableWorkflows } from "@durable-effect/workflow";
+
+// =============================================================================
+// Tagged Errors
+// =============================================================================
+
+class PaymentDeclinedError extends Data.TaggedError("PaymentDeclinedError")<{
+  readonly orderId: string;
+  readonly reason: string;
+}> {}
+
+class InsufficientFundsError extends Data.TaggedError(
+  "InsufficientFundsError",
+)<{
+  readonly orderId: string;
+  readonly required: number;
+  readonly available: number;
+}> {}
 
 // =============================================================================
 // Example Effects (simulated async operations)
@@ -30,9 +47,23 @@ const processPayment = (order: { id: string; amount: number }) =>
     );
     yield* randomDelay();
 
-    // 70% chance of failure
-    if (Math.random() < 0.6) {
-      yield* Effect.fail(new Error("Payment processing failed"));
+    const random = Math.random();
+    // 30% chance of PaymentDeclinedError
+
+    // 30% chance of InsufficientFundsError
+    if (random < 0.7) {
+      yield* new InsufficientFundsError({
+        orderId: order.id,
+        required: order.amount,
+        available: order.amount * 0.5,
+      });
+    }
+
+    if (random < 1) {
+      yield* new PaymentDeclinedError({
+        orderId: order.id,
+        reason: "Card declined by issuer",
+      });
     }
 
     return {
@@ -53,40 +84,45 @@ const sendConfirmation = (email: string, orderId: string) =>
 // Workflow Definition
 // =============================================================================
 
-const processOrderWorkflow = Workflow.make(
-  "Process New Order",
-  (orderId: string) =>
-    Effect.gen(function* () {
-      const order = yield* Workflow.step("Fetch order", fetchOrder(orderId));
-      yield* Workflow.sleep("3 seconds");
-      yield* Workflow.step(
-        "Validate",
-        Effect.gen(function* () {
-          yield* Effect.log(`Validating order: ${order.id}`);
-          yield* randomDelay();
-          return { valid: true };
-        }),
-      );
-      yield* Workflow.sleep("1 seconds");
+const processOrderWorkflow = Workflow.make((orderId: string) =>
+  Effect.gen(function* () {
+    const order = yield* Workflow.step("Fetch order", fetchOrder(orderId));
+    yield* Workflow.sleep("3 seconds");
+    yield* Workflow.step(
+      "Validate",
+      Effect.gen(function* () {
+        yield* Effect.log(`Validating order: ${order.id}`);
+        yield* randomDelay();
+        return { valid: true };
+      }),
+    );
+    yield* Workflow.sleep("1 seconds");
 
-      const payment = yield* Workflow.step(
-        "Process payment",
-        processPayment(order).pipe(
-          Workflow.retry({
-            maxAttempts: 5,
-            delay: "1 second",
+    const payment = yield* Workflow.step(
+      "Process payment",
+      processPayment(order).pipe(
+        Effect.catchTag("PaymentDeclinedError", () =>
+          Effect.succeed({
+            transactionId: "recovered",
+            amount: 0,
+            status: "completed" as const,
           }),
         ),
-      );
+        Workflow.retry({
+          maxAttempts: 5,
+          delay: "1 second",
+        }),
+      ),
+    );
 
-      yield* Workflow.step(
-        "Send confirmation",
-        sendConfirmation(order.email, order.id),
-      );
-      yield* Workflow.sleep("1 seconds");
+    yield* Workflow.step(
+      "Send confirmation",
+      sendConfirmation(order.email, order.id),
+    );
+    yield* Workflow.sleep("1 seconds");
 
-      return { order, payment };
-    }),
+    return { order, payment };
+  }),
 );
 
 // =============================================================================

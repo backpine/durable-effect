@@ -16,7 +16,7 @@ describe("Workflow Retry Lifecycle", () => {
 
   describe("success scenarios", () => {
     it("returns value when effect succeeds on first try", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           const result = yield* Workflow.step(
             "fetch",
@@ -38,7 +38,7 @@ describe("Workflow Retry Lifecycle", () => {
     it("retries and succeeds after failures", async () => {
       let attempts = 0;
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           const result = yield* Workflow.step(
             "flaky",
@@ -83,7 +83,7 @@ describe("Workflow Retry Lifecycle", () => {
       let attempts = 0;
 
       // maxAttempts: 2 means 2 retries allowed (3 total attempts: initial + 2 retries)
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "alwaysFails",
@@ -124,7 +124,7 @@ describe("Workflow Retry Lifecycle", () => {
         readonly _tag = "RetryableError";
       }
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "conditional",
@@ -163,7 +163,7 @@ describe("Workflow Retry Lifecycle", () => {
         readonly _tag = "NonRetryableError";
       }
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "noRetry",
@@ -191,7 +191,7 @@ describe("Workflow Retry Lifecycle", () => {
 
   describe("delay calculation", () => {
     it("uses default 1 second delay when not specified", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "defaultDelay",
@@ -209,7 +209,7 @@ describe("Workflow Retry Lifecycle", () => {
     });
 
     it("uses fixed delay when Duration provided", async () => {
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "fixedDelay",
@@ -229,7 +229,7 @@ describe("Workflow Retry Lifecycle", () => {
     it("uses backoff function when function provided", async () => {
       const delays: number[] = [];
 
-      const workflow = Workflow.make("test", (_: void) =>
+      const workflow = Workflow.make((_: void) =>
         Effect.gen(function* () {
           yield* Workflow.step(
             "backoff",
