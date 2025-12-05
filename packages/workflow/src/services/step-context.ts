@@ -1,5 +1,6 @@
 import { Context, Effect, Option } from "effect";
 import { UnknownException } from "effect/Cause";
+import { StepSerializationError } from "@/errors";
 
 /**
  * Step-level context service interface.
@@ -26,8 +27,13 @@ export interface StepContextService {
   /** Get cached step result */
   readonly getResult: <T>() => Effect.Effect<Option.Option<T>, UnknownException>;
 
-  /** Cache step result */
-  readonly setResult: <T>(value: T) => Effect.Effect<void, UnknownException>;
+  /**
+   * Cache step result.
+   * @throws StepSerializationError if the value cannot be serialized
+   */
+  readonly setResult: <T>(
+    value: T,
+  ) => Effect.Effect<void, StepSerializationError | UnknownException>;
 
   /** Increment attempt counter for next retry */
   readonly incrementAttempt: Effect.Effect<void, UnknownException>;
@@ -48,7 +54,38 @@ export class StepContext extends Context.Tag("Workflow/StepContext")<
 /**
  * Storage key prefix for a step.
  */
-const stepKey = (stepName: string, suffix: string) => `step:${stepName}:${suffix}`;
+const stepKey = (stepName: string, suffix: string) =>
+  `step:${stepName}:${suffix}`;
+
+/**
+ * Check if an error is a DataCloneError (serialization failure).
+ */
+function isDataCloneError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === "DataCloneError" ||
+      error.message.includes("could not be cloned"))
+  );
+}
+
+/**
+ * Validate that a value can be serialized using structured clone.
+ * This pre-validates before storage.put() to provide better error messages.
+ */
+function validateSerializable<T>(
+  stepName: string,
+  value: T,
+): Effect.Effect<T, StepSerializationError> {
+  return Effect.try({
+    try: () => {
+      // structuredClone uses the same algorithm as Durable Object storage
+      structuredClone(value);
+      return value;
+    },
+    catch: (error) =>
+      StepSerializationError.fromSerializationFailure(stepName, error, value),
+  });
+}
 
 /**
  * Create a StepContext service for a specific step.
@@ -107,9 +144,25 @@ export function createStepContext(
       ),
 
     setResult: <T>(value: T) =>
-      Effect.tryPromise({
-        try: () => storage.put(stepKey(stepName, "result"), value),
-        catch: (e) => new UnknownException(e),
+      Effect.gen(function* () {
+        // Pre-validate that the value can be serialized
+        yield* validateSerializable(stepName, value);
+
+        // Store the validated value
+        yield* Effect.tryPromise({
+          try: () => storage.put(stepKey(stepName, "result"), value),
+          catch: (error) => {
+            // Double-check for serialization errors from storage.put
+            if (isDataCloneError(error)) {
+              return StepSerializationError.fromSerializationFailure(
+                stepName,
+                error,
+                value,
+              );
+            }
+            return new UnknownException(error);
+          },
+        });
       }),
 
     incrementAttempt: Effect.tryPromise({

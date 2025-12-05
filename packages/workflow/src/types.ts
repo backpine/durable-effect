@@ -148,6 +148,77 @@ export type WorkflowCall<W extends WorkflowRegistry> = {
 }[keyof W & string];
 
 // =============================================================================
+// Serialization Types
+// =============================================================================
+
+/**
+ * Symbol used to brand serializable types.
+ * This is a compile-time hint - actual validation happens at runtime.
+ */
+declare const SerializableBrand: unique symbol;
+
+/**
+ * Branded type indicating a value should be JSON/structured-clone serializable.
+ *
+ * This is a compile-time documentation hint. The actual serialization
+ * validation happens at runtime when the step result is cached.
+ *
+ * Use this to annotate step return types for better documentation:
+ *
+ * @example
+ * ```typescript
+ * interface UserData {
+ *   id: string;
+ *   name: string;
+ *   email: string;
+ * }
+ *
+ * // Type hints that the return value should be serializable
+ * const fetchUser = (id: string): Effect.Effect<Serializable<UserData>, Error> =>
+ *   Effect.tryPromise(() => db.users.findOne(id)).pipe(
+ *     Effect.map(user => ({
+ *       id: user.id,
+ *       name: user.name,
+ *       email: user.email,
+ *     }) as Serializable<UserData>)
+ *   );
+ * ```
+ */
+export type Serializable<T> = T & { readonly [SerializableBrand]: true };
+
+/**
+ * Types that are known to NOT be serializable by structured clone.
+ * Used for compile-time documentation and type checking.
+ */
+export type NonSerializable =
+  | ((...args: unknown[]) => unknown) // Functions
+  | symbol
+  | WeakMap<object, unknown>
+  | WeakSet<object>;
+
+/**
+ * Primitive types that are always serializable.
+ */
+export type SerializablePrimitive =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined;
+
+/**
+ * JSON-compatible value type.
+ * Use this to constrain step return types at compile time.
+ *
+ * Note: This is stricter than structured clone (which supports Date, Map, Set, etc.)
+ * but provides better compile-time safety.
+ */
+export type JsonValue =
+  | SerializablePrimitive
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+// =============================================================================
 // Durable Object Class Types
 // =============================================================================
 

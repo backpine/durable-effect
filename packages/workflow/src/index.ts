@@ -54,7 +54,12 @@ export type {
   ProvidedContext,
   WorkflowInput,
   WorkflowError,
+  // Serialization types
+  Serializable,
+  NonSerializable,
+  SerializablePrimitive,
+  JsonValue,
 } from "@/types";
 
 // Errors
-export { StepError, StepTimeoutError } from "@/errors";
+export { StepError, StepTimeoutError, StepSerializationError } from "@/errors";
