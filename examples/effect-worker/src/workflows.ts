@@ -103,6 +103,12 @@ export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
     serviceKey: "finance-workflows",
     url: "https://tanstack-trpc-on-cloudflare.backpine.workers.dev/sync",
     accessToken: "token",
+    retry: {
+      maxAttempts: 2,
+    },
+    batch: {
+      maxSize: 20,
+    },
   },
 });
 export type WorkflowsType = typeof Workflows;
