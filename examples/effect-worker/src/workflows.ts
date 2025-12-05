@@ -5,16 +5,9 @@ import { Workflow, createDurableWorkflows } from "@durable-effect/workflow";
 // Example Effects (simulated async operations)
 // =============================================================================
 
-const randomDelay = () =>
-  Effect.promise(() => {
-    const ms = 2000 + Math.random() * 2000; // 2-4 seconds
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  });
-
 const fetchOrder = (orderId: string) =>
   Effect.gen(function* () {
     yield* Effect.log(`Fetching order ${orderId}...`);
-    yield* randomDelay();
     return {
       id: orderId,
       amount: 99.99,
@@ -28,10 +21,9 @@ const processPayment = (order: { id: string; amount: number }) =>
     yield* Effect.log(
       `Processing payment for order ${order.id}: $${order.amount}`,
     );
-    yield* randomDelay();
 
     // 70% chance of failure
-    if (Math.random() < 0.6) {
+    if (Math.random() < 0.7) {
       yield* Effect.fail(new Error("Payment processing failed"));
     }
 
@@ -45,7 +37,6 @@ const processPayment = (order: { id: string; amount: number }) =>
 const sendConfirmation = (email: string, orderId: string) =>
   Effect.gen(function* () {
     yield* Effect.log(`Sending confirmation to ${email} for order ${orderId}`);
-    yield* randomDelay();
     return { sent: true };
   });
 
@@ -63,7 +54,6 @@ const processOrderWorkflow = Workflow.make(
         "Validate",
         Effect.gen(function* () {
           yield* Effect.log(`Validating order: ${order.id}`);
-          yield* randomDelay();
           return { valid: true };
         }),
       );
@@ -73,7 +63,7 @@ const processOrderWorkflow = Workflow.make(
         "Process payment",
         processPayment(order).pipe(
           Workflow.retry({
-            maxAttempts: 5,
+            maxAttempts: 10,
             delay: "1 second",
           }),
         ),
@@ -100,8 +90,8 @@ const workflows = {
 export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
   tracker: {
     env: "production",
-    serviceKey: "finance-workflows",
-    url: "https://tanstack-trpc-on-cloudflare.backpine.workers.dev/sync",
+    serviceKey: "my-app",
+    url: "http://localhost:3000/sync",
     accessToken: "token",
   },
 });
