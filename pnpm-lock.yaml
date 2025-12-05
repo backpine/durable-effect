@@ -49,25 +49,6 @@ importers:
         specifier: ^4.51.0
         version: 4.51.0(@cloudflare/workers-types@4.20251127.0)
 
-  examples/my-first-worker:
-    dependencies:
-      '@durable-effect/workflow':
-        specifier: workspace:*
-        version: link:../../packages/workflow
-      effect:
-        specifier: 'catalog:'
-        version: 3.19.8
-    devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^4.20241127.0
-        version: 4.20251127.0
-      typescript:
-        specifier: ^5.5.2
-        version: 5.9.3
-      wrangler:
-        specifier: ^4.51.0
-        version: 4.51.0(@cloudflare/workers-types@4.20251127.0)
-
   packages/core:
     dependencies:
       uuid:

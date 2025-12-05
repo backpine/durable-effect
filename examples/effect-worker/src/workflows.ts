@@ -100,7 +100,9 @@ const sendConfirmation = (email: string, orderId: string) =>
   Effect.gen(function* () {
     yield* Effect.log(`Sending confirmation to ${email} for order ${orderId}`);
     yield* randomDelay();
-    return { sent: true };
+    return () => {
+      sent: true;
+    };
   });
 
 // =============================================================================
@@ -121,8 +123,6 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
     );
     yield* Workflow.sleep("1 seconds");
 
-    if (true) return yield* Effect.succeed(true);
-
     const payment = yield* Workflow.step(
       `Process payment`,
       processPayment(order).pipe(
@@ -140,7 +140,7 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
       ),
     );
 
-    yield* Workflow.step(
+    const d = yield* Workflow.step(
       "Send confirmation",
       sendConfirmation(order.email, order.id),
     );

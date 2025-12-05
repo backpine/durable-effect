@@ -21,7 +21,7 @@ import type {
   RetryOptions,
   WorkflowDefinition,
 } from "@/types";
-import { StepError, StepTimeoutError } from "@/errors";
+import { StepError, StepTimeoutError, StepSerializationError } from "@/errors";
 
 /**
  * Workflow namespace providing all workflow primitives.
@@ -56,6 +56,16 @@ export namespace Workflow {
    * Execute a durable step with automatic caching.
    * Results are cached and replayed on workflow resume.
    *
+   * **IMPORTANT**: The effect's return value MUST be serializable (JSON-safe).
+   * Non-serializable values (functions, Symbols, Proxy objects, ORM results)
+   * will cause a `StepSerializationError` at runtime.
+   *
+   * If your effect returns a complex object (e.g., ORM result), map it to a
+   * plain object or discard it:
+   * - `.pipe(Effect.map(r => ({ id: r.id })))` - extract needed fields
+   * - `.pipe(Effect.asVoid)` - discard the result
+   * - `.pipe(Effect.as({ success: true }))` - return explicit value
+   *
    * Operators (retry, timeout) should be applied to the effect INSIDE the step.
    *
    * @example
@@ -77,6 +87,11 @@ export namespace Workflow {
    *     Workflow.retry({ maxAttempts: 3 })
    *   )
    * );
+   *
+   * // Step returning ORM result - map to serializable
+   * yield* Workflow.step('Update DB',
+   *   updateRecord(id).pipe(Effect.asVoid)
+   * );
    * ```
    */
   export function step<T, E, R>(
@@ -84,7 +99,7 @@ export namespace Workflow {
     effect: Effect.Effect<T, E, ForbidWorkflowScope<R>>,
   ): Effect.Effect<
     T,
-    E | StepError | PauseSignal | UnknownException,
+    E | StepError | StepSerializationError | PauseSignal | UnknownException,
     WorkflowScope | Exclude<R, StepContext> | ExecutionContext | WorkflowContext
   > {
     return Effect.gen(function* () {
@@ -138,8 +153,40 @@ export namespace Workflow {
       );
 
       if (result._tag === "Right") {
-        // Success - cache result and mark completed
-        yield* stepCtx.setResult(result.right);
+        // Success - try to cache result
+        const cacheResult = yield* stepCtx
+          .setResult(result.right)
+          .pipe(Effect.either);
+
+        if (cacheResult._tag === "Left") {
+          const serializationError = cacheResult.left;
+
+          // Emit step.failed for serialization errors
+          yield* emitEvent({
+            ...createBaseEvent(
+              workflowCtx.workflowId,
+              workflowCtx.workflowName,
+            ),
+            type: "step.failed",
+            stepName: name,
+            attempt,
+            error: {
+              message:
+                serializationError instanceof StepSerializationError
+                  ? serializationError.message
+                  : "Failed to cache step result: value is not serializable",
+              stack:
+                serializationError instanceof Error
+                  ? serializationError.stack
+                  : undefined,
+            },
+            willRetry: false,
+          });
+
+          // Propagate the serialization error (already typed correctly)
+          return yield* Effect.fail(serializationError);
+        }
+
         yield* markStepCompleted(name, storage);
 
         // Emit step completed event
