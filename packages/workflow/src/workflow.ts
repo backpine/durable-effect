@@ -21,7 +21,12 @@ import type {
   RetryOptions,
   WorkflowDefinition,
 } from "@/types";
-import { StepError, StepTimeoutError, StepSerializationError } from "@/errors";
+import {
+  StepError,
+  StepTimeoutError,
+  StepSerializationError,
+  WorkflowCancelledError,
+} from "@/errors";
 
 /**
  * Workflow namespace providing all workflow primitives.
@@ -99,12 +104,33 @@ export namespace Workflow {
     effect: Effect.Effect<T, E, ForbidWorkflowScope<R>>,
   ): Effect.Effect<
     T,
-    E | StepError | StepSerializationError | PauseSignal | UnknownException,
+    | E
+    | StepError
+    | StepSerializationError
+    | PauseSignal
+    | UnknownException
+    | WorkflowCancelledError,
     WorkflowScope | Exclude<R, StepContext> | ExecutionContext | WorkflowContext
   > {
     return Effect.gen(function* () {
       const { storage } = yield* ExecutionContext;
       const workflowCtx = yield* WorkflowContext;
+
+      // Check for cancellation before executing step
+      const cancelled = yield* Effect.promise(() =>
+        storage.get<boolean>("workflow:cancelled"),
+      );
+      if (cancelled) {
+        const reason = yield* Effect.promise(() =>
+          storage.get<string>("workflow:cancelReason"),
+        );
+        return yield* Effect.fail(
+          new WorkflowCancelledError({
+            workflowId: workflowCtx.workflowId,
+            reason,
+          }),
+        );
+      }
 
       // Load attempt and create step context
       const attempt = yield* loadStepAttempt(name, storage);

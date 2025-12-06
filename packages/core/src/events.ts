@@ -137,6 +137,17 @@ export const InternalWorkflowResumedEventSchema = Schema.Struct({
 });
 export type InternalWorkflowResumedEvent = Schema.Schema.Type<typeof InternalWorkflowResumedEventSchema>;
 
+/**
+ * Emitted when a workflow is cancelled.
+ */
+export const InternalWorkflowCancelledEventSchema = Schema.Struct({
+  ...InternalBaseEventFields,
+  type: Schema.Literal("workflow.cancelled"),
+  reason: Schema.optional(Schema.String),
+  completedSteps: Schema.Array(Schema.String),
+});
+export type InternalWorkflowCancelledEvent = Schema.Schema.Type<typeof InternalWorkflowCancelledEventSchema>;
+
 // =============================================================================
 // Step Events (Internal)
 // =============================================================================
@@ -284,6 +295,7 @@ export const InternalWorkflowEventSchema = Schema.Union(
   InternalWorkflowFailedEventSchema,
   InternalWorkflowPausedEventSchema,
   InternalWorkflowResumedEventSchema,
+  InternalWorkflowCancelledEventSchema,
   // Step lifecycle
   InternalStepStartedEventSchema,
   InternalStepCompletedEventSchema,
@@ -353,6 +365,14 @@ export const WorkflowResumedEventSchema = Schema.Struct({
   type: Schema.Literal("workflow.resumed"),
 });
 export type WorkflowResumedEvent = Schema.Schema.Type<typeof WorkflowResumedEventSchema>;
+
+export const WorkflowCancelledEventSchema = Schema.Struct({
+  ...WireBaseEventFields,
+  type: Schema.Literal("workflow.cancelled"),
+  reason: Schema.optional(Schema.String),
+  completedSteps: Schema.Array(Schema.String),
+});
+export type WorkflowCancelledEvent = Schema.Schema.Type<typeof WorkflowCancelledEventSchema>;
 
 export const StepStartedEventSchema = Schema.Struct({
   ...WireBaseEventFields,
@@ -448,6 +468,7 @@ export const WorkflowEventSchema = Schema.Union(
   WorkflowFailedEventSchema,
   WorkflowPausedEventSchema,
   WorkflowResumedEventSchema,
+  WorkflowCancelledEventSchema,
   // Step lifecycle
   StepStartedEventSchema,
   StepCompletedEventSchema,

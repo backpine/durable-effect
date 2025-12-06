@@ -4,6 +4,8 @@ import type {
   WorkflowInput,
   WorkflowStatus,
   DurableWorkflowInstance,
+  CancelOptions,
+  CancelResult,
 } from "@/types";
 
 /**
@@ -74,6 +76,14 @@ export interface WorkflowClientInstance<W extends WorkflowRegistry> {
   runAsync(
     request: WorkflowRunRequest<W>,
   ): Effect.Effect<WorkflowRunResult, WorkflowClientError>;
+
+  /**
+   * Cancel a workflow by instance ID.
+   */
+  cancel(
+    instanceId: string,
+    options?: CancelOptions,
+  ): Effect.Effect<CancelResult, WorkflowClientError>;
 
   /**
    * Get workflow status by instance ID.

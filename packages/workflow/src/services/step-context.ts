@@ -1,6 +1,7 @@
 import { Context, Effect, Option } from "effect";
 import { UnknownException } from "effect/Cause";
 import { StepSerializationError } from "@/errors";
+import { storageGet, storagePut } from "./storage-utils";
 
 /**
  * Step-level context service interface.
@@ -100,47 +101,41 @@ export function createStepContext(
     attempt,
 
     getMeta: <T>(key: string) =>
-      Effect.tryPromise({
-        try: () => storage.get<T>(stepKey(stepName, `meta:${key}`)),
-        catch: (e) => new UnknownException(e),
-      }).pipe(
+      storageGet<T>(storage, stepKey(stepName, `meta:${key}`)).pipe(
         Effect.map((value) =>
           value !== undefined ? Option.some(value) : Option.none<T>(),
         ),
+        Effect.mapError((e) => new UnknownException(e)),
       ),
 
     setMeta: <T>(key: string, value: T) =>
-      Effect.tryPromise({
-        try: () => storage.put(stepKey(stepName, `meta:${key}`), value),
-        catch: (e) => new UnknownException(e),
-      }),
+      storagePut(storage, stepKey(stepName, `meta:${key}`), value).pipe(
+        Effect.mapError((e) => new UnknownException(e)),
+      ),
 
-    startedAt: Effect.tryPromise({
-      try: () => storage.get<number>(stepKey(stepName, "startedAt")),
-      catch: (e) => new UnknownException(e),
-    }).pipe(
+    startedAt: storageGet<number>(storage, stepKey(stepName, "startedAt")).pipe(
       Effect.map((value) =>
         value !== undefined ? Option.some(value) : Option.none<number>(),
       ),
+      Effect.mapError((e) => new UnknownException(e)),
     ),
 
-    deadline: Effect.tryPromise({
-      try: () => storage.get<number>(stepKey(stepName, "meta:deadline")),
-      catch: (e) => new UnknownException(e),
-    }).pipe(
+    deadline: storageGet<number>(
+      storage,
+      stepKey(stepName, "meta:deadline"),
+    ).pipe(
       Effect.map((value) =>
         value !== undefined ? Option.some(value) : Option.none<number>(),
       ),
+      Effect.mapError((e) => new UnknownException(e)),
     ),
 
     getResult: <T>() =>
-      Effect.tryPromise({
-        try: () => storage.get<T>(stepKey(stepName, "result")),
-        catch: (e) => new UnknownException(e),
-      }).pipe(
+      storageGet<T>(storage, stepKey(stepName, "result")).pipe(
         Effect.map((value) =>
           value !== undefined ? Option.some(value) : Option.none<T>(),
         ),
+        Effect.mapError((e) => new UnknownException(e)),
       ),
 
     setResult: <T>(value: T) =>
@@ -148,36 +143,40 @@ export function createStepContext(
         // Pre-validate that the value can be serialized
         yield* validateSerializable(stepName, value);
 
-        // Store the validated value
-        yield* Effect.tryPromise({
-          try: () => storage.put(stepKey(stepName, "result"), value),
-          catch: (error) => {
+        // Store the validated value (with retry for transient errors)
+        yield* storagePut(storage, stepKey(stepName, "result"), value).pipe(
+          Effect.mapError((storageError) => {
             // Double-check for serialization errors from storage.put
-            if (isDataCloneError(error)) {
+            if (isDataCloneError(storageError.cause)) {
               return StepSerializationError.fromSerializationFailure(
                 stepName,
-                error,
+                storageError.cause,
                 value,
               );
             }
-            return new UnknownException(error);
-          },
-        });
+            return new UnknownException(storageError);
+          }),
+        );
       }),
 
-    incrementAttempt: Effect.tryPromise({
-      try: () => storage.put(stepKey(stepName, "attempt"), attempt + 1),
-      catch: (e) => new UnknownException(e),
-    }),
+    incrementAttempt: storagePut(
+      storage,
+      stepKey(stepName, "attempt"),
+      attempt + 1,
+    ).pipe(Effect.mapError((e) => new UnknownException(e))),
 
-    recordStartTime: Effect.tryPromise({
-      try: async () => {
-        const existing = await storage.get<number>(stepKey(stepName, "startedAt"));
-        if (existing === undefined) {
-          await storage.put(stepKey(stepName, "startedAt"), Date.now());
-        }
-      },
-      catch: (e) => new UnknownException(e),
+    recordStartTime: Effect.gen(function* () {
+      const existing = yield* storageGet<number>(
+        storage,
+        stepKey(stepName, "startedAt"),
+      ).pipe(Effect.mapError((e) => new UnknownException(e)));
+      if (existing === undefined) {
+        yield* storagePut(
+          storage,
+          stepKey(stepName, "startedAt"),
+          Date.now(),
+        ).pipe(Effect.mapError((e) => new UnknownException(e)));
+      }
     }),
   };
 }
@@ -189,8 +188,8 @@ export function loadStepAttempt(
   stepName: string,
   storage: DurableObjectStorage,
 ): Effect.Effect<number, UnknownException> {
-  return Effect.tryPromise({
-    try: () => storage.get<number>(stepKey(stepName, "attempt")),
-    catch: (e) => new UnknownException(e),
-  }).pipe(Effect.map((value) => value ?? 0));
+  return storageGet<number>(storage, stepKey(stepName, "attempt")).pipe(
+    Effect.map((value) => value ?? 0),
+    Effect.mapError((e) => new UnknownException(e)),
+  );
 }

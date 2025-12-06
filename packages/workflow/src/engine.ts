@@ -13,6 +13,7 @@ import {
   storeWorkflowMeta,
   loadWorkflowMeta,
 } from "@/services/workflow-context";
+import { storageDeleteAll } from "@/services/storage-utils";
 import { WorkflowScope } from "@/services/workflow-scope";
 import {
   EventTracker,
@@ -22,7 +23,8 @@ import {
   type EventTrackerConfig,
 } from "@/tracker";
 import { transitionWorkflow } from "@/transitions";
-import { StepError } from "@/errors";
+import { StepError, WorkflowCancelledError } from "@/errors";
+import { storageGet, storagePut } from "@/services/storage-utils";
 import {
   createWorkflowClientFactory,
   type WorkflowClientFactory,
@@ -32,6 +34,8 @@ import type {
   WorkflowCall,
   WorkflowRegistry,
   WorkflowStatus,
+  CancelOptions,
+  CancelResult,
 } from "@/types";
 
 /**
@@ -109,6 +113,21 @@ export interface TypedWorkflowEngine<W extends WorkflowRegistry> {
    * ```
    */
   runAsync(call: WorkflowCall<W>): Promise<WorkflowRunResult>;
+
+  /**
+   * Cancel a workflow.
+   *
+   * For paused/queued workflows: Immediately cancels and cleans up.
+   * For running workflows: Sets cancel flag (checked before next step).
+   *
+   * Idempotent - calling cancel on an already cancelled workflow returns success.
+   *
+   * @example
+   * ```typescript
+   * await stub.cancel({ reason: "User requested cancellation" });
+   * ```
+   */
+  cancel(options?: CancelOptions): Promise<CancelResult>;
 
   /**
    * Get the current workflow status.
@@ -307,16 +326,43 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
      * Handle alarm - execute queued or resume paused workflow.
      */
     async alarm(): Promise<void> {
-      const status =
-        await this.ctx.storage.get<WorkflowStatus>("workflow:status");
+      const storage = this.ctx.storage;
+      const status = await storage.get<WorkflowStatus>("workflow:status");
 
       // Determine transition based on status
       if (status?._tag !== "Queued" && status?._tag !== "Paused") {
         return;
       }
 
+      // Check if cancelled while paused/queued
+      const cancelled = await storage.get<boolean>("workflow:cancelled");
+      if (cancelled) {
+        const cancelReason = await storage.get<string>("workflow:cancelReason");
+        const completedSteps =
+          (await storage.get<string[]>("workflow:completedSteps")) ?? [];
+        const meta = await Effect.runPromise(loadWorkflowMeta(storage));
+        const workflowId = this.ctx.id.toString();
+        const trackerLayer = this.#trackerLayer;
+
+        await Effect.runPromise(
+          Effect.gen(function* () {
+            yield* transitionWorkflow(
+              storage,
+              workflowId,
+              meta.workflowName ?? "unknown",
+              { _tag: "Cancel", reason: cancelReason, completedSteps },
+              meta.executionId,
+            );
+            yield* flushEvents;
+          }).pipe(Effect.provide(trackerLayer)),
+        );
+
+        await storage.deleteAll();
+        return;
+      }
+
       // Load workflow metadata (includes executionId for event correlation)
-      const meta = await Effect.runPromise(loadWorkflowMeta(this.ctx.storage));
+      const meta = await Effect.runPromise(loadWorkflowMeta(storage));
 
       if (!meta.workflowName) {
         console.error("Alarm fired but no workflow name found");
@@ -332,7 +378,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
       if (!workflowDef) {
         await Effect.runPromise(
           transitionWorkflow(
-            this.ctx.storage,
+            storage,
             workflowId,
             workflowName,
             {
@@ -432,6 +478,94 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
     async getMeta<M>(key: string): Promise<M | undefined> {
       return this.ctx.storage.get(`workflow:meta:${key}`);
     }
+
+    /**
+     * Cancel a workflow.
+     *
+     * For paused/queued workflows: Immediately cancels and cleans up.
+     * For running workflows: Sets cancel flag (checked before next step).
+     *
+     * Idempotent - calling cancel on an already cancelled workflow returns success.
+     */
+    async cancel(options?: CancelOptions): Promise<CancelResult> {
+      const reason = options?.reason;
+      const storage = this.ctx.storage;
+      const workflowId = this.ctx.id.toString();
+
+      // Get current status
+      const status = await storage.get<WorkflowStatus>("workflow:status");
+
+      // Already in terminal state - no-op
+      if (
+        status?._tag === "Completed" ||
+        status?._tag === "Failed" ||
+        status?._tag === "Cancelled"
+      ) {
+        return { cancelled: false, previousStatus: status };
+      }
+
+      // Load workflow metadata for event emission
+      const meta = await Effect.runPromise(loadWorkflowMeta(storage));
+      const workflowName = meta.workflowName ?? "unknown";
+      const executionId = meta.executionId;
+      const completedSteps =
+        (await storage.get<string[]>("workflow:completedSteps")) ?? [];
+
+      if (status?._tag === "Paused" || status?._tag === "Queued") {
+        // Paused or queued - can cancel immediately
+        // Delete pending alarm
+        await storage.deleteAlarm();
+
+        // Transition to Cancelled
+        const trackerLayer = this.#trackerLayer;
+        await Effect.runPromise(
+          Effect.gen(function* () {
+            yield* transitionWorkflow(
+              storage,
+              workflowId,
+              workflowName,
+              { _tag: "Cancel", reason, completedSteps },
+              executionId,
+            );
+            yield* flushEvents;
+          }).pipe(Effect.provide(trackerLayer)),
+        );
+
+        // Clear storage
+        await storage.deleteAll();
+
+        return { cancelled: true, previousStatus: status };
+      }
+
+      if (status?._tag === "Running") {
+        // Running - set cancel flag for next step to check
+        await storage.put("workflow:cancelled", true);
+        if (reason) {
+          await storage.put("workflow:cancelReason", reason);
+        }
+
+        return { cancelled: true, previousStatus: status };
+      }
+
+      // Pending or unknown - just cancel
+      const trackerLayer = this.#trackerLayer;
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          yield* transitionWorkflow(
+            storage,
+            workflowId,
+            workflowName,
+            { _tag: "Cancel", reason, completedSteps },
+            executionId,
+          );
+          yield* flushEvents;
+        }).pipe(Effect.provide(trackerLayer)),
+      );
+
+      await storage.deleteAll();
+
+      return { cancelled: true, previousStatus: status };
+    }
   }
 
   return {
@@ -479,7 +613,9 @@ function handleWorkflowResult<E>(
         executionId,
       );
 
-      yield* Effect.promise(() => storage.deleteAll());
+      yield* storageDeleteAll(storage).pipe(
+        Effect.mapError((e) => new UnknownException(e)),
+      );
       return;
     }
 
@@ -503,6 +639,30 @@ function handleWorkflowResult<E>(
           stepName: signal.stepName,
         },
         executionId,
+      );
+      return;
+    }
+
+    // Check if it's a WorkflowCancelledError
+    if (
+      failureOption._tag === "Some" &&
+      failureOption.value instanceof WorkflowCancelledError
+    ) {
+      const cancelledError = failureOption.value;
+      const completedSteps = yield* getCompletedStepsFromStorage(storage);
+      yield* transitionWorkflow(
+        storage,
+        workflowId,
+        workflowName,
+        {
+          _tag: "Cancel",
+          reason: cancelledError.reason,
+          completedSteps,
+        },
+        executionId,
+      );
+      yield* storageDeleteAll(storage).pipe(
+        Effect.mapError((e) => new UnknownException(e)),
       );
       return;
     }
@@ -546,6 +706,8 @@ function handleWorkflowResult<E>(
     );
 
     // Clear all storage after permanent failure
-    yield* Effect.promise(() => storage.deleteAll());
+    yield* storageDeleteAll(storage).pipe(
+      Effect.mapError((e) => new UnknownException(e)),
+    );
   });
 }

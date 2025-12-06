@@ -1,6 +1,36 @@
 import { Data } from "effect";
 
 /**
+ * A storage operation failed after retries.
+ */
+export class StorageError extends Data.TaggedError("StorageError")<{
+  readonly operation: "get" | "put" | "delete" | "deleteAll";
+  readonly key: string | undefined;
+  readonly cause: unknown;
+  readonly retriesAttempted: number;
+}> {
+  get message(): string {
+    const keyPart = this.key ? ` for key "${this.key}"` : "";
+    const retryPart =
+      this.retriesAttempted > 0
+        ? ` after ${this.retriesAttempted} retries`
+        : "";
+    return `Storage ${this.operation}${keyPart} failed${retryPart}`;
+  }
+}
+
+/**
+ * Workflow was cancelled by user request.
+ * Used internally to signal cancellation through the Effect error channel.
+ */
+export class WorkflowCancelledError extends Data.TaggedError(
+  "WorkflowCancelledError",
+)<{
+  readonly workflowId: string;
+  readonly reason?: string;
+}> {}
+
+/**
  * Step execution failed after all retries exhausted.
  */
 export class StepError extends Data.TaggedError("StepError")<{

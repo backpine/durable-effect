@@ -1,5 +1,10 @@
 import { Effect } from "effect";
-import type { WorkflowRegistry, DurableWorkflowInstance } from "@/types";
+import type {
+  WorkflowRegistry,
+  DurableWorkflowInstance,
+  CancelOptions,
+  CancelResult,
+} from "@/types";
 import type {
   WorkflowClientInstance,
   WorkflowRunRequest,
@@ -79,6 +84,19 @@ export function createClientInstance<W extends WorkflowRegistry>(
           return { id: instanceId };
         },
         catch: (e) => new WorkflowClientError("runAsync", e),
+      });
+    },
+
+    cancel(
+      instanceId: string,
+      options?: CancelOptions,
+    ): Effect.Effect<CancelResult, WorkflowClientError> {
+      return Effect.tryPromise({
+        try: async () => {
+          const stub = getStub(instanceId);
+          return stub.cancel(options);
+        },
+        catch: (e) => new WorkflowClientError("cancel", e),
       });
     },
 
