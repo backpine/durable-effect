@@ -54,6 +54,9 @@ export type {
   ProvidedContext,
   WorkflowInput,
   WorkflowError,
+  // Cancellation types
+  CancelOptions,
+  CancelResult,
   // Serialization types
   Serializable,
   NonSerializable,
@@ -62,4 +65,10 @@ export type {
 } from "@/types";
 
 // Errors
-export { StepError, StepTimeoutError, StepSerializationError } from "@/errors";
+export {
+  StepError,
+  StepTimeoutError,
+  StepSerializationError,
+  StorageError,
+  WorkflowCancelledError,
+} from "@/errors";

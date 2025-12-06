@@ -1,6 +1,3 @@
-import { Effect, Data, Context } from "effect";
-import { Workflow, createDurableWorkflows } from "@durable-effect/workflow";
-
 // =============================================================================
 // Services
 // =============================================================================
@@ -156,6 +153,57 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
 const workflows = {
   processOrder: processOrderWorkflow,
 } as const;
+
+import { Effect, Data, Context } from "effect";
+import { Workflow, createDurableWorkflows } from "@durable-effect/workflow";
+
+const processOrderWorkflow = Workflow.make((orderId: string) =>
+  Effect.gen(function* () {
+    const order = yield* Workflow.step(
+      "Fetch order",
+      fetchOrder(orderId).pipe(Workflow.retry({ maxAttempts: 3 })),
+    );
+    yield* Workflow.step("Process Payment", processPayment(order));
+
+    yield* Workflow.sleep("3 seconds");
+
+    yield* Workflow.step("Send Welcome Email", sendWelcomeEmail(order));
+
+    const validation = yield* Workflow.step(
+      `Validate`,
+      Effect.gen(function* () {
+        yield* Effect.log(`Validating order: ${order.id}`);
+        yield* randomDelay();
+        return { valid: true };
+      }),
+    );
+    yield* Workflow.sleep("1 seconds");
+
+    const payment = yield* Workflow.step(
+      `Process payment`,
+      processPayment(order).pipe(
+        Effect.catchTag("PaymentDeclinedError", () =>
+          Effect.succeed({
+            transactionId: "recovered",
+            amount: 0,
+            status: "completed" as const,
+          }),
+        ),
+        Workflow.retry({
+          maxAttempts: 5,
+          delay: "1 second",
+        }),
+      ),
+    );
+
+    const d = yield* Workflow.step(
+      "Send confirmation",
+      sendConfirmation(order.email, order.id),
+    );
+    console.log({ orderIg: orderId });
+    yield* Workflow.sleep("1 seconds");
+  }).pipe(Effect.provideService(PaymentGateway, FakePaymentGateway)),
+);
 
 export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
   tracker: {

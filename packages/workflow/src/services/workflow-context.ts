@@ -1,6 +1,12 @@
 import { Context, Effect, Option } from "effect";
 import { UnknownException } from "effect/Cause";
 import type { WorkflowStatus } from "@/types";
+import {
+  storageGet,
+  storagePut,
+  storagePutBatch,
+  storageDelete,
+} from "./storage-utils";
 
 /**
  * Workflow-level context service interface.
@@ -121,36 +127,36 @@ export function createWorkflowContext(
     executionId,
 
     getMeta: <T>(key: string) =>
-      Effect.tryPromise({
-        try: () => storage.get<T>(workflowKey(`meta:${key}`)),
-        catch: (e) => new UnknownException(e),
-      }).pipe(
+      storageGet<T>(storage, workflowKey(`meta:${key}`)).pipe(
         Effect.map((value) =>
           value !== undefined ? Option.some(value) : Option.none<T>(),
         ),
+        Effect.mapError((e) => new UnknownException(e)),
       ),
 
     setMeta: <T>(key: string, value: T) =>
-      Effect.tryPromise({
-        try: () => storage.put(workflowKey(`meta:${key}`), value),
-        catch: (e) => new UnknownException(e),
-      }),
+      storagePut(storage, workflowKey(`meta:${key}`), value).pipe(
+        Effect.mapError((e) => new UnknownException(e)),
+      ),
 
-    completedSteps: Effect.tryPromise({
-      try: () => storage.get<string[]>(workflowKey("completedSteps")),
-      catch: (e) => new UnknownException(e),
-    }).pipe(Effect.map((steps) => steps ?? [])),
+    completedSteps: storageGet<string[]>(
+      storage,
+      workflowKey("completedSteps"),
+    ).pipe(
+      Effect.map((steps) => steps ?? []),
+      Effect.mapError((e) => new UnknownException(e)),
+    ),
 
-    status: Effect.tryPromise({
-      try: () => storage.get<WorkflowStatus>(workflowKey("status")),
-      catch: (e) => new UnknownException(e),
-    }).pipe(Effect.map((status) => status ?? { _tag: "Pending" as const })),
+    status: storageGet<WorkflowStatus>(storage, workflowKey("status")).pipe(
+      Effect.map((status) => status ?? { _tag: "Pending" as const }),
+      Effect.mapError((e) => new UnknownException(e)),
+    ),
 
     hasCompleted: (stepName: string) =>
-      Effect.tryPromise({
-        try: () => storage.get<string[]>(workflowKey("completedSteps")),
-        catch: (e) => new UnknownException(e),
-      }).pipe(Effect.map((steps) => steps?.includes(stepName) ?? false)),
+      storageGet<string[]>(storage, workflowKey("completedSteps")).pipe(
+        Effect.map((steps) => steps?.includes(stepName) ?? false),
+        Effect.mapError((e) => new UnknownException(e)),
+      ),
 
     // ============================================================
     // Pause Point Tracking
@@ -158,36 +164,41 @@ export function createWorkflowContext(
 
     nextPauseIndex: Effect.sync(() => ++pauseCounter),
 
-    completedPauseIndex: Effect.tryPromise({
-      try: () => storage.get<number>(workflowKey("completedPauseIndex")),
-      catch: (e) => new UnknownException(e),
-    }).pipe(Effect.map((n) => n ?? 0)),
+    completedPauseIndex: storageGet<number>(
+      storage,
+      workflowKey("completedPauseIndex"),
+    ).pipe(
+      Effect.map((n) => n ?? 0),
+      Effect.mapError((e) => new UnknownException(e)),
+    ),
 
     setCompletedPauseIndex: (index: number) =>
-      Effect.tryPromise({
-        try: () => storage.put(workflowKey("completedPauseIndex"), index),
-        catch: (e) => new UnknownException(e),
-      }),
+      storagePut(storage, workflowKey("completedPauseIndex"), index).pipe(
+        Effect.mapError((e) => new UnknownException(e)),
+      ),
 
-    pendingResumeAt: Effect.tryPromise({
-      try: () => storage.get<number>(workflowKey("pendingResumeAt")),
-      catch: (e) => new UnknownException(e),
-    }).pipe(
+    pendingResumeAt: storageGet<number>(
+      storage,
+      workflowKey("pendingResumeAt"),
+    ).pipe(
       Effect.map((t) =>
         t !== undefined ? Option.some(t) : Option.none<number>(),
       ),
+      Effect.mapError((e) => new UnknownException(e)),
     ),
 
     setPendingResumeAt: (time: number) =>
-      Effect.tryPromise({
-        try: () => storage.put(workflowKey("pendingResumeAt"), time),
-        catch: (e) => new UnknownException(e),
-      }),
+      storagePut(storage, workflowKey("pendingResumeAt"), time).pipe(
+        Effect.mapError((e) => new UnknownException(e)),
+      ),
 
-    clearPendingResumeAt: Effect.tryPromise({
-      try: () => storage.delete(workflowKey("pendingResumeAt")),
-      catch: (e) => new UnknownException(e),
-    }),
+    clearPendingResumeAt: storageDelete(
+      storage,
+      workflowKey("pendingResumeAt"),
+    ).pipe(
+      Effect.asVoid,
+      Effect.mapError((e) => new UnknownException(e)),
+    ),
   };
 }
 
@@ -198,10 +209,9 @@ export function setWorkflowStatus(
   storage: DurableObjectStorage,
   status: WorkflowStatus,
 ): Effect.Effect<void, UnknownException> {
-  return Effect.tryPromise({
-    try: () => storage.put(workflowKey("status"), status),
-    catch: (e) => new UnknownException(e),
-  });
+  return storagePut(storage, workflowKey("status"), status).pipe(
+    Effect.mapError((e) => new UnknownException(e)),
+  );
 }
 
 /**
@@ -218,15 +228,11 @@ export function storeWorkflowMeta(
   input: unknown,
   executionId?: string,
 ): Effect.Effect<void, UnknownException> {
-  return Effect.tryPromise({
-    try: () =>
-      storage.put({
-        [workflowKey("name")]: workflowName,
-        [workflowKey("input")]: input,
-        [workflowKey("executionId")]: executionId,
-      }),
-    catch: (e) => new UnknownException(e),
-  });
+  return storagePutBatch(storage, {
+    [workflowKey("name")]: workflowName,
+    [workflowKey("input")]: input,
+    [workflowKey("executionId")]: executionId,
+  }).pipe(Effect.mapError((e) => new UnknownException(e)));
 }
 
 /**
@@ -239,15 +245,9 @@ export function loadWorkflowMeta(
   { workflowName: string | undefined; input: unknown; executionId: string | undefined },
   UnknownException
 > {
-  return Effect.tryPromise({
-    try: async () => {
-      const [workflowName, input, executionId] = await Promise.all([
-        storage.get<string>(workflowKey("name")),
-        storage.get<unknown>(workflowKey("input")),
-        storage.get<string>(workflowKey("executionId")),
-      ]);
-      return { workflowName, input, executionId };
-    },
-    catch: (e) => new UnknownException(e),
-  });
+  return Effect.all({
+    workflowName: storageGet<string>(storage, workflowKey("name")),
+    input: storageGet<unknown>(storage, workflowKey("input")),
+    executionId: storageGet<string>(storage, workflowKey("executionId")),
+  }).pipe(Effect.mapError((e) => new UnknownException(e)));
 }

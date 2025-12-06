@@ -52,7 +52,39 @@ export type WorkflowStatus =
       readonly _tag: "Failed";
       readonly error: unknown;
       readonly failedAt: number;
+    }
+  | {
+      readonly _tag: "Cancelled";
+      readonly cancelledAt: number;
+      readonly reason?: string;
     };
+
+/**
+ * Options for cancelling a workflow.
+ */
+export interface CancelOptions {
+  /**
+   * Cancellation mode:
+   * - "graceful": Wait for current step to complete, then cancel
+   * - "immediate": Cancel immediately (default)
+   */
+  readonly mode?: "graceful" | "immediate";
+
+  /**
+   * Reason for cancellation (included in event).
+   */
+  readonly reason?: string;
+}
+
+/**
+ * Result of a cancellation request.
+ */
+export interface CancelResult {
+  /** Whether the workflow was cancelled (false if already completed/failed/cancelled) */
+  readonly cancelled: boolean;
+  /** Previous status before cancellation */
+  readonly previousStatus?: WorkflowStatus;
+}
 
 // =============================================================================
 // Workflow Definition Types
@@ -234,6 +266,7 @@ export interface DurableWorkflowInstance<W extends WorkflowRegistry>
   extends Rpc.DurableObjectBranded {
   run(call: WorkflowCall<W>): Promise<{ id: string }>;
   runAsync(call: WorkflowCall<W>): Promise<{ id: string }>;
+  cancel(options?: CancelOptions): Promise<CancelResult>;
   getStatus(): Promise<WorkflowStatus | undefined>;
   getCompletedSteps(): Promise<ReadonlyArray<string>>;
   getMeta<T>(key: string): Promise<T | undefined>;

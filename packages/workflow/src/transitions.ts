@@ -43,6 +43,11 @@ export type WorkflowTransition =
         readonly attempt?: number;
       };
       readonly completedSteps: ReadonlyArray<string>;
+    }
+  | {
+      readonly _tag: "Cancel";
+      readonly reason?: string;
+      readonly completedSteps: ReadonlyArray<string>;
     };
 
 // =============================================================================
@@ -142,6 +147,20 @@ export const transitionWorkflow = (
           ...base,
           type: "workflow.failed",
           error: t.error,
+          completedSteps: t.completedSteps,
+        });
+        break;
+
+      case "Cancel":
+        yield* setWorkflowStatus(storage, {
+          _tag: "Cancelled",
+          cancelledAt: now,
+          reason: t.reason,
+        });
+        yield* emitEvent({
+          ...base,
+          type: "workflow.cancelled",
+          reason: t.reason,
           completedSteps: t.completedSteps,
         });
         break;
