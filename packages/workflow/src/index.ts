@@ -1,6 +1,18 @@
 // Workflow namespace (primary API)
 export { Workflow } from "@/workflow";
 
+// Backoff strategies for retry configuration
+export {
+  Backoff,
+  calculateDelay,
+  isBackoffConfig,
+  type BackoffConfig,
+  type ExponentialBackoff,
+  type LinearBackoff,
+  type ConstantBackoff,
+  type JitterConfig,
+} from "@/backoff";
+
 // Engine
 export {
   createDurableWorkflows,

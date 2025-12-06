@@ -1,5 +1,9 @@
 import { Effect } from "effect";
-import { Workflow, createDurableWorkflows } from "@durable-effect/workflow";
+import {
+  Backoff,
+  Workflow,
+  createDurableWorkflows,
+} from "@durable-effect/workflow";
 
 // =============================================================================
 // Example Effects (simulated async operations)
@@ -31,7 +35,7 @@ const processPayment = (order: { id: string; amount: number }) =>
     yield* randomDelay();
 
     // 70% chance of failure
-    if (Math.random() < 0.6) {
+    if (Math.random() < 1) {
       yield* Effect.fail(new Error("Payment processing failed"));
     }
 
@@ -70,8 +74,11 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
       "Process payment",
       processPayment(order).pipe(
         Workflow.retry({
-          maxAttempts: 5,
-          delay: "1 second",
+          maxAttempts: 20,
+          delay: Backoff.exponential({
+            max: "120 seconds",
+            base: "1 second",
+          }),
         }),
       ),
     );
