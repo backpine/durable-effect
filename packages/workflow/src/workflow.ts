@@ -1,4 +1,4 @@
-import { Duration, Effect, Option, Schema } from "effect";
+import { Duration, Effect, Option, Schema, Ref, Exit, Cause } from "effect";
 import { UnknownException } from "effect/Cause";
 import {
   ExecutionContext,
@@ -25,9 +25,51 @@ import {
   StepError,
   StepTimeoutError,
   StepSerializationError,
+  StepInfrastructureError,
   WorkflowCancelledError,
 } from "@/errors";
 import { calculateDelay, isBackoffConfig } from "@/backoff";
+
+/**
+ * Step execution state for tracking progress and ensuring proper cleanup.
+ * @internal
+ */
+interface StepState {
+  /** Current execution phase */
+  readonly phase:
+    | "init"
+    | "setup"
+    | "started"
+    | "executing"
+    | "caching"
+    | "completion"
+    | "completed";
+  /** Attempt number (0-indexed) */
+  readonly attempt: number;
+  /** Whether step.failed has been emitted */
+  readonly stepFailedEmitted: boolean;
+}
+
+/**
+ * Check if an error is a control flow signal that should not be treated as a failure.
+ * @internal
+ */
+function isControlFlowSignal(error: unknown): boolean {
+  return error instanceof PauseSignal || error instanceof WorkflowCancelledError;
+}
+
+/**
+ * Check if an error already has step context.
+ * @internal
+ */
+function hasStepContext(error: unknown): boolean {
+  return (
+    error instanceof StepError ||
+    error instanceof StepSerializationError ||
+    error instanceof StepInfrastructureError ||
+    error instanceof StepTimeoutError
+  );
+}
 
 /**
  * Workflow namespace providing all workflow primitives.
@@ -108,8 +150,8 @@ export namespace Workflow {
     | E
     | StepError
     | StepSerializationError
+    | StepInfrastructureError
     | PauseSignal
-    | UnknownException
     | WorkflowCancelledError,
     WorkflowScope | Exclude<R, StepContext> | ExecutionContext | WorkflowContext
   > {
@@ -117,32 +159,178 @@ export namespace Workflow {
       const { storage } = yield* ExecutionContext;
       const workflowCtx = yield* WorkflowContext;
 
-      // Check for cancellation before executing step
-      const cancelled = yield* Effect.promise(() =>
-        storage.get<boolean>("workflow:cancelled"),
-      );
-      if (cancelled) {
-        const reason = yield* Effect.promise(() =>
-          storage.get<string>("workflow:cancelReason"),
-        );
-        return yield* Effect.fail(
-          new WorkflowCancelledError({
-            workflowId: workflowCtx.workflowId,
-            reason,
-          }),
-        );
-      }
+      // Initialize step state tracking
+      const stateRef = yield* Ref.make<StepState>({
+        phase: "init",
+        attempt: 0,
+        stepFailedEmitted: false,
+      });
 
-      // Load attempt and create step context
-      const attempt = yield* loadStepAttempt(name, storage);
-      const stepCtx = createStepContext(name, storage, attempt);
+      // Helper to update phase
+      const setPhase = (phase: StepState["phase"]) =>
+        Ref.update(stateRef, (s) => ({ ...s, phase }));
 
-      // Check if step already completed - return cached result
-      const isCompleted = yield* workflowCtx.hasCompleted(name);
-      if (isCompleted) {
-        const cached = yield* stepCtx.getResult<T>();
-        if (Option.isSome(cached)) {
-          // Emit step completed (cached)
+      // Helper to mark step.failed as emitted
+      const markStepFailedEmitted = () =>
+        Ref.update(stateRef, (s) => ({ ...s, stepFailedEmitted: true }));
+
+      // Helper to wrap infrastructure errors with step context.
+      // Always converts errors to StepInfrastructureError.
+      // Infrastructure operations should never produce control flow signals.
+      const wrapInfraError = <A>(
+        eff: Effect.Effect<A, unknown>,
+        phase: StepInfrastructureError["phase"],
+      ): Effect.Effect<A, StepInfrastructureError> =>
+        eff.pipe(
+          Effect.mapError(
+            (e) =>
+              new StepInfrastructureError({
+                stepName: name,
+                phase,
+                cause: e,
+                attempt: 0, // Will be updated from stateRef if available
+              }),
+          ),
+        );
+
+      // The actual step execution logic
+      const stepLogic = Effect.gen(function* () {
+        yield* setPhase("setup");
+
+        // Check for cancellation before executing step
+        const cancelled = yield* wrapInfraError(
+          Effect.promise(() => storage.get<boolean>("workflow:cancelled")),
+          "setup",
+        );
+        if (cancelled) {
+          const reason = yield* wrapInfraError(
+            Effect.promise(() => storage.get<string>("workflow:cancelReason")),
+            "setup",
+          );
+          return yield* Effect.fail(
+            new WorkflowCancelledError({
+              workflowId: workflowCtx.workflowId,
+              reason,
+            }),
+          );
+        }
+
+        // Load attempt and create step context
+        const attempt = yield* wrapInfraError(
+          loadStepAttempt(name, storage),
+          "setup",
+        );
+        yield* Ref.update(stateRef, (s) => ({ ...s, attempt }));
+        const stepCtx = createStepContext(name, storage, attempt);
+
+        // Check if step already completed - return cached result
+        const isCompleted = yield* wrapInfraError(
+          workflowCtx.hasCompleted(name),
+          "setup",
+        );
+        if (isCompleted) {
+          const cached = yield* wrapInfraError(
+            stepCtx.getResult<T>(),
+            "setup",
+          );
+          if (Option.isSome(cached)) {
+            // Emit step completed (cached) - ignore emission errors
+            yield* emitEvent({
+              ...createBaseEvent(
+                workflowCtx.workflowId,
+                workflowCtx.workflowName,
+              ),
+              type: "step.completed",
+              stepName: name,
+              attempt,
+              durationMs: 0,
+              cached: true,
+            }).pipe(Effect.ignore);
+            yield* setPhase("completed");
+            return cached.value;
+          }
+        }
+
+        // Record start time (idempotent)
+        yield* wrapInfraError(stepCtx.recordStartTime, "setup");
+        const startTime = Date.now();
+
+        // Emit step started event - ignore emission errors
+        yield* emitEvent({
+          ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
+          type: "step.started",
+          stepName: name,
+          attempt,
+        }).pipe(Effect.ignore);
+
+        yield* setPhase("started");
+
+        // Execute effect with StepContext provided
+        yield* setPhase("executing");
+        const result = yield* effect.pipe(
+          Effect.provideService(StepContext, stepCtx),
+          Effect.either,
+        );
+
+        if (result._tag === "Right") {
+          yield* setPhase("caching");
+
+          // Success - try to cache result
+          const cacheResult = yield* stepCtx
+            .setResult(result.right)
+            .pipe(Effect.either);
+
+          if (cacheResult._tag === "Left") {
+            const cacheError = cacheResult.left;
+
+            // Emit step.failed for caching errors
+            yield* emitEvent({
+              ...createBaseEvent(
+                workflowCtx.workflowId,
+                workflowCtx.workflowName,
+              ),
+              type: "step.failed",
+              stepName: name,
+              attempt,
+              error: {
+                message:
+                  cacheError instanceof StepSerializationError
+                    ? cacheError.message
+                    : cacheError instanceof Error
+                      ? cacheError.message
+                      : "Failed to cache step result",
+                stack:
+                  cacheError instanceof Error ? cacheError.stack : undefined,
+              },
+              willRetry: false,
+            }).pipe(Effect.ignore);
+
+            yield* markStepFailedEmitted();
+
+            // Propagate error with proper type:
+            // - StepSerializationError: propagate as-is
+            // - Other errors (UnknownException, etc): wrap in StepInfrastructureError
+            if (cacheError instanceof StepSerializationError) {
+              return yield* Effect.fail(cacheError);
+            }
+            return yield* Effect.fail(
+              new StepInfrastructureError({
+                stepName: name,
+                phase: "caching",
+                cause: cacheError,
+                attempt,
+              }),
+            );
+          }
+
+          yield* setPhase("completion");
+
+          yield* wrapInfraError(
+            markStepCompleted(name, storage),
+            "completion",
+          );
+
+          // Emit step completed event - ignore emission errors
           yield* emitEvent({
             ...createBaseEvent(
               workflowCtx.workflowId,
@@ -151,113 +339,106 @@ export namespace Workflow {
             type: "step.completed",
             stepName: name,
             attempt,
-            durationMs: 0,
-            cached: true,
-          });
-          return cached.value;
-        }
-      }
+            durationMs: Date.now() - startTime,
+            cached: false,
+          }).pipe(Effect.ignore);
 
-      // Record start time (idempotent)
-      yield* stepCtx.recordStartTime;
-      const startTime = Date.now();
+          yield* setPhase("completed");
 
-      // Emit step started event
-      yield* emitEvent({
-        ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
-        type: "step.started",
-        stepName: name,
-        attempt,
-      });
-
-      // Execute effect with StepContext provided
-      // Note: We don't inject StepClock here because Effect.timeoutFail uses
-      // Effect.sleep internally for timeout racing. Compile-time enforcement
-      // via ForbidWorkflowScope prevents Workflow.sleep and nested Workflow.step.
-      const result = yield* effect.pipe(
-        Effect.provideService(StepContext, stepCtx),
-        Effect.either,
-      );
-
-      if (result._tag === "Right") {
-        // Success - try to cache result
-        const cacheResult = yield* stepCtx
-          .setResult(result.right)
-          .pipe(Effect.either);
-
-        if (cacheResult._tag === "Left") {
-          const serializationError = cacheResult.left;
-
-          // Emit step.failed for serialization errors
-          yield* emitEvent({
-            ...createBaseEvent(
-              workflowCtx.workflowId,
-              workflowCtx.workflowName,
-            ),
-            type: "step.failed",
-            stepName: name,
-            attempt,
-            error: {
-              message:
-                serializationError instanceof StepSerializationError
-                  ? serializationError.message
-                  : "Failed to cache step result: value is not serializable",
-              stack:
-                serializationError instanceof Error
-                  ? serializationError.stack
-                  : undefined,
-            },
-            willRetry: false,
-          });
-
-          // Propagate the serialization error (already typed correctly)
-          return yield* Effect.fail(serializationError);
+          return result.right;
         }
 
-        yield* markStepCompleted(name, storage);
+        // Handle failure
+        const error = result.left;
 
-        // Emit step completed event
+        // PauseSignal - increment attempt and propagate (don't emit step.failed for pauses)
+        if (error instanceof PauseSignal) {
+          yield* wrapInfraError(stepCtx.incrementAttempt, "cleanup");
+          return yield* Effect.fail(error);
+        }
+
+        // Emit step failed event
         yield* emitEvent({
           ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
-          type: "step.completed",
+          type: "step.failed",
           stepName: name,
           attempt,
-          durationMs: Date.now() - startTime,
-          cached: false,
-        });
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+          willRetry: false, // At step level, we don't know - retry operator handles this
+        }).pipe(Effect.ignore);
 
-        return result.right;
-      }
+        yield* markStepFailedEmitted();
 
-      // Handle failure
-      const error = result.left;
-
-      // PauseSignal - increment attempt and propagate (don't emit step.failed for pauses)
-      if (error instanceof PauseSignal) {
-        yield* stepCtx.incrementAttempt;
-        return yield* Effect.fail(error);
-      }
-
-      // Emit step failed event
-      yield* emitEvent({
-        ...createBaseEvent(workflowCtx.workflowId, workflowCtx.workflowName),
-        type: "step.failed",
-        stepName: name,
-        attempt,
-        error: {
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-        },
-        willRetry: false, // At step level, we don't know - retry operator handles this
+        // Other errors - wrap in StepError
+        return yield* Effect.fail(
+          new StepError({
+            stepName: name,
+            cause: error,
+            attempt,
+          }),
+        );
       });
 
-      // Other errors - wrap in StepError
-      return yield* Effect.fail(
-        new StepError({
-          stepName: name,
-          cause: error,
-          attempt,
-        }),
+      // Run step logic with onExit to guarantee step.failed emission
+      return yield* stepLogic.pipe(
+        Effect.onExit((exit) =>
+          Effect.gen(function* () {
+            // Only run cleanup logic on failure
+            if (!Exit.isFailure(exit)) {
+              return;
+            }
+
+            const state = yield* Ref.get(stateRef);
+
+            // Skip if step wasn't started yet or already completed
+            // "init" and "setup" phases are before step.started event
+            if (
+              state.phase === "init" ||
+              state.phase === "setup" ||
+              state.phase === "completed"
+            ) {
+              return;
+            }
+
+            // Skip if step.failed was already emitted
+            if (state.stepFailedEmitted) {
+              return;
+            }
+
+            // Extract the error from the cause
+            const failureOption = Cause.failureOption(exit.cause);
+            if (failureOption._tag !== "Some") {
+              return;
+            }
+
+            const error = failureOption.value;
+
+            // Skip control flow signals
+            if (isControlFlowSignal(error)) {
+              return;
+            }
+
+            // Emit step.failed as safety net
+            yield* emitEvent({
+              ...createBaseEvent(
+                workflowCtx.workflowId,
+                workflowCtx.workflowName,
+              ),
+              type: "step.failed",
+              stepName: name,
+              attempt: state.attempt,
+              error: {
+                message:
+                  error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+              },
+              willRetry: false,
+            }).pipe(Effect.ignore);
+          }),
+        ),
       );
     });
   }
@@ -269,7 +450,7 @@ export namespace Workflow {
   function markStepCompleted(
     name: string,
     storage: DurableObjectStorage,
-  ): Effect.Effect<void, UnknownException> {
+  ): Effect.Effect<void, Error> {
     return Effect.tryPromise({
       try: async () => {
         const completed =
@@ -278,7 +459,8 @@ export namespace Workflow {
           await storage.put("workflow:completedSteps", [...completed, name]);
         }
       },
-      catch: (e) => new UnknownException(e),
+      catch: (e) =>
+        e instanceof Error ? e : new Error(`Failed to mark step completed: ${e}`),
     });
   }
 
