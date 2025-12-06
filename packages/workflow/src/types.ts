@@ -2,6 +2,7 @@ import type { Duration, Effect, Schema } from "effect";
 import type { WorkflowContext } from "@/services/workflow-context";
 import type { WorkflowScope } from "@/services/workflow-scope";
 import type { ExecutionContext } from "@durable-effect/core";
+import type { BackoffConfig } from "@/backoff";
 
 // =============================================================================
 // Configuration Types
@@ -9,18 +10,78 @@ import type { ExecutionContext } from "@durable-effect/core";
 
 /**
  * Retry configuration options.
+ *
+ * @example
+ * ```typescript
+ * // Fixed delay
+ * Workflow.retry({ maxAttempts: 3, delay: "5 seconds" })
+ *
+ * // Custom function
+ * Workflow.retry({
+ *   maxAttempts: 5,
+ *   delay: (attempt) => Duration.millis(1000 * Math.pow(2, attempt))
+ * })
+ *
+ * // Exponential backoff with preset
+ * Workflow.retry({ maxAttempts: 5, delay: Backoff.presets.standard() })
+ *
+ * // Custom exponential with jitter
+ * Workflow.retry({
+ *   maxAttempts: 5,
+ *   delay: Backoff.exponential({
+ *     base: "1 second",
+ *     factor: 2,
+ *     max: "30 seconds",
+ *     jitter: true
+ *   })
+ * })
+ *
+ * // With max total duration
+ * Workflow.retry({
+ *   maxAttempts: 10,
+ *   delay: Backoff.exponential({ base: "1 second" }),
+ *   maxDuration: "5 minutes"
+ * })
+ * ```
  */
 export interface RetryOptions {
   /** Maximum number of retries (not including the initial attempt) */
   readonly maxAttempts: number;
 
-  /** Delay between retries - Duration or backoff function */
+  /**
+   * Delay strategy between retries. Defaults to 1 second if not specified.
+   *
+   * Accepts:
+   * - `Duration.DurationInput`: Fixed delay (e.g., "5 seconds", Duration.minutes(1))
+   * - `(attempt: number) => Duration.DurationInput`: Custom delay function
+   * - `BackoffConfig`: Structured backoff via Backoff.exponential/linear/constant/presets
+   *
+   * @example
+   * ```typescript
+   * // Fixed delay
+   * delay: "5 seconds"
+   *
+   * // Custom function
+   * delay: (attempt) => Duration.seconds(Math.pow(2, attempt))
+   *
+   * // Exponential backoff
+   * delay: Backoff.exponential({ base: "1 second", max: "30 seconds" })
+   *
+   * // Preset
+   * delay: Backoff.presets.standard()
+   * ```
+   */
   readonly delay?:
     | Duration.DurationInput
-    | ((attempt: number) => Duration.DurationInput);
+    | ((attempt: number) => Duration.DurationInput)
+    | BackoffConfig;
 
-  /** Only retry when this predicate returns true */
-  readonly while?: (error: unknown) => boolean;
+  /**
+   * Maximum total time across all retry attempts.
+   * If the next retry would exceed this duration from the first attempt,
+   * retries are exhausted early.
+   */
+  readonly maxDuration?: Duration.DurationInput;
 }
 
 /**

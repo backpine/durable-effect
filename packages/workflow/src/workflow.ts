@@ -27,6 +27,7 @@ import {
   StepSerializationError,
   WorkflowCancelledError,
 } from "@/errors";
+import { calculateDelay, isBackoffConfig } from "@/backoff";
 
 /**
  * Workflow namespace providing all workflow primitives.
@@ -290,16 +291,34 @@ export namespace Workflow {
    * // Fixed delay
    * effect.pipe(Workflow.retry({ maxAttempts: 3, delay: '5 seconds' }))
    *
-   * // Exponential backoff
+   * // Custom backoff function
    * effect.pipe(Workflow.retry({
    *   maxAttempts: 5,
    *   delay: (attempt) => Duration.millis(1000 * Math.pow(2, attempt))
    * }))
    *
-   * // Conditional retry
+   * // Exponential backoff with preset
    * effect.pipe(Workflow.retry({
-   *   maxAttempts: 3,
-   *   while: (err) => err instanceof TemporaryError
+   *   maxAttempts: 5,
+   *   delay: Backoff.presets.standard()
+   * }))
+   *
+   * // Custom exponential with jitter
+   * effect.pipe(Workflow.retry({
+   *   maxAttempts: 5,
+   *   delay: Backoff.exponential({
+   *     base: '1 second',
+   *     factor: 2,
+   *     max: '30 seconds',
+   *     jitter: true
+   *   })
+   * }))
+   *
+   * // With max total duration
+   * effect.pipe(Workflow.retry({
+   *   maxAttempts: 10,
+   *   delay: Backoff.exponential({ base: '1 second' }),
+   *   maxDuration: '5 minutes'
    * }))
    * ```
    */
@@ -312,13 +331,27 @@ export namespace Workflow {
     E | PauseSignal | UnknownException,
     R | ExecutionContext | StepContext | WorkflowContext
   > {
-    const { maxAttempts, delay, while: shouldRetry } = options;
+    const { maxAttempts, delay, maxDuration } = options;
 
     return (effect) =>
       Effect.gen(function* () {
         const ctx = yield* ExecutionContext;
         const stepCtx = yield* StepContext;
         const workflowCtx = yield* WorkflowContext;
+
+        // Get or initialize retry start time for maxDuration tracking
+        const retryStartKey = `retry:${stepCtx.stepName}:startTime`;
+        let retryStartTime: number | undefined;
+
+        if (maxDuration !== undefined) {
+          const existingStart = yield* stepCtx.getMeta<number>(retryStartKey);
+          if (Option.isSome(existingStart)) {
+            retryStartTime = existingStart.value;
+          } else {
+            retryStartTime = Date.now();
+            yield* stepCtx.setMeta(retryStartKey, retryStartTime);
+          }
+        }
 
         // Try to execute the effect
         const result = yield* Effect.either(effect);
@@ -348,19 +381,42 @@ export namespace Workflow {
           return yield* Effect.fail(error);
         }
 
-        if (shouldRetry && !shouldRetry(error)) {
-          return yield* Effect.fail(error);
+        // Calculate delay for next attempt
+        let delayDuration: Duration.Duration;
+
+        if (delay === undefined) {
+          delayDuration = Duration.seconds(1);
+        } else if (typeof delay === "function") {
+          delayDuration = Duration.decode(delay(stepCtx.attempt));
+        } else if (isBackoffConfig(delay)) {
+          delayDuration = calculateDelay(delay, stepCtx.attempt);
+        } else {
+          delayDuration = Duration.decode(delay);
         }
 
-        // Calculate delay for next attempt
-        const delayDuration =
-          typeof delay === "function"
-            ? Duration.decode(delay(stepCtx.attempt))
-            : delay
-              ? Duration.decode(delay)
-              : Duration.seconds(1);
-
         const delayMs = Duration.toMillis(delayDuration);
+
+        // Check maxDuration before scheduling retry
+        if (maxDuration !== undefined && retryStartTime !== undefined) {
+          const maxDurationMs = Duration.toMillis(Duration.decode(maxDuration));
+          const elapsed = Date.now() - retryStartTime;
+
+          if (elapsed + delayMs > maxDurationMs) {
+            // Would exceed max duration, exhaust retries early
+            yield* emitEvent({
+              ...createBaseEvent(
+                workflowCtx.workflowId,
+                workflowCtx.workflowName,
+              ),
+              type: "retry.exhausted",
+              stepName: stepCtx.stepName,
+              attempts: stepCtx.attempt,
+            });
+
+            return yield* Effect.fail(error);
+          }
+        }
+
         const resumeAt = Date.now() + delayMs;
 
         // Set alarm for retry
@@ -374,6 +430,7 @@ export namespace Workflow {
           attempt: stepCtx.attempt,
           nextAttemptAt: new Date(resumeAt).toISOString(),
           delayMs,
+          ...(isBackoffConfig(delay) && { backoffType: delay._tag.toLowerCase() }),
         });
 
         // Pause workflow - will resume at alarm time
