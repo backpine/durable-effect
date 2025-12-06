@@ -48,6 +48,40 @@ export class StepTimeoutError extends Data.TaggedError("StepTimeoutError")<{
 }> {}
 
 /**
+ * Step infrastructure operation failed.
+ *
+ * This error wraps failures in the workflow framework's step infrastructure
+ * (storage operations, event emission, etc.) as opposed to failures in the
+ * user's step effect. This ensures step context (stepName, attempt) is always
+ * available for debugging, even when the failure occurs outside the user's code.
+ *
+ * Phases:
+ * - "setup": Before step execution (loading attempt, checking cache, etc.)
+ * - "execution": During user effect execution (shouldn't happen - user errors are separate)
+ * - "caching": After success, while caching result
+ * - "completion": After success, while marking step complete
+ * - "cleanup": During cleanup operations
+ */
+export class StepInfrastructureError extends Data.TaggedError(
+  "StepInfrastructureError",
+)<{
+  readonly stepName: string;
+  readonly phase: "setup" | "execution" | "caching" | "completion" | "cleanup";
+  readonly cause: unknown;
+  readonly attempt: number;
+}> {
+  get message(): string {
+    const causeMessage =
+      this.cause instanceof Error
+        ? this.cause.message
+        : typeof this.cause === "string"
+          ? this.cause
+          : "Unknown error";
+    return `Step "${this.stepName}" infrastructure failure during ${this.phase} (attempt ${this.attempt}): ${causeMessage}`;
+  }
+}
+
+/**
  * Step result could not be serialized to Durable Object storage.
  *
  * This happens when the step returns a non-serializable value like

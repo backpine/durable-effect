@@ -84,4 +84,8 @@ export class SimpleEventCapture {
   clear(): void {
     this.events.length = 0;
   }
+
+  getEvents(): InternalWorkflowEvent[] {
+    return [...this.events];
+  }
 }

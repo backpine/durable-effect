@@ -427,12 +427,93 @@ const stepName =
    - Ensure step.failed always precedes workflow.failed when both occur
    - Ensure step.started + step.failed are always paired
 
+## Implementation (Completed)
+
+The following changes were implemented to address the gaps:
+
+### 1. Added `StepInfrastructureError` (errors.ts:65-82)
+
+New error type that wraps failures in step infrastructure operations:
+
+```typescript
+export class StepInfrastructureError extends Data.TaggedError(
+  "StepInfrastructureError",
+)<{
+  readonly stepName: string;
+  readonly phase: "setup" | "execution" | "caching" | "completion" | "cleanup";
+  readonly cause: unknown;
+  readonly attempt: number;
+}> {
+  get message(): string {
+    return `Step "${this.stepName}" infrastructure failure during ${this.phase} (attempt ${this.attempt}): ${causeMessage}`;
+  }
+}
+```
+
+### 2. Refactored `step()` with State Tracking (workflow.ts:157-440)
+
+Key changes:
+
+1. **Added `StepState` interface** to track:
+   - `phase`: Current execution phase (init, setup, started, executing, caching, completion, completed)
+   - `attempt`: Current attempt number
+   - `stepFailedEmitted`: Whether step.failed has been emitted
+
+2. **Added `wrapInfraError` helper** that wraps ALL infrastructure operations with `StepInfrastructureError`:
+   ```typescript
+   const wrapInfraError = <A>(
+     eff: Effect.Effect<A, unknown>,
+     phase: StepInfrastructureError["phase"],
+   ): Effect.Effect<A, StepInfrastructureError>
+   ```
+
+3. **Added `Effect.onExit`** handler as safety net for step.failed emission:
+   - Only emits step.failed if:
+     - Phase is past "started" (step.started was emitted)
+     - Phase is not "completed" (step already finished)
+     - step.failed wasn't already emitted
+     - Error is not a control flow signal (PauseSignal, WorkflowCancelledError)
+
+### 3. Updated `handleWorkflowResult` (engine.ts:688-702)
+
+Now extracts step context from both `StepError` and `StepInfrastructureError`:
+
+```typescript
+const stepName =
+  error instanceof StepError
+    ? error.stepName
+    : error instanceof StepInfrastructureError
+      ? error.stepName
+      : undefined;
+```
+
+### 4. Added Tests (test/step-infrastructure.test.ts)
+
+New test file with 11 tests covering:
+- StepInfrastructureError creation for setup/completion phase failures
+- step.failed event emission via onExit when infrastructure fails after step.started
+- NO step.failed emission when failure occurs before step.started
+- Proper handling of cancellation (no step.failed emitted)
+- Cache lookup failure handling
+
+### 5. Enhanced MockStorage (test/mocks/storage.ts)
+
+Added `simulateFailure()` method to test infrastructure failures:
+```typescript
+storage.simulateFailure({
+  keys: ["step:TestStep:result"],
+  operations: ["put"],
+  error: new Error("Write failed"),
+});
+```
+
 ## Conclusion
 
-The current architecture has multiple gaps where step-level errors escape without proper tracking. The fix requires:
+**The implementation ensures that:**
 
-1. Wrapping ALL step infrastructure operations with context-aware error handling
-2. Guaranteeing step.failed emission via Effect.ensuring
-3. Updating handleWorkflowResult to extract context from new error types
+1. **All step infrastructure errors have step context** (stepName, attempt, phase) via `StepInfrastructureError`
+2. **step.failed events are guaranteed** via `Effect.onExit` when a step fails after starting
+3. **handleWorkflowResult can extract step context** from both user errors (`StepError`) and infrastructure errors (`StepInfrastructureError`)
+4. **Control flow signals are properly filtered** - PauseSignal and WorkflowCancelledError don't trigger step.failed
 
-This will ensure that every step failure—whether in user code or framework infrastructure—is properly tracked with step context for debugging.
+This makes debugging production issues much easier by ensuring every step failure is properly tracked with full context.

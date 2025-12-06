@@ -11,6 +11,75 @@ export class MockStorage {
     value?: unknown;
   }> = [];
 
+  /** Failure configuration for simulating storage errors */
+  private failureConfig: {
+    keys?: Set<string>;
+    operations?: Set<"get" | "put" | "delete">;
+    error?: Error;
+    failOnce?: boolean;
+  } | null = null;
+
+  /** Count of failures triggered (for failOnce tracking) */
+  private failureCount = 0;
+
+  /**
+   * Configure storage to fail on specific operations.
+   * @param config Failure configuration
+   */
+  simulateFailure(config: {
+    /** Keys that should fail (undefined = all keys) */
+    keys?: string[];
+    /** Operations that should fail (undefined = all operations) */
+    operations?: ("get" | "put" | "delete")[];
+    /** Error to throw (default: generic Error) */
+    error?: Error;
+    /** If true, only fail once then succeed */
+    failOnce?: boolean;
+  }): void {
+    this.failureConfig = {
+      keys: config.keys ? new Set(config.keys) : undefined,
+      operations: config.operations ? new Set(config.operations) : undefined,
+      error: config.error,
+      failOnce: config.failOnce,
+    };
+    this.failureCount = 0;
+  }
+
+  /** Clear failure simulation */
+  clearFailure(): void {
+    this.failureConfig = null;
+    this.failureCount = 0;
+  }
+
+  /** Check if operation should fail */
+  private shouldFail(type: "get" | "put" | "delete", key: string): boolean {
+    if (!this.failureConfig) return false;
+
+    // Check if we've already failed once
+    if (this.failureConfig.failOnce && this.failureCount > 0) return false;
+
+    // Check operation type
+    if (
+      this.failureConfig.operations &&
+      !this.failureConfig.operations.has(type)
+    ) {
+      return false;
+    }
+
+    // Check key
+    if (this.failureConfig.keys && !this.failureConfig.keys.has(key)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /** Throw configured error */
+  private throwError(): never {
+    this.failureCount++;
+    throw this.failureConfig?.error ?? new Error("Simulated storage error");
+  }
+
   async get<T = unknown>(key: string): Promise<T | undefined>;
   async get<T = unknown>(keys: string[]): Promise<Map<string, T>>;
   async get<T = unknown>(
@@ -18,6 +87,12 @@ export class MockStorage {
   ): Promise<T | undefined | Map<string, T>> {
     if (Array.isArray(keyOrKeys)) {
       this.operations.push({ type: "get", key: keyOrKeys });
+      // Check if any key should fail
+      for (const key of keyOrKeys) {
+        if (this.shouldFail("get", key)) {
+          this.throwError();
+        }
+      }
       const result = new Map<string, T>();
       for (const key of keyOrKeys) {
         const value = this.data.get(key);
@@ -28,6 +103,9 @@ export class MockStorage {
       return result;
     }
     this.operations.push({ type: "get", key: keyOrKeys });
+    if (this.shouldFail("get", keyOrKeys)) {
+      this.throwError();
+    }
     return this.data.get(keyOrKeys) as T | undefined;
   }
 
@@ -39,10 +117,16 @@ export class MockStorage {
   ): Promise<void> {
     if (typeof keyOrEntries === "string") {
       this.operations.push({ type: "put", key: keyOrEntries, value });
+      if (this.shouldFail("put", keyOrEntries)) {
+        this.throwError();
+      }
       this.data.set(keyOrEntries, value);
     } else {
       for (const [k, v] of Object.entries(keyOrEntries)) {
         this.operations.push({ type: "put", key: k, value: v });
+        if (this.shouldFail("put", k)) {
+          this.throwError();
+        }
         this.data.set(k, v);
       }
     }
@@ -53,6 +137,12 @@ export class MockStorage {
   async delete(keyOrKeys: string | string[]): Promise<boolean | number> {
     if (Array.isArray(keyOrKeys)) {
       this.operations.push({ type: "delete", key: keyOrKeys });
+      // Check if any key should fail
+      for (const key of keyOrKeys) {
+        if (this.shouldFail("delete", key)) {
+          this.throwError();
+        }
+      }
       let count = 0;
       for (const key of keyOrKeys) {
         if (this.data.delete(key)) count++;
@@ -60,6 +150,9 @@ export class MockStorage {
       return count;
     }
     this.operations.push({ type: "delete", key: keyOrKeys });
+    if (this.shouldFail("delete", keyOrKeys)) {
+      this.throwError();
+    }
     return this.data.delete(keyOrKeys);
   }
 
@@ -89,6 +182,8 @@ export class MockStorage {
     this.data.clear();
     this.operations.length = 0;
     this.alarmTime = null;
+    this.failureConfig = null;
+    this.failureCount = 0;
   }
 
   /** Get raw data for assertions */

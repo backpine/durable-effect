@@ -23,7 +23,7 @@ import {
   type EventTrackerConfig,
 } from "@/tracker";
 import { transitionWorkflow } from "@/transitions";
-import { StepError, WorkflowCancelledError } from "@/errors";
+import { StepError, StepInfrastructureError, WorkflowCancelledError } from "@/errors";
 import { storageGet, storagePut } from "@/services/storage-utils";
 import {
   createWorkflowClientFactory,
@@ -685,8 +685,21 @@ function handleWorkflowResult<E>(
           : JSON.stringify(error);
 
     const errorStack = error instanceof Error ? error.stack : undefined;
-    const stepName = error instanceof StepError ? error.stepName : undefined;
-    const attempt = error instanceof StepError ? error.attempt : undefined;
+
+    // Extract step context from StepError or StepInfrastructureError
+    const stepName =
+      error instanceof StepError
+        ? error.stepName
+        : error instanceof StepInfrastructureError
+          ? error.stepName
+          : undefined;
+
+    const attempt =
+      error instanceof StepError
+        ? error.attempt
+        : error instanceof StepInfrastructureError
+          ? error.attempt
+          : undefined;
 
     yield* transitionWorkflow(
       storage,
@@ -710,4 +723,21 @@ function handleWorkflowResult<E>(
       Effect.mapError((e) => new UnknownException(e)),
     );
   });
+}
+
+/**
+ * Extract step context from various error types.
+ * @internal
+ */
+function extractStepContext(error: unknown): {
+  stepName?: string;
+  attempt?: number;
+} {
+  if (error instanceof StepError) {
+    return { stepName: error.stepName, attempt: error.attempt };
+  }
+  if (error instanceof StepInfrastructureError) {
+    return { stepName: error.stepName, attempt: error.attempt };
+  }
+  return {};
 }
