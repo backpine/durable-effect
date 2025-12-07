@@ -37,6 +37,22 @@ const routes: Route[] = [
     handler: getHealthReady,
   },
 
+  // PulseTracker route
+  {
+    method: "GET",
+    pattern: /^\/pulse-tracker\/track$/,
+    handler: (_req, env) =>
+      Effect.tryPromise({
+        try: async () => {
+          const id = env.PULSE_TRACKER.idFromName("default");
+          const stub = env.PULSE_TRACKER.get(id);
+          const result = await stub.track();
+          return Response.json(result);
+        },
+        catch: (error) => new Error(String(error)),
+      }),
+  },
+
   // Workflow routes
   {
     method: "GET",

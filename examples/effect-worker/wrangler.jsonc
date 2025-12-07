@@ -13,6 +13,10 @@
       {
         "name": "WORKFLOWS",
         "class_name": "Workflows"
+      },
+      {
+        "name": "PULSE_TRACKER",
+        "class_name": "PulseTracker"
       }
     ]
   },
@@ -22,6 +26,10 @@
     {
       "tag": "v1",
       "new_classes": ["Workflows"]
+    },
+    {
+      "tag": "v2",
+      "new_classes": ["PulseTracker"]
     }
   ]
 }

@@ -11,7 +11,7 @@ import {
 
 const randomDelay = () =>
   Effect.promise(() => {
-    const ms = 2000 + Math.random() * 2000; // 2-4 seconds
+    const ms = 18000 + Math.random() * 2000; // 2-4 seconds
     return new Promise((resolve) => setTimeout(resolve, ms));
   });
 
