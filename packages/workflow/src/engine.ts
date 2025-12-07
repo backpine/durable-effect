@@ -23,7 +23,11 @@ import {
   type EventTrackerConfig,
 } from "@/tracker";
 import { transitionWorkflow } from "@/transitions";
-import { StepError, StepInfrastructureError, WorkflowCancelledError } from "@/errors";
+import {
+  StepError,
+  StepInfrastructureError,
+  WorkflowCancelledError,
+} from "@/errors";
 import { storageGet, storagePut } from "@/services/storage-utils";
 import {
   createWorkflowClientFactory,
@@ -220,6 +224,7 @@ export function createDurableWorkflows<const T extends WorkflowRegistry>(
     readonly #trackerLayer: Layer.Layer<EventTracker> = trackerLayer;
 
     constructor(state: DurableObjectState, env: unknown) {
+      console.log("DurableWorkflowEngine constructor being called");
       super(state, env as never);
     }
 
