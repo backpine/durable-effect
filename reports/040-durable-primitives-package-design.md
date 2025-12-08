@@ -62,44 +62,29 @@ import { createDurablePrimitives, Buffer, Queue, Semaphore, Continuous } from "@
 
 // Define all primitives in one registry
 const { Primitives, PrimitiveClient } = createDurablePrimitives({
-  // Buffers
-  eventBuffer: Buffer.make({
-    maxItems: 100,
-    maxWait: "5 minutes",
-    flush: (items) => sendToAnalytics(items),
-  }),
-
-  orderBuffer: Buffer.make({
-    maxItems: 50,
-    maxWait: "30 seconds",
-    flush: (orders) => batchProcessOrders(orders),
-  }),
-
-  // Queues
-  emailQueue: Queue.make({
-    process: (email) => sendEmail(email),
-    concurrency: 5,
-    retry: { maxAttempts: 3, delay: "1 minute" },
-  }),
-
-  webhookQueue: Queue.make({
-    process: (webhook) => deliverWebhook(webhook),
-    concurrency: 10,
-    retry: { maxAttempts: 5, delay: Backoff.exponential({ base: "1 second" }) },
-  }),
-
-  // Semaphores / Rate Limiters
-  apiRateLimiter: Semaphore.make({
-    permits: 100,
-    window: "1 minute",
-  }),
-
   // Continuous processes
   tokenRefresher: Continuous.make({
     interval: "30 minutes",
     execute: () => refreshAccessToken(),
     shouldStop: (state) => state.revoked,
   }),
+  // Buffers
+  eventBuffer: Buffer.make({
+    maxItems: 100,
+    maxWait: "5 minutes",
+    flush: (items) => sendToAnalytics(items),
+  }),
+  // Queues
+   webhookQueue: Queue.make({
+    process: (webhook) => deliverWebhook(webhook),
+    concurrency: 10,
+    retry: { maxAttempts: 5, delay: Backoff.exponential({ base: "1 second" }) },
+  }),
+  // Semaphores / Rate Limiters
+  apiRateLimiter: Semaphore.make({
+    permits: 100,
+    window: "1 minute",
+  })
 }, {
   tracker: { endpoint: "https://events.example.com/ingest" },
 });

@@ -241,8 +241,8 @@ export function retry<A, E, R>(
       );
 
       if (result.success) {
-        // Success! Reset attempt counter and return
-        yield* stepCtx.resetAttempt();
+        // Success! Return value
+        // Note: Don't reset attempt counter - it's needed for step.completed event
         return result.value;
       }
 
