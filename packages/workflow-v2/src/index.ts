@@ -187,9 +187,20 @@ export {
   type CreateDurableWorkflowsOptions,
   type CreateDurableWorkflowsResult,
   type DurableWorkflowEngineInterface,
+} from "./engine";
+
+// Client
+export {
+  createClientInstance,
+  WorkflowClientError,
   type WorkflowClientFactory,
   type WorkflowClientInstance,
-} from "./engine";
+  type WorkflowRunResult,
+  type WorkflowRunRequest,
+  type ExecutionOptions,
+  type CancelOptions as ClientCancelOptions,
+  type CancelResult as ClientCancelResult,
+} from "./client";
 
 // Tracker
 export {

@@ -4,8 +4,6 @@ export type {
   CreateDurableWorkflowsOptions,
   CreateDurableWorkflowsResult,
   DurableWorkflowEngineInterface,
-  WorkflowClientFactory,
-  WorkflowClientInstance,
 } from "./types";
 
 export { createDurableWorkflows } from "./engine";

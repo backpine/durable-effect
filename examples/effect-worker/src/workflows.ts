@@ -18,7 +18,6 @@ const randomDelay = () =>
 const fetchOrder = (orderId: string) =>
   Effect.gen(function* () {
     yield* Effect.log(`Fetching order ${orderId}...`);
-    yield* Workflow.sleep("1 seconds");
 
     yield* randomDelay();
     return {
@@ -66,7 +65,6 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
       "Validate",
       Effect.gen(function* () {
         yield* Effect.log(`Validating order: ${order.id}`);
-        yield* Workflow.sleep("1 seconds");
         yield* randomDelay();
         return { valid: true };
       }),
