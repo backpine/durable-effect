@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/adapters/storage.ts
+// packages/workflow/src/adapters/storage.ts
 
 import { Context, Effect } from "effect";
 import type { StorageError } from "../errors";
@@ -29,7 +29,7 @@ export interface StorageAdapterService {
    * All writes succeed or all fail.
    */
   readonly putBatch: (
-    entries: Record<string, unknown>
+    entries: Record<string, unknown>,
   ) => Effect.Effect<void, StorageError>;
 
   /**
@@ -49,14 +49,13 @@ export interface StorageAdapterService {
    * Returns a Map of key -> value pairs.
    */
   readonly list: <T = unknown>(
-    prefix: string
+    prefix: string,
   ) => Effect.Effect<Map<string, T>, StorageError>;
 }
 
 /**
  * Effect service tag for StorageAdapter.
  */
-export class StorageAdapter extends Context.Tag("@durable-effect/StorageAdapter")<
-  StorageAdapter,
-  StorageAdapterService
->() {}
+export class StorageAdapter extends Context.Tag(
+  "@durable-effect/StorageAdapter",
+)<StorageAdapter, StorageAdapterService>() {}

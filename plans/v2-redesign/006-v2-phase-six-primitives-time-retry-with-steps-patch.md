@@ -88,7 +88,7 @@ const result = yield* execute().pipe(
 ### 1. Retry Operator (`primitives/retry.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/retry.ts
+// packages/workflow/src/primitives/retry.ts
 
 import { Effect, pipe } from "effect";
 import { StepContext } from "../context/step-context";
@@ -398,7 +398,7 @@ export const Backoff = {
 ### 2. Timeout Operator (`primitives/timeout.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/timeout.ts
+// packages/workflow/src/primitives/timeout.ts
 
 import { Effect } from "effect";
 import { StepContext } from "../context/step-context";
@@ -511,7 +511,7 @@ export function timeout<A, E, R>(
 ### 3. Updated Step Implementation (`primitives/step.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/step.ts
+// packages/workflow/src/primitives/step.ts
 
 import { Effect, Option } from "effect";
 import { WorkflowContext } from "../context/workflow-context";
@@ -685,7 +685,7 @@ import { createStepContext } from "../context/step-context";
 ### 4. Updated Exports (`primitives/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/index.ts
+// packages/workflow/src/primitives/index.ts
 
 // PauseSignal
 export {

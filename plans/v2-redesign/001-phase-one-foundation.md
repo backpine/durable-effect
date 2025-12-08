@@ -22,7 +22,7 @@ This phase establishes the foundational abstractions that enable runtime-agnosti
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── index.ts                    # Public exports
 ├── errors.ts                   # Core error types
 ├── adapters/
@@ -49,7 +49,7 @@ packages/workflow-v2/src/
 ### 1. Error Types (`errors.ts`)
 
 ```typescript
-// packages/workflow-v2/src/errors.ts
+// packages/workflow/src/errors.ts
 
 import { Data } from "effect";
 
@@ -135,7 +135,7 @@ export class OrchestratorError extends Data.TaggedError("OrchestratorError")<{
 ### 2. Storage Adapter (`adapters/storage.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/storage.ts
+// packages/workflow/src/adapters/storage.ts
 
 import { Context, Effect } from "effect";
 import type { StorageError } from "../errors";
@@ -202,7 +202,7 @@ export class StorageAdapter extends Context.Tag("@durable-effect/StorageAdapter"
 ### 3. Scheduler Adapter (`adapters/scheduler.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/scheduler.ts
+// packages/workflow/src/adapters/scheduler.ts
 
 import { Context, Effect } from "effect";
 import type { SchedulerError } from "../errors";
@@ -247,7 +247,7 @@ export class SchedulerAdapter extends Context.Tag("@durable-effect/SchedulerAdap
 ### 4. Runtime Adapter (`adapters/runtime.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/runtime.ts
+// packages/workflow/src/adapters/runtime.ts
 
 import { Context, Effect, Layer } from "effect";
 import type { StorageAdapter } from "./storage";
@@ -302,7 +302,7 @@ export type RuntimeLayer = Layer.Layer<
 ### 5. In-Memory Storage (`adapters/in-memory/storage.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/in-memory/storage.ts
+// packages/workflow/src/adapters/in-memory/storage.ts
 
 import { Effect, Ref } from "effect";
 import { StorageError } from "../../errors";
@@ -436,7 +436,7 @@ export function createInMemoryStorageWithErrors(
 ### 6. In-Memory Scheduler (`adapters/in-memory/scheduler.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/in-memory/scheduler.ts
+// packages/workflow/src/adapters/in-memory/scheduler.ts
 
 import { Effect, Ref } from "effect";
 import type { SchedulerAdapterService } from "../scheduler";
@@ -487,7 +487,7 @@ export function shouldAlarmFire(
 ### 7. In-Memory Runtime (`adapters/in-memory/runtime.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/in-memory/runtime.ts
+// packages/workflow/src/adapters/in-memory/runtime.ts
 
 import { Effect, Layer, Ref } from "effect";
 import { StorageAdapter } from "../storage";
@@ -613,7 +613,7 @@ export function createInMemoryRuntime(options?: {
 ### 8. Adapter Exports (`adapters/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/index.ts
+// packages/workflow/src/adapters/index.ts
 
 // Storage
 export { StorageAdapter, type StorageAdapterService } from "./storage";
@@ -652,7 +652,7 @@ export {
 ### 9. Main Index (`index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // Errors
 export {

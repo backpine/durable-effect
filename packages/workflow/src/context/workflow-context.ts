@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/context/workflow-context.ts
+// packages/workflow/src/context/workflow-context.ts
 
 import { Context, Effect, Layer } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -71,14 +71,14 @@ export interface WorkflowContextService {
    * Check if a step has already completed.
    */
   readonly hasCompletedStep: (
-    stepName: string
+    stepName: string,
   ) => Effect.Effect<boolean, StorageError>;
 
   /**
    * Mark a step as completed.
    */
   readonly markStepCompleted: (
-    stepName: string
+    stepName: string,
   ) => Effect.Effect<void, StorageError>;
 
   // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ export interface WorkflowContextService {
    * Check if we should execute a pause point at the given index.
    */
   readonly shouldExecutePause: (
-    index: number
+    index: number,
   ) => Effect.Effect<boolean, StorageError>;
 
   // ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ export interface WorkflowContextService {
    * Set pending resume time.
    */
   readonly setPendingResumeAt: (
-    time: number
+    time: number,
   ) => Effect.Effect<void, StorageError>;
 
   /**
@@ -131,14 +131,16 @@ export interface WorkflowContextService {
   /**
    * Get workflow-level metadata.
    */
-  readonly getMeta: <T>(key: string) => Effect.Effect<T | undefined, StorageError>;
+  readonly getMeta: <T>(
+    key: string,
+  ) => Effect.Effect<T | undefined, StorageError>;
 
   /**
    * Set workflow-level metadata.
    */
   readonly setMeta: <T>(
     key: string,
-    value: T
+    value: T,
   ) => Effect.Effect<void, StorageError>;
 
   // ---------------------------------------------------------------------------
@@ -160,7 +162,7 @@ export interface WorkflowContextService {
  * Effect service tag for WorkflowContext.
  */
 export class WorkflowContext extends Context.Tag(
-  "@durable-effect/WorkflowContext"
+  "@durable-effect/WorkflowContext",
 )<WorkflowContext, WorkflowContextService>() {}
 
 // =============================================================================
@@ -250,5 +252,5 @@ export const createWorkflowContext = Effect.gen(function* () {
  */
 export const WorkflowContextLayer = Layer.effect(
   WorkflowContext,
-  createWorkflowContext
+  createWorkflowContext,
 );

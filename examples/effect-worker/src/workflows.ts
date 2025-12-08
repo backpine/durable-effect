@@ -36,7 +36,7 @@ const processPayment = (order: { id: string; amount: number }) =>
     yield* randomDelay();
 
     // 70% chance of failure
-    if (Math.random() < 0.9) {
+    if (Math.random() < 0.6) {
       yield* Effect.fail(new Error("Payment processing failed"));
     }
 

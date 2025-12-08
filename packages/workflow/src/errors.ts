@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/errors.ts
+// packages/workflow/src/errors.ts
 
 import { Data } from "effect";
 
@@ -35,7 +35,9 @@ export class SchedulerError extends Data.TaggedError("SchedulerError")<{
 /**
  * Invalid state transition attempted.
  */
-export class InvalidTransitionError extends Data.TaggedError("InvalidTransitionError")<{
+export class InvalidTransitionError extends Data.TaggedError(
+  "InvalidTransitionError",
+)<{
   readonly fromStatus: string;
   readonly toTransition: string;
   readonly validTransitions: ReadonlyArray<string>;
@@ -49,7 +51,10 @@ export class InvalidTransitionError extends Data.TaggedError("InvalidTransitionE
  * Recovery operation failed.
  */
 export class RecoveryError extends Data.TaggedError("RecoveryError")<{
-  readonly reason: "max_attempts_exceeded" | "execution_failed" | "invalid_state";
+  readonly reason:
+    | "max_attempts_exceeded"
+    | "execution_failed"
+    | "invalid_state";
   readonly attempts?: number;
   readonly maxAttempts?: number;
   readonly cause?: unknown;

@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/orchestrator/orchestrator.ts
+// packages/workflow/src/orchestrator/orchestrator.ts
 
 import { Context, Effect, Layer } from "effect";
 import { createBaseEvent } from "@durable-effect/core";
@@ -11,10 +11,7 @@ import { WorkflowExecutor, resultToTransition } from "../executor";
 import { OrchestratorError, StorageError } from "../errors";
 import { emitEvent } from "../tracker";
 import type { WorkflowDefinition } from "../primitives/make";
-import {
-  WorkflowRegistryTag,
-  WorkflowNotFoundError,
-} from "./registry";
+import { WorkflowRegistryTag, WorkflowNotFoundError } from "./registry";
 import type {
   WorkflowRegistry,
   WorkflowCall,
@@ -46,7 +43,7 @@ export interface WorkflowOrchestratorService<W extends WorkflowRegistry> {
    * Executes immediately and returns when complete or paused.
    */
   readonly start: (
-    call: WorkflowCall<W>
+    call: WorkflowCall<W>,
   ) => Effect.Effect<StartResult, OrchestratorError, WorkflowRequirements<W>>;
 
   /**
@@ -54,20 +51,24 @@ export interface WorkflowOrchestratorService<W extends WorkflowRegistry> {
    * Returns immediately, workflow starts on next alarm.
    */
   readonly queue: (
-    call: WorkflowCall<W>
+    call: WorkflowCall<W>,
   ) => Effect.Effect<StartResult, OrchestratorError>;
 
   /**
    * Handle an alarm event.
    * Determines appropriate action (resume, start queued, recover).
    */
-  readonly handleAlarm: () => Effect.Effect<void, OrchestratorError, WorkflowRequirements<W>>;
+  readonly handleAlarm: () => Effect.Effect<
+    void,
+    OrchestratorError,
+    WorkflowRequirements<W>
+  >;
 
   /**
    * Cancel a running or queued workflow.
    */
   readonly cancel: (
-    options?: CancelOptions
+    options?: CancelOptions,
   ) => Effect.Effect<CancelResult, OrchestratorError>;
 
   /**
@@ -87,7 +88,7 @@ export interface WorkflowOrchestratorService<W extends WorkflowRegistry> {
  * Type safety is provided through the layer and service creation.
  */
 export class WorkflowOrchestrator extends Context.Tag(
-  "@durable-effect/WorkflowOrchestrator"
+  "@durable-effect/WorkflowOrchestrator",
 )<WorkflowOrchestrator, WorkflowOrchestratorService<any>>() {}
 
 // =============================================================================
@@ -125,8 +126,8 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
                 new OrchestratorError({
                   operation: "start",
                   cause: err,
-                })
-            )
+                }),
+            ),
           );
 
           // Check for existing workflow
@@ -143,7 +144,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
           yield* stateMachine.initialize(
             call.workflow,
             call.input,
-            call.executionId
+            call.executionId,
           );
 
           // Transition to Running
@@ -154,7 +155,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
           // Emit workflow.started event
           yield* emitEvent({
-            ...createBaseEvent(runtime.instanceId, call.workflow, call.executionId),
+            ...createBaseEvent(
+              runtime.instanceId,
+              call.workflow,
+              call.executionId,
+            ),
             type: "workflow.started",
             input: call.input,
           });
@@ -173,7 +178,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
           yield* stateMachine.applyTransition(transition);
 
           // Emit result event
-          const baseEvent = createBaseEvent(runtime.instanceId, call.workflow, call.executionId);
+          const baseEvent = createBaseEvent(
+            runtime.instanceId,
+            call.workflow,
+            call.executionId,
+          );
           if (result._tag === "Completed") {
             yield* emitEvent({
               ...baseEvent,
@@ -187,8 +196,14 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
               ...baseEvent,
               type: "workflow.failed",
               error: {
-                message: result.error instanceof Error ? result.error.message : String(result.error),
-                stack: result.error instanceof Error ? result.error.stack : undefined,
+                message:
+                  result.error instanceof Error
+                    ? result.error.message
+                    : String(result.error),
+                stack:
+                  result.error instanceof Error
+                    ? result.error.stack
+                    : undefined,
               },
               completedSteps: [...result.completedSteps],
             });
@@ -219,9 +234,9 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
             Effect.fail(
               error instanceof OrchestratorError
                 ? error
-                : new OrchestratorError({ operation: "start", cause: error })
-            )
-          )
+                : new OrchestratorError({ operation: "start", cause: error }),
+            ),
+          ),
         ),
 
       queue: (call) =>
@@ -233,8 +248,8 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
                 new OrchestratorError({
                   operation: "queue",
                   cause: err,
-                })
-            )
+                }),
+            ),
           );
 
           // Check for existing workflow
@@ -250,7 +265,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
           yield* stateMachine.initialize(
             call.workflow,
             call.input,
-            call.executionId
+            call.executionId,
           );
 
           // Transition to Queued
@@ -261,7 +276,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
           // Emit workflow.queued event
           yield* emitEvent({
-            ...createBaseEvent(runtime.instanceId, call.workflow, call.executionId),
+            ...createBaseEvent(
+              runtime.instanceId,
+              call.workflow,
+              call.executionId,
+            ),
             type: "workflow.queued",
             input: call.input,
           });
@@ -279,9 +298,9 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
             Effect.fail(
               error instanceof OrchestratorError
                 ? error
-                : new OrchestratorError({ operation: "queue", cause: error })
-            )
-          )
+                : new OrchestratorError({ operation: "queue", cause: error }),
+            ),
+          ),
         ),
 
       handleAlarm: () =>
@@ -297,10 +316,14 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
           const emitResultEvents = (
             result: import("../executor/types").ExecutionResult<unknown>,
             workflowName: string,
-            executionId?: string
+            executionId?: string,
           ) =>
             Effect.gen(function* () {
-              const baseEvent = createBaseEvent(runtime.instanceId, workflowName, executionId);
+              const baseEvent = createBaseEvent(
+                runtime.instanceId,
+                workflowName,
+                executionId,
+              );
               switch (result._tag) {
                 case "Completed":
                   yield* emitEvent({
@@ -315,8 +338,14 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
                     ...baseEvent,
                     type: "workflow.failed",
                     error: {
-                      message: result.error instanceof Error ? result.error.message : String(result.error),
-                      stack: result.error instanceof Error ? result.error.stack : undefined,
+                      message:
+                        result.error instanceof Error
+                          ? result.error.message
+                          : String(result.error),
+                      stack:
+                        result.error instanceof Error
+                          ? result.error.stack
+                          : undefined,
                     },
                     completedSteps: [...result.completedSteps],
                   });
@@ -356,7 +385,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
               // Emit workflow.started event
               yield* emitEvent({
-                ...createBaseEvent(runtime.instanceId, state.workflowName, state.executionId),
+                ...createBaseEvent(
+                  runtime.instanceId,
+                  state.workflowName,
+                  state.executionId,
+                ),
                 type: "workflow.started",
                 input: state.input,
               });
@@ -370,7 +403,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
               });
 
               yield* stateMachine.applyTransition(resultToTransition(result));
-              yield* emitResultEvents(result, state.workflowName, state.executionId);
+              yield* emitResultEvents(
+                result,
+                state.workflowName,
+                state.executionId,
+              );
 
               if (result._tag === "Completed") {
                 yield* cleanup();
@@ -389,7 +426,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
               // Emit workflow.resumed event
               yield* emitEvent({
-                ...createBaseEvent(runtime.instanceId, state.workflowName, state.executionId),
+                ...createBaseEvent(
+                  runtime.instanceId,
+                  state.workflowName,
+                  state.executionId,
+                ),
                 type: "workflow.resumed",
               });
 
@@ -402,7 +443,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
               });
 
               yield* stateMachine.applyTransition(resultToTransition(result));
-              yield* emitResultEvents(result, state.workflowName, state.executionId);
+              yield* emitResultEvents(
+                result,
+                state.workflowName,
+                state.executionId,
+              );
 
               if (result._tag === "Completed") {
                 yield* cleanup();
@@ -424,7 +469,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
                 // Emit workflow.resumed for recovery (similar to resume)
                 yield* emitEvent({
-                  ...createBaseEvent(runtime.instanceId, state.workflowName, state.executionId),
+                  ...createBaseEvent(
+                    runtime.instanceId,
+                    state.workflowName,
+                    state.executionId,
+                  ),
                   type: "workflow.resumed",
                 });
 
@@ -437,7 +486,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
                 });
 
                 yield* stateMachine.applyTransition(resultToTransition(result));
-                yield* emitResultEvents(result, state.workflowName, state.executionId);
+                yield* emitResultEvents(
+                  result,
+                  state.workflowName,
+                  state.executionId,
+                );
 
                 if (result._tag === "Completed") {
                   yield* cleanup();
@@ -458,9 +511,9 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
             Effect.fail(
               error instanceof OrchestratorError
                 ? error
-                : new OrchestratorError({ operation: "alarm", cause: error })
-            )
-          )
+                : new OrchestratorError({ operation: "alarm", cause: error }),
+            ),
+          ),
         ),
 
       cancel: (options) =>
@@ -504,7 +557,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
             const state = yield* stateMachine.getState();
             if (state) {
               yield* emitEvent({
-                ...createBaseEvent(runtime.instanceId, state.workflowName, state.executionId),
+                ...createBaseEvent(
+                  runtime.instanceId,
+                  state.workflowName,
+                  state.executionId,
+                ),
                 type: "workflow.cancelled",
                 reason: options?.reason,
                 completedSteps: [...completedSteps],
@@ -528,9 +585,9 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
         }).pipe(
           Effect.catchAll((error) =>
             Effect.fail(
-              new OrchestratorError({ operation: "cancel", cause: error })
-            )
-          )
+              new OrchestratorError({ operation: "cancel", cause: error }),
+            ),
+          ),
         ),
 
       getStatus: () =>
@@ -556,7 +613,4 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
  * Create an orchestrator layer for a workflow registry.
  */
 export const WorkflowOrchestratorLayer = <W extends WorkflowRegistry>() =>
-  Layer.effect(
-    WorkflowOrchestrator,
-    createWorkflowOrchestrator<W>()
-  );
+  Layer.effect(WorkflowOrchestrator, createWorkflowOrchestrator<W>());

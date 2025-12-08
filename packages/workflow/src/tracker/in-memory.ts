@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/tracker/in-memory.ts
+// packages/workflow/src/tracker/in-memory.ts
 
 import { Effect, Layer, Ref } from "effect";
 import type {
@@ -20,7 +20,7 @@ export interface InMemoryTrackerHandle {
    * Get events of a specific type.
    */
   readonly getEventsByType: <T extends WorkflowEventType>(
-    type: T
+    type: T,
   ) => Effect.Effect<Array<Extract<InternalWorkflowEvent, { type: T }>>>;
 
   /**
@@ -59,15 +59,15 @@ export function createInMemoryTracker(): Effect.Effect<{
             (e) =>
               e.filter((ev) => ev.type === type) as Array<
                 Extract<InternalWorkflowEvent, { type: T }>
-              >
-          )
+              >,
+          ),
         ),
 
       clear: () => Ref.set(events, []),
 
       hasEvent: (type) =>
         Ref.get(events).pipe(
-          Effect.map((e) => e.some((ev) => ev.type === type))
+          Effect.map((e) => e.some((ev) => ev.type === type)),
         ),
     };
 

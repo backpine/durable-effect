@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/context/workflow-scope.ts
+// packages/workflow/src/context/workflow-scope.ts
 
 import { Context, Effect, Layer, Option } from "effect";
 
@@ -39,7 +39,7 @@ export const WorkflowScopeLayer = Layer.succeed(WorkflowScope, {
  */
 export const isInWorkflowScope: Effect.Effect<boolean> = Effect.map(
   Effect.serviceOption(WorkflowScope),
-  Option.isSome
+  Option.isSome,
 );
 
 /**
@@ -67,7 +67,6 @@ export const requireWorkflowScope: Effect.Effect<void, WorkflowScopeError> =
             message:
               "Workflow primitives can only be used inside a workflow. " +
               "Did you forget to use Workflow.make()?",
-          })
-        )
+          }),
+        ),
   );
-

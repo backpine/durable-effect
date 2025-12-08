@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/state/index.ts
+// packages/workflow/src/state/index.ts
 
 // Types
 export type {

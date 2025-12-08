@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/engine/types.ts
+// packages/workflow/src/engine/types.ts
 
 import type { WorkflowRegistry, WorkflowCall } from "../orchestrator/types";
 import type { WorkflowStatus } from "../state/types";
@@ -33,7 +33,7 @@ export interface CreateDurableWorkflowsResult<W extends WorkflowRegistry> {
   readonly Workflows: {
     new (
       state: DurableObjectState,
-      env: unknown
+      env: unknown,
     ): DurableWorkflowEngineInterface<W>;
   };
 

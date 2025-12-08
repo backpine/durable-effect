@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/primitives/make.ts
+// packages/workflow/src/primitives/make.ts
 
 import { Effect, type Types } from "effect";
 import type { StorageError } from "../errors";
@@ -29,7 +29,7 @@ export interface WorkflowDefinition<Input, Output, Error, Requirements> {
    * Should only be called by the executor.
    */
   readonly execute: (
-    input: Input
+    input: Input,
   ) => Effect.Effect<Output, Error | PauseSignal | StorageError, Requirements>;
 
   /**
@@ -44,7 +44,7 @@ export interface WorkflowDefinition<Input, Output, Error, Requirements> {
  * The workflow effect signature.
  */
 export type WorkflowEffect<Input, Output, Error, Requirements> = (
-  input: Input
+  input: Input,
 ) => Effect.Effect<Output, Error | PauseSignal | StorageError, Requirements>;
 
 // =============================================================================
@@ -85,7 +85,7 @@ export type WorkflowEffect<Input, Output, Error, Requirements> = (
  * ```
  */
 export function make<Input, Output, Error, Requirements>(
-  execute: WorkflowEffect<Input, Output, Error, Requirements>
+  execute: WorkflowEffect<Input, Output, Error, Requirements>,
 ): WorkflowDefinition<Input, Output, Error, Requirements> {
   return {
     _tag: "WorkflowDefinition",
@@ -99,47 +99,23 @@ export function make<Input, Output, Error, Requirements>(
 /**
  * Extract input type from a workflow definition.
  */
-export type WorkflowInput<W> = W extends WorkflowDefinition<
-  infer I,
-  any,
-  any,
-  any
->
-  ? I
-  : never;
+export type WorkflowInput<W> =
+  W extends WorkflowDefinition<infer I, any, any, any> ? I : never;
 
 /**
  * Extract output type from a workflow definition.
  */
-export type WorkflowOutput<W> = W extends WorkflowDefinition<
-  any,
-  infer O,
-  any,
-  any
->
-  ? O
-  : never;
+export type WorkflowOutput<W> =
+  W extends WorkflowDefinition<any, infer O, any, any> ? O : never;
 
 /**
  * Extract error type from a workflow definition.
  */
-export type WorkflowError<W> = W extends WorkflowDefinition<
-  any,
-  any,
-  infer E,
-  any
->
-  ? E
-  : never;
+export type WorkflowError<W> =
+  W extends WorkflowDefinition<any, any, infer E, any> ? E : never;
 
 /**
  * Extract requirements type from a workflow definition.
  */
-export type WorkflowRequirements<W> = W extends WorkflowDefinition<
-  any,
-  any,
-  any,
-  infer R
->
-  ? R
-  : never;
+export type WorkflowRequirements<W> =
+  W extends WorkflowDefinition<any, any, any, infer R> ? R : never;

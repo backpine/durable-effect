@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/engine/index.ts
+// packages/workflow/src/engine/index.ts
 
 export type {
   CreateDurableWorkflowsOptions,

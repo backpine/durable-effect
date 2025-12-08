@@ -2,7 +2,7 @@
 
 ## Goal
 
-Update `@packages/workflow-v2` WorkflowClient to return Effects instead of Promises, making it yieldable like v1:
+Update `@packages/workflow` WorkflowClient to return Effects instead of Promises, making it yieldable like v1:
 
 ```ts
 // Current (Promise-based)
@@ -47,7 +47,7 @@ interface WorkflowClientInstance<W> {
 
 ### 1. Create Client Module Structure
 
-Create new directory: `packages/workflow-v2/src/client/`
+Create new directory: `packages/workflow/src/client/`
 
 Files to create:
 - `client/types.ts` - Type definitions
@@ -349,10 +349,10 @@ const { id } = await Effect.runPromise(
 
 ## Files to Modify
 
-1. Create `packages/workflow-v2/src/client/types.ts`
-2. Create `packages/workflow-v2/src/client/instance.ts`
-3. Create `packages/workflow-v2/src/client/index.ts`
-4. Update `packages/workflow-v2/src/engine/types.ts`
-5. Update `packages/workflow-v2/src/engine/engine.ts`
-6. Update `packages/workflow-v2/src/index.ts`
+1. Create `packages/workflow/src/client/types.ts`
+2. Create `packages/workflow/src/client/instance.ts`
+3. Create `packages/workflow/src/client/index.ts`
+4. Update `packages/workflow/src/engine/types.ts`
+5. Update `packages/workflow/src/engine/engine.ts`
+6. Update `packages/workflow/src/index.ts`
 7. Update `examples/effect-worker/src/workflows.ts` (usage example)

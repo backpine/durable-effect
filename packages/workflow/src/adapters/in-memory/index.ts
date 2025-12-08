@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/adapters/in-memory/index.ts
+// packages/workflow/src/adapters/in-memory/index.ts
 
 export {
   createInMemoryStorage,

@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/primitives/backoff.ts
+// packages/workflow/src/primitives/backoff.ts
 
 /**
  * Backoff strategy for retries.
@@ -36,7 +36,7 @@ export const BackoffStrategies = {
   linear: (
     initialDelayMs: number,
     incrementMs: number,
-    maxDelayMs?: number
+    maxDelayMs?: number,
   ): BackoffStrategy => ({
     type: "linear",
     initialDelayMs,
@@ -49,7 +49,7 @@ export const BackoffStrategies = {
    */
   exponential: (
     initialDelayMs: number,
-    options?: { multiplier?: number; maxDelayMs?: number }
+    options?: { multiplier?: number; maxDelayMs?: number },
   ): BackoffStrategy => ({
     type: "exponential",
     initialDelayMs,
@@ -67,7 +67,7 @@ export const BackoffStrategies = {
  */
 export function calculateBackoffDelay(
   strategy: BackoffStrategy,
-  attempt: number
+  attempt: number,
 ): number {
   switch (strategy.type) {
     case "constant":
@@ -119,7 +119,7 @@ export function parseDuration(duration: string | number): number {
   }
 
   const match = duration.match(
-    /^(\d+(?:\.\d+)?)\s*(s|sec|second|seconds|m|min|minute|minutes|h|hr|hour|hours|d|day|days|ms|millisecond|milliseconds)?$/i
+    /^(\d+(?:\.\d+)?)\s*(s|sec|second|seconds|m|min|minute|minutes|h|hr|hour|hours|d|day|days|ms|millisecond|milliseconds)?$/i,
   );
 
   if (!match) {

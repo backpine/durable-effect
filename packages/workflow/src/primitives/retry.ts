@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/primitives/retry.ts
+// packages/workflow/src/primitives/retry.ts
 
 import { Effect } from "effect";
 import { createBaseEvent } from "@durable-effect/core";
@@ -77,7 +77,7 @@ export class RetryExhaustedError extends Error {
     super(
       `Step "${stepName}" failed after ${attempts} attempts: ${
         lastError instanceof Error ? lastError.message : String(lastError)
-      }`
+      }`,
     );
     this.name = "RetryExhaustedError";
     this.stepName = stepName;
@@ -98,7 +98,7 @@ function getDelay(config: DelayConfig | undefined, attempt: number): number {
     // Default: exponential backoff starting at 1 second
     return calculateBackoffDelay(
       BackoffStrategies.exponential(1000, { maxDelayMs: 60000 }),
-      attempt
+      attempt,
     );
   }
 
@@ -156,16 +156,21 @@ function getDelay(config: DelayConfig | undefined, attempt: number): number {
  * ```
  */
 export function retry<A, E, R>(
-  options: RetryOptions
+  options: RetryOptions,
 ): <E2, R2>(
-  effect: Effect.Effect<A, E | E2, R | R2>
+  effect: Effect.Effect<A, E | E2, R | R2>,
 ) => Effect.Effect<
   A,
   E | E2 | StorageError | PauseSignal | RetryExhaustedError,
   R | R2 | StepContext | RuntimeAdapter | WorkflowContext
 > {
-  const { maxAttempts, delay, jitter = true, isRetryable, maxDuration } =
-    options;
+  const {
+    maxAttempts,
+    delay,
+    jitter = true,
+    isRetryable,
+    maxDuration,
+  } = options;
 
   return <E2, R2>(effect: Effect.Effect<A, E | E2, R | R2>) =>
     Effect.gen(function* () {
@@ -201,8 +206,8 @@ export function retry<A, E, R>(
               new RetryExhaustedError(
                 stepCtx.stepName,
                 attempts,
-                lastError ?? new Error("Max duration exceeded")
-              )
+                lastError ?? new Error("Max duration exceeded"),
+              ),
             );
           }
         }
@@ -223,7 +228,7 @@ export function retry<A, E, R>(
 
         const lastError = yield* stepCtx.getMeta<unknown>("lastError");
         return yield* Effect.fail(
-          new RetryExhaustedError(stepCtx.stepName, attempt - 1, lastError)
+          new RetryExhaustedError(stepCtx.stepName, attempt - 1, lastError),
         );
       }
 
@@ -231,8 +236,8 @@ export function retry<A, E, R>(
       const result = yield* effect.pipe(
         Effect.map((value) => ({ success: true as const, value })),
         Effect.catchAll((error) =>
-          Effect.succeed({ success: false as const, error: error as E | E2 })
-        )
+          Effect.succeed({ success: false as const, error: error as E | E2 }),
+        ),
       );
 
       if (result.success) {
@@ -264,7 +269,7 @@ export function retry<A, E, R>(
         });
 
         return yield* Effect.fail(
-          new RetryExhaustedError(stepCtx.stepName, attempt, result.error)
+          new RetryExhaustedError(stepCtx.stepName, attempt, result.error),
         );
       }
 
@@ -294,7 +299,7 @@ export function retry<A, E, R>(
 
       // Pause for retry - orchestrator will catch and schedule alarm
       return yield* Effect.fail(
-        PauseSignal.retry(resumeAt, stepCtx.stepName, attempt + 1)
+        PauseSignal.retry(resumeAt, stepCtx.stepName, attempt + 1),
       );
     });
 }
@@ -320,7 +325,7 @@ export const Backoff = {
     BackoffStrategies.linear(
       parseDuration(options.initial),
       parseDuration(options.increment),
-      options.max !== undefined ? parseDuration(options.max) : undefined
+      options.max !== undefined ? parseDuration(options.max) : undefined,
     ),
 
   /**

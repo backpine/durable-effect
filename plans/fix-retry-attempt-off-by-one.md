@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-When workflow-v2 emits retry-related events, the attempt numbers are off by one after the first retry:
+When workflow emits retry-related events, the attempt numbers are off by one after the first retry:
 
 - First execution: `step.started` shows attempt=1 ✅
 - First failure → retry scheduled with attempt=1 ✅
@@ -12,7 +12,7 @@ When workflow-v2 emits retry-related events, the attempt numbers are off by one 
 
 ## Root Cause Analysis
 
-The bug is in `packages/workflow-v2/src/context/step-context.ts` - a semantic mismatch between how `attempt` and `incrementAttempt()` handle the "no value in storage" case.
+The bug is in `packages/workflow/src/context/step-context.ts` - a semantic mismatch between how `attempt` and `incrementAttempt()` handle the "no value in storage" case.
 
 ### Current Code (step-context.ts:156-167)
 
@@ -119,7 +119,7 @@ No change needed here.
 
 ## Files to Change
 
-### 1. `packages/workflow-v2/src/context/step-context.ts`
+### 1. `packages/workflow/src/context/step-context.ts`
 
 **Change at line 163:**
 ```diff
@@ -134,7 +134,7 @@ No change needed here.
    }),
 ```
 
-### 2. `packages/workflow-v2/test/context/step-context.test.ts`
+### 2. `packages/workflow/test/context/step-context.test.ts`
 
 **Update test at lines 60-72:**
 ```diff

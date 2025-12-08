@@ -36,7 +36,7 @@ When Cloudflare deploys new code or evicts a Durable Object for resource managem
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── recovery/
 │   ├── index.ts               # Recovery exports
 │   ├── config.ts              # Recovery configuration
@@ -54,7 +54,7 @@ packages/workflow-v2/src/
 ### 1. Recovery Configuration (`recovery/config.ts`)
 
 ```typescript
-// packages/workflow-v2/src/recovery/config.ts
+// packages/workflow/src/recovery/config.ts
 
 import { Data } from "effect";
 
@@ -138,7 +138,7 @@ export function validateRecoveryConfig(config: RecoveryConfig): void {
 ### 2. Recovery Manager Service (`recovery/manager.ts`)
 
 ```typescript
-// packages/workflow-v2/src/recovery/manager.ts
+// packages/workflow/src/recovery/manager.ts
 
 import { Context, Effect, Layer } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -474,7 +474,7 @@ export const DefaultRecoveryManagerLayer = Layer.effect(
 ### 3. Recovery Exports (`recovery/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/recovery/index.ts
+// packages/workflow/src/recovery/index.ts
 
 // Configuration
 export {
@@ -500,7 +500,7 @@ export {
 ### 4. Update Main Index
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // ... existing exports ...
 

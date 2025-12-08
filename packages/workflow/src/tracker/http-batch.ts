@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/tracker/http-batch.ts
+// packages/workflow/src/tracker/http-batch.ts
 
 import { Effect, Layer, Ref, Schedule, Duration } from "effect";
 import {
@@ -60,10 +60,10 @@ export class HttpTrackerError extends Error {
   constructor(
     readonly operation: "send",
     readonly cause: unknown,
-    readonly statusCode?: number
+    readonly statusCode?: number,
   ) {
     super(
-      `HttpTracker ${operation} failed${statusCode ? ` (${statusCode})` : ""}: ${String(cause)}`
+      `HttpTracker ${operation} failed${statusCode ? ` (${statusCode})` : ""}: ${String(cause)}`,
     );
     this.name = "HttpTrackerError";
   }
@@ -80,7 +80,7 @@ export class HttpTrackerError extends Error {
  * and batches them for efficient delivery.
  */
 export function createHttpBatchTracker(
-  config: HttpBatchTrackerConfig
+  config: HttpBatchTrackerConfig,
 ): Effect.Effect<EventTrackerService> {
   const cfg = {
     ...DEFAULT_CONFIG,
@@ -94,12 +94,14 @@ export function createHttpBatchTracker(
     const buffer = yield* Ref.make<InternalWorkflowEvent[]>([]);
 
     // Send batch to endpoint (enriches events before sending)
-    const sendBatch = (events: InternalWorkflowEvent[]): Effect.Effect<void> => {
+    const sendBatch = (
+      events: InternalWorkflowEvent[],
+    ): Effect.Effect<void> => {
       if (events.length === 0) return Effect.void;
 
       // Enrich events with env/serviceKey for wire transmission
       const wireEvents: WorkflowEvent[] = events.map((event) =>
-        enrichEvent(event, cfg.env, cfg.serviceKey)
+        enrichEvent(event, cfg.env, cfg.serviceKey),
       );
 
       return Effect.tryPromise({
@@ -117,7 +119,7 @@ export function createHttpBatchTracker(
             throw new HttpTrackerError(
               "send",
               `HTTP ${response.status}`,
-              response.status
+              response.status,
             );
           }
         },
@@ -128,11 +130,11 @@ export function createHttpBatchTracker(
       }).pipe(
         Effect.retry(
           Schedule.exponential(Duration.millis(cfg.retry.initialDelayMs)).pipe(
-            Schedule.compose(Schedule.recurs(cfg.retry.maxAttempts))
-          )
+            Schedule.compose(Schedule.recurs(cfg.retry.maxAttempts)),
+          ),
         ),
         // Don't fail workflow on tracking error - just log and continue
-        Effect.catchAll(() => Effect.void)
+        Effect.catchAll(() => Effect.void),
       );
     };
 

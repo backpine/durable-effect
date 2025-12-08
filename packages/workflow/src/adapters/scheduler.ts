@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/adapters/scheduler.ts
+// packages/workflow/src/adapters/scheduler.ts
 
 import { Context, Effect } from "effect";
 import type { SchedulerError } from "../errors";
@@ -28,13 +28,15 @@ export interface SchedulerAdapterService {
    * Get the currently scheduled time (if any).
    * Returns undefined if nothing scheduled.
    */
-  readonly getScheduled: () => Effect.Effect<number | undefined, SchedulerError>;
+  readonly getScheduled: () => Effect.Effect<
+    number | undefined,
+    SchedulerError
+  >;
 }
 
 /**
  * Effect service tag for SchedulerAdapter.
  */
-export class SchedulerAdapter extends Context.Tag("@durable-effect/SchedulerAdapter")<
-  SchedulerAdapter,
-  SchedulerAdapterService
->() {}
+export class SchedulerAdapter extends Context.Tag(
+  "@durable-effect/SchedulerAdapter",
+)<SchedulerAdapter, SchedulerAdapterService>() {}

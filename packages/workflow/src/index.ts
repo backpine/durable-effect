@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // Errors
 export {

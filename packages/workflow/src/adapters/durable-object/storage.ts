@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/adapters/durable-object/storage.ts
+// packages/workflow/src/adapters/durable-object/storage.ts
 
 import { Effect, Schedule, Duration } from "effect";
 import { StorageError } from "../../errors";
@@ -10,7 +10,7 @@ import type { StorageAdapterService } from "../storage";
  */
 const STORAGE_RETRY_SCHEDULE = Schedule.exponential(Duration.millis(10)).pipe(
   Schedule.compose(Schedule.recurs(3)),
-  Schedule.jittered
+  Schedule.jittered,
 );
 
 /**
@@ -35,7 +35,7 @@ function isRetryableError(error: unknown): boolean {
  * Wraps DurableObjectStorage with Effect error handling and retries.
  */
 export function createDOStorageAdapter(
-  storage: DurableObjectStorage
+  storage: DurableObjectStorage,
 ): StorageAdapterService {
   return {
     get: <T>(key: string) =>
@@ -46,7 +46,7 @@ export function createDOStorageAdapter(
         Effect.retry({
           schedule: STORAGE_RETRY_SCHEDULE,
           while: (e) => isRetryableError(e.cause),
-        })
+        }),
       ),
 
     put: <T>(key: string, value: T) =>
@@ -57,7 +57,7 @@ export function createDOStorageAdapter(
         Effect.retry({
           schedule: STORAGE_RETRY_SCHEDULE,
           while: (e) => isRetryableError(e.cause),
-        })
+        }),
       ),
 
     putBatch: (entries: Record<string, unknown>) =>
@@ -68,7 +68,7 @@ export function createDOStorageAdapter(
         Effect.retry({
           schedule: STORAGE_RETRY_SCHEDULE,
           while: (e) => isRetryableError(e.cause),
-        })
+        }),
       ),
 
     delete: (key: string) =>
@@ -83,7 +83,7 @@ export function createDOStorageAdapter(
         Effect.retry({
           schedule: STORAGE_RETRY_SCHEDULE,
           while: (e) => isRetryableError(e.cause),
-        })
+        }),
       ),
 
     deleteAll: () =>
@@ -103,7 +103,7 @@ export function createDOStorageAdapter(
         Effect.retry({
           schedule: STORAGE_RETRY_SCHEDULE,
           while: (e) => isRetryableError(e.cause),
-        })
+        }),
       ),
   };
 }

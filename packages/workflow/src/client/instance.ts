@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/client/instance.ts
+// packages/workflow/src/client/instance.ts
 
 import { Effect } from "effect";
 import type { WorkflowRegistry } from "../orchestrator/types";
@@ -15,7 +15,7 @@ import { WorkflowClientError } from "./types";
  * Create a workflow client instance from a Durable Object binding.
  */
 export function createClientInstance<W extends WorkflowRegistry>(
-  binding: DurableObjectNamespace
+  binding: DurableObjectNamespace,
 ): WorkflowClientInstance<W> {
   /**
    * Resolve the full instance ID, namespaced by workflow name.

@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/orchestrator/registry.ts
+// packages/workflow/src/orchestrator/registry.ts
 
 import { Context, Effect, Layer } from "effect";
 import type { WorkflowDefinition } from "../primitives/make";
@@ -14,7 +14,7 @@ export class WorkflowNotFoundError extends Error {
 
   constructor(workflowName: string, availableWorkflows: ReadonlyArray<string>) {
     super(
-      `Workflow "${workflowName}" not found. Available: [${availableWorkflows.join(", ")}]`
+      `Workflow "${workflowName}" not found. Available: [${availableWorkflows.join(", ")}]`,
     );
     this.name = "WorkflowNotFoundError";
     this.workflowName = workflowName;
@@ -30,7 +30,7 @@ export interface WorkflowRegistryService<W extends WorkflowRegistry> {
    * Get a workflow definition by name.
    */
   readonly get: (
-    name: string
+    name: string,
   ) => Effect.Effect<
     WorkflowDefinition<any, any, any, any>,
     WorkflowNotFoundError
@@ -51,14 +51,14 @@ export interface WorkflowRegistryService<W extends WorkflowRegistry> {
  * Effect service tag for WorkflowRegistry.
  */
 export class WorkflowRegistryTag extends Context.Tag(
-  "@durable-effect/WorkflowRegistry"
+  "@durable-effect/WorkflowRegistry",
 )<WorkflowRegistryTag, WorkflowRegistryService<any>>() {}
 
 /**
  * Create a workflow registry from a workflows object.
  */
 export function createWorkflowRegistry<W extends WorkflowRegistry>(
-  workflows: W
+  workflows: W,
 ): WorkflowRegistryService<W> {
   const names = Object.keys(workflows);
 
@@ -81,6 +81,5 @@ export function createWorkflowRegistry<W extends WorkflowRegistry>(
  * Create a registry layer.
  */
 export const WorkflowRegistryLayer = <W extends WorkflowRegistry>(
-  workflows: W
-) =>
-  Layer.succeed(WorkflowRegistryTag, createWorkflowRegistry(workflows));
+  workflows: W,
+) => Layer.succeed(WorkflowRegistryTag, createWorkflowRegistry(workflows));

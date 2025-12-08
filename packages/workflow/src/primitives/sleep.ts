@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/primitives/sleep.ts
+// packages/workflow/src/primitives/sleep.ts
 
 import { Effect, Option } from "effect";
 import { createBaseEvent } from "@durable-effect/core";
@@ -37,11 +37,15 @@ import { parseDuration } from "./backoff";
  * ```
  */
 export function sleep(
-  duration: string | number
+  duration: string | number,
 ): Effect.Effect<
   void,
   PauseSignal | StorageError | WorkflowScopeError | StepScopeError,
-  WorkflowContext | WorkflowScope | RuntimeAdapter | StorageAdapter | WorkflowLevel
+  | WorkflowContext
+  | WorkflowScope
+  | RuntimeAdapter
+  | StorageAdapter
+  | WorkflowLevel
 > {
   return Effect.gen(function* () {
     // Access WorkflowLevel to ensure this primitive can only be used at workflow level
@@ -57,7 +61,7 @@ export function sleep(
       return yield* Effect.fail(
         new WorkflowScopeError({
           message: "Workflow.sleep() can only be used inside a workflow",
-        })
+        }),
       );
     }
 
@@ -129,11 +133,15 @@ export function sleep(
  * @param timestamp - Unix timestamp in milliseconds to wake at
  */
 export function sleepUntil(
-  timestamp: number
+  timestamp: number,
 ): Effect.Effect<
   void,
   PauseSignal | StorageError | WorkflowScopeError | StepScopeError,
-  WorkflowContext | WorkflowScope | RuntimeAdapter | StorageAdapter | WorkflowLevel
+  | WorkflowContext
+  | WorkflowScope
+  | RuntimeAdapter
+  | StorageAdapter
+  | WorkflowLevel
 > {
   return Effect.gen(function* () {
     // Access WorkflowLevel to ensure this primitive can only be used at workflow level
@@ -148,7 +156,7 @@ export function sleepUntil(
       return yield* Effect.fail(
         new WorkflowScopeError({
           message: "Workflow.sleepUntil() can only be used inside a workflow",
-        })
+        }),
       );
     }
 

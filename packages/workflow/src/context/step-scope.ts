@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/context/step-scope.ts
+// packages/workflow/src/context/step-scope.ts
 
 import { Context, Effect, Layer, Option } from "effect";
 
@@ -49,7 +49,7 @@ export const StepScopeLayer = (stepName: string) =>
  */
 export const isInStepScope: Effect.Effect<boolean> = Effect.map(
   Effect.serviceOption(StepScope),
-  Option.isSome
+  Option.isSome,
 );
 
 /**
@@ -65,7 +65,7 @@ export class StepScopeError extends Error {
       `${opts.operation} cannot be used inside Workflow.step("${opts.stepName}"). ` +
         "Workflow-level primitives like Workflow.sleep() and Workflow.step() " +
         "must be used at the workflow level, not inside other steps. " +
-        "Note: Effect.sleep() is allowed inside steps for regular delays."
+        "Note: Effect.sleep() is allowed inside steps for regular delays.",
     );
     this.name = "StepScopeError";
     this.operation = opts.operation;
@@ -82,7 +82,7 @@ export class StepScopeError extends Error {
  * @param operationName - The name of the operation being guarded (e.g., "Workflow.sleep")
  */
 export const guardWorkflowOperation = (
-  operationName: string
+  operationName: string,
 ): Effect.Effect<void, StepScopeError> =>
   Effect.flatMap(Effect.serviceOption(StepScope), (option) =>
     Option.isNone(option)
@@ -91,8 +91,8 @@ export const guardWorkflowOperation = (
           new StepScopeError({
             operation: operationName,
             stepName: option.value.stepName,
-          })
-        )
+          }),
+        ),
   );
 
 /**

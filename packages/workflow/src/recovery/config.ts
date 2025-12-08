@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/recovery/config.ts
+// packages/workflow/src/recovery/config.ts
 
 /**
  * Configuration for the recovery system.
@@ -53,7 +53,7 @@ export const defaultRecoveryConfig: RecoveryConfig = {
  * Create a recovery config by merging with defaults.
  */
 export function createRecoveryConfig(
-  overrides?: Partial<RecoveryConfig>
+  overrides?: Partial<RecoveryConfig>,
 ): RecoveryConfig {
   return {
     ...defaultRecoveryConfig,

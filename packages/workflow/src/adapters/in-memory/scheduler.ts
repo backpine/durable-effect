@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/adapters/in-memory/scheduler.ts
+// packages/workflow/src/adapters/in-memory/scheduler.ts
 
 import { Effect, Ref } from "effect";
 import type { SchedulerAdapterService } from "../scheduler";
@@ -17,17 +17,17 @@ export interface InMemorySchedulerState {
  * Does NOT automatically fire - tests must manually trigger alarms.
  */
 export function createInMemoryScheduler(
-  stateRef?: Ref.Ref<InMemorySchedulerState>
+  stateRef?: Ref.Ref<InMemorySchedulerState>,
 ): Effect.Effect<SchedulerAdapterService, never, never> {
   return Effect.gen(function* () {
-    const ref = stateRef ?? (yield* Ref.make<InMemorySchedulerState>({ scheduledTime: undefined }));
+    const ref =
+      stateRef ??
+      (yield* Ref.make<InMemorySchedulerState>({ scheduledTime: undefined }));
 
     return {
-      schedule: (time: number) =>
-        Ref.set(ref, { scheduledTime: time }),
+      schedule: (time: number) => Ref.set(ref, { scheduledTime: time }),
 
-      cancel: () =>
-        Ref.set(ref, { scheduledTime: undefined }),
+      cancel: () => Ref.set(ref, { scheduledTime: undefined }),
 
       getScheduled: () =>
         Ref.get(ref).pipe(Effect.map((state) => state.scheduledTime)),
@@ -40,7 +40,7 @@ export function createInMemoryScheduler(
  */
 export function shouldAlarmFire(
   scheduledTime: number | undefined,
-  currentTime: number
+  currentTime: number,
 ): boolean {
   return scheduledTime !== undefined && currentTime >= scheduledTime;
 }

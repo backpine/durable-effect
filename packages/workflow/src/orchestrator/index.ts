@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/orchestrator/index.ts
+// packages/workflow/src/orchestrator/index.ts
 
 // Types
 export type {

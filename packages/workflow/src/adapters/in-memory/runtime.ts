@@ -1,13 +1,10 @@
-// packages/workflow-v2/src/adapters/in-memory/runtime.ts
+// packages/workflow/src/adapters/in-memory/runtime.ts
 
 import { Effect, Layer, Ref } from "effect";
 import { StorageAdapter } from "../storage";
 import { SchedulerAdapter } from "../scheduler";
 import { RuntimeAdapter, type RuntimeLayer } from "../runtime";
-import {
-  createInMemoryStorage,
-  type InMemoryStorageState,
-} from "./storage";
+import { createInMemoryStorage, type InMemoryStorageState } from "./storage";
 import {
   createInMemoryScheduler,
   type InMemorySchedulerState,
@@ -80,8 +77,12 @@ export function createInMemoryRuntime(options?: {
     const initialTime = options?.initialTime ?? Date.now();
 
     // Create shared refs for state inspection
-    const storageRef = yield* Ref.make<InMemoryStorageState>({ data: new Map() });
-    const schedulerRef = yield* Ref.make<InMemorySchedulerState>({ scheduledTime: undefined });
+    const storageRef = yield* Ref.make<InMemoryStorageState>({
+      data: new Map(),
+    });
+    const schedulerRef = yield* Ref.make<InMemorySchedulerState>({
+      scheduledTime: undefined,
+    });
     const timeRef = yield* Ref.make<number>(initialTime);
 
     // Create adapters with shared refs
@@ -109,9 +110,11 @@ export function createInMemoryRuntime(options?: {
       setTime: (time: number) => Ref.set(timeRef, time),
       shouldAlarmFire: () =>
         Effect.all([Ref.get(schedulerRef), Ref.get(timeRef)]).pipe(
-          Effect.map(([scheduler, time]) =>
-            scheduler.scheduledTime !== undefined && time >= scheduler.scheduledTime
-          )
+          Effect.map(
+            ([scheduler, time]) =>
+              scheduler.scheduledTime !== undefined &&
+              time >= scheduler.scheduledTime,
+          ),
         ),
       clearAlarm: () => Ref.set(schedulerRef, { scheduledTime: undefined }),
     };

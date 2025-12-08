@@ -1,11 +1,7 @@
-// packages/workflow-v2/src/executor/index.ts
+// packages/workflow/src/executor/index.ts
 
 // Types
-export type {
-  ExecutionMode,
-  ExecutionResult,
-  ExecutionContext,
-} from "./types";
+export type { ExecutionMode, ExecutionResult, ExecutionContext } from "./types";
 
 export { resultToTransition } from "./types";
 

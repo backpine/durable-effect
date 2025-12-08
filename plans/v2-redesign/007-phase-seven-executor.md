@@ -35,7 +35,7 @@ The executor is the bridge between the orchestrator and workflow definitions:
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── executor/
 │   ├── index.ts               # Executor exports
 │   ├── types.ts               # Execution types
@@ -52,7 +52,7 @@ packages/workflow-v2/src/
 ### 1. Execution Types (`executor/types.ts`)
 
 ```typescript
-// packages/workflow-v2/src/executor/types.ts
+// packages/workflow/src/executor/types.ts
 
 import type { WorkflowDefinition } from "../primitives/make";
 import type { WorkflowStatus, WorkflowTransition } from "../state/types";
@@ -159,7 +159,7 @@ export function resultToTransition<Output>(
 ### 2. Workflow Executor Service (`executor/executor.ts`)
 
 ```typescript
-// packages/workflow-v2/src/executor/executor.ts
+// packages/workflow/src/executor/executor.ts
 
 import { Context, Effect, Layer, Exit, Cause, Option } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -414,7 +414,7 @@ export const WorkflowExecutorLayer = Layer.effect(
 ### 3. Executor Exports (`executor/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/executor/index.ts
+// packages/workflow/src/executor/index.ts
 
 // Types
 export type {
@@ -437,7 +437,7 @@ export {
 ### 4. Update Main Index
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // ... existing exports ...
 

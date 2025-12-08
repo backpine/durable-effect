@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/context/index.ts
+// packages/workflow/src/context/index.ts
 
 // Workflow Context
 export {

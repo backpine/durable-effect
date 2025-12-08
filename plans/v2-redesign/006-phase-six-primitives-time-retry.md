@@ -34,7 +34,7 @@ Unlike in-memory sleep/retry, durable time operations must:
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── primitives/
 │   ├── sleep.ts               # sleep() implementation
 │   ├── retry.ts               # retry() implementation
@@ -55,7 +55,7 @@ packages/workflow-v2/src/
 ### 1. Backoff Utilities (`primitives/backoff.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/backoff.ts
+// packages/workflow/src/primitives/backoff.ts
 
 /**
  * Backoff strategy for retries.
@@ -217,7 +217,7 @@ export function parseDuration(duration: string | number): number {
 ### 2. Sleep Primitive (`primitives/sleep.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/sleep.ts
+// packages/workflow/src/primitives/sleep.ts
 
 import { Effect, Option } from "effect";
 import { WorkflowContext } from "../context/workflow-context";
@@ -343,7 +343,7 @@ export function sleepUntil(
 ### 3. Retry Primitive (`primitives/retry.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/retry.ts
+// packages/workflow/src/primitives/retry.ts
 
 import { Effect, Option } from "effect";
 import { WorkflowContext } from "../context/workflow-context";
@@ -637,7 +637,7 @@ export const RetryStrategies = {
 ### 4. Timeout Primitive (`primitives/timeout.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/timeout.ts
+// packages/workflow/src/primitives/timeout.ts
 
 import { Effect, Option } from "effect";
 import { WorkflowContext } from "../context/workflow-context";
@@ -820,7 +820,7 @@ export function getRemainingTime(
 ### 5. Update Primitives Index
 
 ```typescript
-// packages/workflow-v2/src/primitives/index.ts
+// packages/workflow/src/primitives/index.ts
 
 // ... existing exports ...
 
@@ -855,7 +855,7 @@ export {
 ### 6. Update Main Index
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // ... existing exports ...
 

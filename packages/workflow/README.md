@@ -1,4 +1,4 @@
-# @durable-effect/workflow-v2
+# @durable-effect/workflow
 
 Write workflows that survive server restarts, network failures, and deployments. Your code picks up exactly where it left off.
 
@@ -44,7 +44,7 @@ This library brings [Effect's](https://effect.website/) composable, type-safe pr
 ## Installation
 
 ```bash
-pnpm add @durable-effect/workflow-v2 effect
+pnpm add @durable-effect/workflow effect
 ```
 
 ---
@@ -119,7 +119,7 @@ Workflows are built using `Workflow.make()`. A workflow is a function that takes
 
 ```typescript
 import { Effect } from "effect";
-import { Workflow } from "@durable-effect/workflow-v2";
+import { Workflow } from "@durable-effect/workflow";
 
 const myWorkflow = Workflow.make((orderId: string) =>
   Effect.gen(function* () {
@@ -212,7 +212,7 @@ Create a file (e.g., `workflows.ts`) that defines and exports your workflows:
 
 ```typescript
 import { Effect } from "effect";
-import { Workflow, Backoff, createDurableWorkflows } from "@durable-effect/workflow-v2";
+import { Workflow, Backoff, createDurableWorkflows } from "@durable-effect/workflow";
 
 // Define your workflow (name comes from registry key)
 const processOrderWorkflow = Workflow.make((orderId: string) =>
@@ -513,7 +513,7 @@ Workflow.retry({
 Import the `Backoff` namespace for advanced retry strategies:
 
 ```typescript
-import { Backoff } from "@durable-effect/workflow-v2";
+import { Backoff } from "@durable-effect/workflow";
 ```
 
 #### Exponential Backoff
@@ -768,7 +768,7 @@ import {
   OrchestratorError,        // Orchestration error
   WorkflowScopeError,       // Operation used outside workflow
   StepScopeError,           // Sleep/sleepUntil used inside step
-} from "@durable-effect/workflow-v2";
+} from "@durable-effect/workflow";
 ```
 
 ---

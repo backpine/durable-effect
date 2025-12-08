@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/client/index.ts
+// packages/workflow/src/client/index.ts
 
 export { createClientInstance } from "./instance";
 

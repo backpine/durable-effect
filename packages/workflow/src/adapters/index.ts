@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/adapters/index.ts
+// packages/workflow/src/adapters/index.ts
 
 // Storage
 export { StorageAdapter, type StorageAdapterService } from "./storage";

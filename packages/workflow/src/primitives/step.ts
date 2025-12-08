@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/primitives/step.ts
+// packages/workflow/src/primitives/step.ts
 
 import { Effect, Layer, Option } from "effect";
 import { createBaseEvent } from "@durable-effect/core";
@@ -76,7 +76,7 @@ export class StepCancelledError extends Error {
  */
 export function step<A, E, R>(
   name: string,
-  effect: Effect.Effect<A, E, R>
+  effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<
   A,
   E | StorageError | StepCancelledError | WorkflowScopeError,
@@ -97,7 +97,7 @@ export function step<A, E, R>(
       return yield* Effect.fail(
         new WorkflowScopeError({
           message: `Workflow.step("${name}") can only be used inside a workflow`,
-        })
+        }),
       );
     }
 
@@ -162,22 +162,25 @@ export function step<A, E, R>(
     // - StepScope (for guard checks)
     // - RuntimeAdapter (for retry/timeout operators)
     // - StorageAdapter (in case the effect needs it directly)
-    const stepScopeService = { _marker: "step-scope-active" as const, stepName: name };
+    const stepScopeService = {
+      _marker: "step-scope-active" as const,
+      stepName: name,
+    };
 
     // Build a single layer that provides all step-execution dependencies
     const stepLayer = Layer.mergeAll(
       Layer.succeed(StepContext, stepCtx),
       Layer.succeed(StepScope, stepScopeService),
       Layer.succeed(StorageAdapter, storage),
-      Layer.succeed(RuntimeAdapter, runtime)
+      Layer.succeed(RuntimeAdapter, runtime),
     );
 
     const effectResult = yield* effect.pipe(
       Effect.provide(stepLayer),
       Effect.map((value) => ({ _tag: "Success" as const, value })),
       Effect.catchAll((error) =>
-        Effect.succeed({ _tag: "Failure" as const, error: error as E })
-      )
+        Effect.succeed({ _tag: "Failure" as const, error: error as E }),
+      ),
     );
 
     // Handle failure

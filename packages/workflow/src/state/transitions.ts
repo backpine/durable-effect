@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/state/transitions.ts
+// packages/workflow/src/state/transitions.ts
 
 import type { StatusTag, TransitionTag } from "./types";
 
@@ -32,7 +32,7 @@ export const VALID_TRANSITIONS: Record<StatusTag, readonly TransitionTag[]> = {
  */
 export function isValidTransition(
   fromStatus: StatusTag,
-  transition: TransitionTag
+  transition: TransitionTag,
 ): boolean {
   return VALID_TRANSITIONS[fromStatus].includes(transition);
 }
@@ -40,7 +40,9 @@ export function isValidTransition(
 /**
  * Get all valid transitions from a status.
  */
-export function getValidTransitions(fromStatus: StatusTag): readonly TransitionTag[] {
+export function getValidTransitions(
+  fromStatus: StatusTag,
+): readonly TransitionTag[] {
   return VALID_TRANSITIONS[fromStatus];
 }
 

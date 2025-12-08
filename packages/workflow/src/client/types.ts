@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/client/types.ts
+// packages/workflow/src/client/types.ts
 
 import type { Context, Effect } from "effect";
 import type { WorkflowRegistry } from "../orchestrator/types";
@@ -13,10 +13,10 @@ export class WorkflowClientError extends Error {
 
   constructor(
     readonly operation: string,
-    readonly cause: unknown
+    readonly cause: unknown,
   ) {
     super(
-      `Workflow client ${operation} failed: ${cause instanceof Error ? cause.message : String(cause)}`
+      `Workflow client ${operation} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
     this.name = "WorkflowClientError";
   }
@@ -76,14 +76,14 @@ export interface WorkflowClientInstance<W extends WorkflowRegistry> {
    * Run workflow synchronously (blocks until complete/pause/fail).
    */
   run(
-    request: WorkflowRunRequest<W>
+    request: WorkflowRunRequest<W>,
   ): Effect.Effect<WorkflowRunResult, WorkflowClientError>;
 
   /**
    * Run workflow asynchronously (returns immediately).
    */
   runAsync(
-    request: WorkflowRunRequest<W>
+    request: WorkflowRunRequest<W>,
   ): Effect.Effect<WorkflowRunResult, WorkflowClientError>;
 
   /**
@@ -91,21 +91,21 @@ export interface WorkflowClientInstance<W extends WorkflowRegistry> {
    */
   cancel(
     instanceId: string,
-    options?: CancelOptions
+    options?: CancelOptions,
   ): Effect.Effect<CancelResult, WorkflowClientError>;
 
   /**
    * Get workflow status by instance ID.
    */
   status(
-    instanceId: string
+    instanceId: string,
   ): Effect.Effect<WorkflowStatus | undefined, WorkflowClientError>;
 
   /**
    * Get completed steps by instance ID.
    */
   completedSteps(
-    instanceId: string
+    instanceId: string,
   ): Effect.Effect<ReadonlyArray<string>, WorkflowClientError>;
 
   /**
@@ -113,7 +113,7 @@ export interface WorkflowClientInstance<W extends WorkflowRegistry> {
    */
   meta<T>(
     instanceId: string,
-    key: string
+    key: string,
   ): Effect.Effect<T | undefined, WorkflowClientError>;
 }
 
@@ -124,9 +124,7 @@ export interface WorkflowClientFactory<W extends WorkflowRegistry> {
   /**
    * Create a client instance from a Durable Object binding.
    */
-  fromBinding(
-    binding: DurableObjectNamespace
-  ): WorkflowClientInstance<W>;
+  fromBinding(binding: DurableObjectNamespace): WorkflowClientInstance<W>;
 
   /**
    * Effect Tag for service pattern usage.

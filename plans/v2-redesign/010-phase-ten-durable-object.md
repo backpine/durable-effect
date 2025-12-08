@@ -36,7 +36,7 @@ Cloudflare Durable Objects provide:
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── adapters/
 │   └── durable-object/
 │       ├── index.ts           # DO adapter exports
@@ -59,7 +59,7 @@ packages/workflow-v2/src/
 ### 1. DO Storage Adapter (`adapters/durable-object/storage.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/durable-object/storage.ts
+// packages/workflow/src/adapters/durable-object/storage.ts
 
 import { Effect, Schedule, Duration } from "effect";
 import { StorageError } from "../../errors";
@@ -179,7 +179,7 @@ export function createDOStorageAdapter(
 ### 2. DO Scheduler Adapter (`adapters/durable-object/scheduler.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/durable-object/scheduler.ts
+// packages/workflow/src/adapters/durable-object/scheduler.ts
 
 import { Effect } from "effect";
 import { SchedulerError } from "../../errors";
@@ -223,7 +223,7 @@ export function createDOSchedulerAdapter(
 ### 3. DO Runtime Layer (`adapters/durable-object/runtime.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/durable-object/runtime.ts
+// packages/workflow/src/adapters/durable-object/runtime.ts
 
 import { Effect, Layer } from "effect";
 import { StorageAdapter } from "../storage";
@@ -259,7 +259,7 @@ export function createDurableObjectRuntime(
 ### 4. DO Adapter Exports (`adapters/durable-object/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/adapters/durable-object/index.ts
+// packages/workflow/src/adapters/durable-object/index.ts
 
 export { createDOStorageAdapter } from "./storage";
 export { createDOSchedulerAdapter } from "./scheduler";
@@ -269,7 +269,7 @@ export { createDurableObjectRuntime } from "./runtime";
 ### 5. Engine Types (`engine/types.ts`)
 
 ```typescript
-// packages/workflow-v2/src/engine/types.ts
+// packages/workflow/src/engine/types.ts
 
 import type { WorkflowRegistry, WorkflowCall } from "../orchestrator/types";
 import type { WorkflowStatus } from "../state/types";
@@ -398,7 +398,7 @@ export interface WorkflowClientInstance<W extends WorkflowRegistry> {
 ### 6. Durable Workflow Engine (`engine/engine.ts`)
 
 ```typescript
-// packages/workflow-v2/src/engine/engine.ts
+// packages/workflow/src/engine/engine.ts
 
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Layer } from "effect";
@@ -644,7 +644,7 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
 ### 7. Engine Exports (`engine/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/engine/index.ts
+// packages/workflow/src/engine/index.ts
 
 export type {
   CreateDurableWorkflowsOptions,
@@ -660,7 +660,7 @@ export { createDurableWorkflows } from "./engine";
 ### 8. Update Main Index
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // ... existing exports ...
 
@@ -902,7 +902,7 @@ export default {
 ```typescript
 // workflows.ts
 import { Effect } from "effect";
-import { createDurableWorkflows, Workflow } from "@durable-effect/workflow-v2";
+import { createDurableWorkflows, Workflow } from "@durable-effect/workflow";
 
 // Define your workflows
 const workflows = {

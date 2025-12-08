@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/context/workflow-level.ts
+// packages/workflow/src/context/workflow-level.ts
 
 import { Context, Layer } from "effect";
 

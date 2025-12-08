@@ -1,63 +1,60 @@
 import { Effect } from "effect";
+import { CloudflareEnv, HonoCtx, type RouteEffect } from "../adapter";
 import { WorkflowClient } from "../workflows";
 
 /**
  * GET /workflows - List available workflows
  */
-export const getWorkflows = () =>
-  Effect.succeed(
-    Response.json({
-      workflows: ["processOrder"],
-      endpoints: {
-        "GET /workflows/processOrder?orderId=xxx":
-          "Start order processing workflow",
-        "GET /workflows/:id/status": "Get workflow status",
-      },
-    }),
-  );
+export const getWorkflows: RouteEffect<Response> = Effect.gen(function* () {
+  const c = yield* HonoCtx;
+  return c.json({
+    workflows: ["processOrder"],
+    endpoints: {
+      "GET /workflows/processOrder?orderId=xxx": "Start order processing workflow",
+      "GET /workflows/:id/status": "Get workflow status",
+    },
+  });
+});
 
 /**
  * GET /workflows/processOrder - Start order processing workflow
  */
-export const getProcessOrder = (request: Request, env: Env) =>
-  Effect.gen(function* () {
-    const url = new URL(request.url);
-    const orderId = url.searchParams.get("orderId") ?? `order-${Date.now()}`;
+export const getProcessOrder: RouteEffect<Response> = Effect.gen(function* () {
+  const c = yield* HonoCtx;
+  const env = yield* CloudflareEnv;
 
-    const client = WorkflowClient.fromBinding(env.WORKFLOWS);
+  const orderId = c.req.query("orderId") ?? `order-${Date.now()}`;
+  const client = WorkflowClient.fromBinding(env.WORKFLOWS);
 
-    yield* Effect.log(`Starting workflow for order ${orderId}`);
+  yield* Effect.log(`Starting workflow for order ${orderId}`);
 
-    // Client methods are now yieldable (return Effects)
-    const { id } = yield* client.runAsync({
-      workflow: "processOrder",
-      input: orderId,
-      execution: { id: orderId },
-    });
-
-    return Response.json({
-      success: true,
-      workflowId: id,
-      orderId,
-    });
+  const { id } = yield* client.runAsync({
+    workflow: "processOrder",
+    input: orderId,
+    execution: { id: orderId },
   });
+
+  return c.json({
+    success: true,
+    workflowId: id,
+    orderId,
+  });
+});
 
 /**
  * GET /workflows/:id/status - Get workflow status
  */
-export const getWorkflowStatus = (
-  _request: Request,
-  env: Env,
-  instanceId: string,
-) =>
-  Effect.gen(function* () {
-    const client = WorkflowClient.fromBinding(env.WORKFLOWS);
+export const getWorkflowStatus: RouteEffect<Response> = Effect.gen(function* () {
+  const c = yield* HonoCtx;
+  const env = yield* CloudflareEnv;
 
-    // Client methods now take instanceId directly
-    const status = yield* client.status(instanceId);
+  const instanceId = c.req.param("id");
+  const client = WorkflowClient.fromBinding(env.WORKFLOWS);
 
-    return Response.json({
-      instanceId,
-      status,
-    });
+  const status = yield* client.status(instanceId);
+
+  return c.json({
+    instanceId,
+    status,
   });
+});

@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/adapters/runtime.ts
+// packages/workflow/src/adapters/runtime.ts
 
 import { Context, Effect, Layer } from "effect";
 import type { StorageAdapter } from "./storage";
@@ -36,10 +36,9 @@ export interface RuntimeAdapterService {
 /**
  * Effect service tag for RuntimeAdapter.
  */
-export class RuntimeAdapter extends Context.Tag("@durable-effect/RuntimeAdapter")<
-  RuntimeAdapter,
-  RuntimeAdapterService
->() {}
+export class RuntimeAdapter extends Context.Tag(
+  "@durable-effect/RuntimeAdapter",
+)<RuntimeAdapter, RuntimeAdapterService>() {}
 
 /**
  * Complete runtime layer type.

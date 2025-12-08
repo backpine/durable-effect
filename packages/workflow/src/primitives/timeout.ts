@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/primitives/timeout.ts
+// packages/workflow/src/primitives/timeout.ts
 
 import { Effect } from "effect";
 import { createBaseEvent } from "@durable-effect/core";
@@ -24,7 +24,7 @@ export class WorkflowTimeoutError extends Error {
 
   constructor(stepName: string, timeoutMs: number, elapsedMs: number) {
     super(
-      `Step "${stepName}" timed out after ${elapsedMs}ms (timeout: ${timeoutMs}ms)`
+      `Step "${stepName}" timed out after ${elapsedMs}ms (timeout: ${timeoutMs}ms)`,
     );
     this.name = "WorkflowTimeoutError";
     this.stepName = stepName;
@@ -65,9 +65,9 @@ export class WorkflowTimeoutError extends Error {
  * ```
  */
 export function timeout<A, E, R>(
-  duration: string | number
+  duration: string | number,
 ): (
-  effect: Effect.Effect<A, E, R>
+  effect: Effect.Effect<A, E, R>,
 ) => Effect.Effect<
   A,
   E | StorageError | WorkflowTimeoutError,
@@ -121,7 +121,11 @@ export function timeout<A, E, R>(
         });
 
         return yield* Effect.fail(
-          new WorkflowTimeoutError(stepCtx.stepName, timeoutMs, now - startedAt)
+          new WorkflowTimeoutError(
+            stepCtx.stepName,
+            timeoutMs,
+            now - startedAt,
+          ),
         );
       }
 
@@ -133,7 +137,7 @@ export function timeout<A, E, R>(
             new WorkflowTimeoutError(
               stepCtx.stepName,
               timeoutMs,
-              now - startedAt
+              now - startedAt,
             ),
         }),
         Effect.tapError((error) =>
@@ -144,8 +148,8 @@ export function timeout<A, E, R>(
                 stepName: stepCtx.stepName,
                 timeoutMs,
               })
-            : Effect.void
-        )
+            : Effect.void,
+        ),
       );
     });
 }

@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/recovery/index.ts
+// packages/workflow/src/recovery/index.ts
 
 // Configuration
 export {

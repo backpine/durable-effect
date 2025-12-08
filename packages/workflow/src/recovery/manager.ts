@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/recovery/manager.ts
+// packages/workflow/src/recovery/manager.ts
 
 import { Context, Effect, Layer } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -9,10 +9,7 @@ import {
   type RecoverabilityInfo,
 } from "../state/machine";
 import { RecoveryError, StorageError, SchedulerError } from "../errors";
-import {
-  type RecoveryConfig,
-  defaultRecoveryConfig,
-} from "./config";
+import { type RecoveryConfig, defaultRecoveryConfig } from "./config";
 
 // =============================================================================
 // Types
@@ -124,7 +121,7 @@ export interface RecoveryManagerService {
  * Effect service tag for RecoveryManager.
  */
 export class RecoveryManager extends Context.Tag(
-  "@durable-effect/RecoveryManager"
+  "@durable-effect/RecoveryManager",
 )<RecoveryManager, RecoveryManagerService>() {}
 
 // =============================================================================
@@ -143,7 +140,7 @@ const KEYS = {
  * Create the RecoveryManager service implementation.
  */
 export const createRecoveryManager = (
-  config: RecoveryConfig = defaultRecoveryConfig
+  config: RecoveryConfig = defaultRecoveryConfig,
 ) =>
   Effect.gen(function* () {
     const storage = yield* StorageAdapter;
@@ -156,18 +153,19 @@ export const createRecoveryManager = (
         Effect.gen(function* () {
           // Check current recoverability
           const info = yield* stateMachine.checkRecoverability(
-            config.staleThresholdMs
+            config.staleThresholdMs,
           );
 
           // No workflow or not recoverable
           if (!info.canRecover) {
             return {
               scheduled: false,
-              reason: info.reason === "already_terminal"
-                ? "already_terminal"
-                : info.reason === "no_workflow"
-                ? "no_workflow"
-                : "not_needed",
+              reason:
+                info.reason === "already_terminal"
+                  ? "already_terminal"
+                  : info.reason === "no_workflow"
+                    ? "no_workflow"
+                    : "not_needed",
               currentStatus: info.currentStatus,
             } satisfies RecoveryCheckResult;
           }
@@ -192,9 +190,10 @@ export const createRecoveryManager = (
 
           return {
             scheduled: true,
-            reason: info.reason === "stale_running"
-              ? "stale_running"
-              : "pending_resume",
+            reason:
+              info.reason === "stale_running"
+                ? "stale_running"
+                : "pending_resume",
             staleDurationMs: info.staleDurationMs,
             currentStatus: info.currentStatus,
             attempt: stats.attempts + 1,
@@ -241,14 +240,16 @@ export const createRecoveryManager = (
                 },
                 completedSteps,
               })
-              .pipe(Effect.catchTag("InvalidTransitionError", () => Effect.void));
+              .pipe(
+                Effect.catchTag("InvalidTransitionError", () => Effect.void),
+              );
 
             return yield* Effect.fail(
               new RecoveryError({
                 reason: "max_attempts_exceeded",
                 attempts: stats.attempts,
                 maxAttempts: stats.maxAttempts,
-              })
+              }),
             );
           }
 
@@ -259,9 +260,10 @@ export const createRecoveryManager = (
           const transitionResult = yield* stateMachine
             .applyTransition({
               _tag: "Recover",
-              reason: status._tag === "Running"
-                ? "stale_detection"
-                : "infrastructure_restart",
+              reason:
+                status._tag === "Running"
+                  ? "stale_detection"
+                  : "infrastructure_restart",
               attempt,
             })
             .pipe(
@@ -276,8 +278,8 @@ export const createRecoveryManager = (
                   success: false as const,
                   attempt,
                   reason: "transition_failed" as const,
-                })
-              )
+                }),
+              ),
             );
 
           // If recovery succeeded, reset attempt counter
@@ -314,15 +316,13 @@ export const createRecoveryManager = (
 /**
  * Create a RecoveryManager layer with custom config.
  */
-export const RecoveryManagerLayer = (
-  config?: Partial<RecoveryConfig>
-) =>
+export const RecoveryManagerLayer = (config?: Partial<RecoveryConfig>) =>
   Layer.effect(
     RecoveryManager,
     createRecoveryManager({
       ...defaultRecoveryConfig,
       ...config,
-    })
+    }),
   );
 
 /**
@@ -330,5 +330,5 @@ export const RecoveryManagerLayer = (
  */
 export const DefaultRecoveryManagerLayer = Layer.effect(
   RecoveryManager,
-  createRecoveryManager()
+  createRecoveryManager(),
 );

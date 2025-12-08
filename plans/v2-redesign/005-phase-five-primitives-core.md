@@ -36,7 +36,7 @@ This phase implements the core workflow primitives: `Workflow.make()` for defini
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── primitives/
 │   ├── index.ts               # Primitives exports
 │   ├── pause-signal.ts        # PauseSignal error type
@@ -55,7 +55,7 @@ packages/workflow-v2/src/
 ### 1. PauseSignal (`primitives/pause-signal.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/pause-signal.ts
+// packages/workflow/src/primitives/pause-signal.ts
 
 import { Data } from "effect";
 
@@ -116,7 +116,7 @@ export function isPauseSignal(error: unknown): error is PauseSignal {
 ### 2. Workflow Definition (`primitives/make.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/make.ts
+// packages/workflow/src/primitives/make.ts
 
 import { Effect, type Types } from "effect";
 import type { StorageError } from "../errors";
@@ -272,7 +272,7 @@ export type WorkflowRequirements<W> = W extends WorkflowDefinition<
 ### 3. Step Primitive (`primitives/step.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/step.ts
+// packages/workflow/src/primitives/step.ts
 
 import { Effect, Option } from "effect";
 import { WorkflowContext } from "../context/workflow-context";
@@ -454,7 +454,7 @@ export function step<A, E, R>(
 ### 4. Primitives Exports (`primitives/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/primitives/index.ts
+// packages/workflow/src/primitives/index.ts
 
 // PauseSignal
 export {
@@ -487,7 +487,7 @@ export {
 ### 5. Update Main Index
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // ... existing exports ...
 

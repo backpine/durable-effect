@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/primitives/index.ts
+// packages/workflow/src/primitives/index.ts
 
 // PauseSignal
 export { PauseSignal, isPauseSignal, type PauseReason } from "./pause-signal";

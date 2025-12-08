@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/adapters/durable-object/scheduler.ts
+// packages/workflow/src/adapters/durable-object/scheduler.ts
 
 import { Effect } from "effect";
 import { SchedulerError } from "../../errors";
@@ -10,7 +10,7 @@ import type { SchedulerAdapterService } from "../scheduler";
  * Wraps DO alarm methods with Effect error handling.
  */
 export function createDOSchedulerAdapter(
-  storage: DurableObjectStorage
+  storage: DurableObjectStorage,
 ): SchedulerAdapterService {
   return {
     schedule: (time: number) =>

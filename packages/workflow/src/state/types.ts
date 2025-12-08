@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/state/types.ts
+// packages/workflow/src/state/types.ts
 
 /**
  * All possible workflow statuses.
@@ -147,7 +147,7 @@ export interface WorkflowState {
 export const initialWorkflowState = (
   workflowName: string,
   input: unknown,
-  executionId?: string
+  executionId?: string,
 ): WorkflowState => ({
   status: { _tag: "Pending" },
   workflowName,

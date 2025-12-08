@@ -1,10 +1,13 @@
-// packages/workflow-v2/src/engine/engine.ts
+// packages/workflow/src/engine/engine.ts
 
 import { DurableObject } from "cloudflare:workers";
 import { Context, Effect, Layer } from "effect";
 import { createDurableObjectRuntime } from "../adapters/durable-object";
 import { StorageAdapter } from "../adapters/storage";
-import { WorkflowStateMachine, WorkflowStateMachineLayer } from "../state/machine";
+import {
+  WorkflowStateMachine,
+  WorkflowStateMachineLayer,
+} from "../state/machine";
 import { RecoveryManager, RecoveryManagerLayer } from "../recovery";
 import { WorkflowExecutorLayer } from "../executor";
 import {
@@ -20,7 +23,10 @@ import {
   flushEvents,
 } from "../tracker";
 import { createClientInstance } from "../client/instance";
-import type { WorkflowClientFactory, WorkflowClientInstance } from "../client/types";
+import type {
+  WorkflowClientFactory,
+  WorkflowClientInstance,
+} from "../client/types";
 import type {
   CreateDurableWorkflowsOptions,
   CreateDurableWorkflowsResult,
@@ -66,7 +72,7 @@ import type {
  */
 export function createDurableWorkflows<const W extends WorkflowRegistry>(
   workflows: W,
-  options?: CreateDurableWorkflowsOptions
+  options?: CreateDurableWorkflowsOptions,
 ): CreateDurableWorkflowsResult<W> {
   // Create engine class
   class DurableWorkflowEngine
@@ -75,7 +81,10 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
   {
     readonly #runtimeLayer: Layer.Layer<never, never, never>;
     readonly #orchestratorLayer: Layer.Layer<
-      WorkflowOrchestrator | RecoveryManager | WorkflowStateMachine | StorageAdapter,
+      | WorkflowOrchestrator
+      | RecoveryManager
+      | WorkflowStateMachine
+      | StorageAdapter,
       never,
       never
     >;
@@ -98,9 +107,12 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         Layer.provideMerge(RecoveryManagerLayer(options?.recovery)),
         Layer.provideMerge(WorkflowStateMachineLayer),
         Layer.provideMerge(trackerLayer),
-        Layer.provideMerge(this.#runtimeLayer)
+        Layer.provideMerge(this.#runtimeLayer),
       ) as Layer.Layer<
-        WorkflowOrchestrator | RecoveryManager | WorkflowStateMachine | StorageAdapter,
+        | WorkflowOrchestrator
+        | RecoveryManager
+        | WorkflowStateMachine
+        | StorageAdapter,
         never,
         never
       >;
@@ -115,10 +127,10 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
             // Log recovery if needed
             if (result.scheduled) {
               console.log(
-                `[Workflow] Recovery scheduled: ${result.reason} (stale for ${result.staleDurationMs}ms)`
+                `[Workflow] Recovery scheduled: ${result.reason} (stale for ${result.staleDurationMs}ms)`,
               );
             }
-          })
+          }),
         );
       });
     }
@@ -127,19 +139,23 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
     #runEffect<A>(effect: Effect.Effect<A, unknown, unknown>): Promise<A> {
       return Effect.runPromise(
         effect.pipe(
-          Effect.provide(this.#orchestratorLayer as Layer.Layer<any, never, never>)
-        )
+          Effect.provide(
+            this.#orchestratorLayer as Layer.Layer<any, never, never>,
+          ),
+        ),
       );
     }
 
-    async run(call: WorkflowCall<W>): Promise<{ id: string; completed: boolean }> {
+    async run(
+      call: WorkflowCall<W>,
+    ): Promise<{ id: string; completed: boolean }> {
       const result = await this.#runEffect(
         Effect.gen(function* () {
           const orchestrator = yield* WorkflowOrchestrator;
           const result = yield* orchestrator.start(call);
           yield* flushEvents;
           return result;
-        })
+        }),
       );
 
       return { id: result.id, completed: result.completed };
@@ -152,7 +168,7 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
           const result = yield* orchestrator.queue(call);
           yield* flushEvents;
           return result;
-        })
+        }),
       );
 
       return { id: result.id };
@@ -164,7 +180,7 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
           const orchestrator = yield* WorkflowOrchestrator;
           yield* orchestrator.handleAlarm();
           yield* flushEvents;
-        })
+        }),
       );
     }
 
@@ -176,7 +192,7 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         Effect.gen(function* () {
           const orchestrator = yield* WorkflowOrchestrator;
           return yield* orchestrator.cancel(options);
-        })
+        }),
       );
 
       return {
@@ -190,7 +206,7 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         Effect.gen(function* () {
           const orchestrator = yield* WorkflowOrchestrator;
           return yield* orchestrator.getStatus();
-        })
+        }),
       );
 
       return result.status;
@@ -201,7 +217,7 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         Effect.gen(function* () {
           const machine = yield* WorkflowStateMachine;
           return yield* machine.getCompletedSteps();
-        })
+        }),
       );
 
       return result;
@@ -212,14 +228,14 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         Effect.gen(function* () {
           const storage = yield* StorageAdapter;
           return yield* storage.get<T>(`workflow:meta:${key}`);
-        })
+        }),
       );
     }
   }
 
   // Create client factory with Effect Tag for service pattern
   const ClientTag = Context.GenericTag<WorkflowClientInstance<W>>(
-    "@durable-effect/WorkflowClient"
+    "@durable-effect/WorkflowClient",
   );
 
   const WorkflowClient: WorkflowClientFactory<W> = {
@@ -230,7 +246,8 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
   };
 
   return {
-    Workflows: DurableWorkflowEngine as unknown as CreateDurableWorkflowsResult<W>["Workflows"],
+    Workflows:
+      DurableWorkflowEngine as unknown as CreateDurableWorkflowsResult<W>["Workflows"],
     WorkflowClient,
   };
 }

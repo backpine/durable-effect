@@ -1,13 +1,53 @@
 /// <reference path="../worker-configuration.d.ts" />
 
-import { handleRequest } from "./router";
+import { Hono } from "hono";
+import { effectHandler } from "./adapter";
+import { getHealth, getHealthReady } from "./routes/health";
+import {
+  getWorkflows,
+  getWorkflowStatus,
+  getProcessOrder,
+} from "./routes/workflows";
 import { Workflows } from "./workflows";
 
 // Export the Durable Object classes
 export { Workflows };
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    return handleRequest(request, env);
-  },
-};
+// =============================================================================
+// Hono Application
+// =============================================================================
+
+const app = new Hono<{ Bindings: Env }>();
+
+// Root route
+app.get("/", (c) =>
+  c.json({
+    name: "Effect Worker",
+    version: "0.0.0",
+    description: "Durable Effect Workflow Example with Hono + Effect",
+  }),
+);
+
+// Health routes
+app.get("/health", effectHandler(getHealth));
+app.get("/health/ready", effectHandler(getHealthReady));
+
+// Workflow routes
+app.get("/workflows", effectHandler(getWorkflows));
+app.get("/workflows/processOrder", effectHandler(getProcessOrder));
+app.get("/workflows/:id/status", effectHandler(getWorkflowStatus));
+
+// 404 handler
+app.notFound((c) => c.json({ error: "Not Found" }, 404));
+
+// Error handler
+app.onError((err, c) => {
+  console.error("Unhandled error:", err);
+  return c.json({ error: "Internal Server Error" }, 500);
+});
+
+// =============================================================================
+// Export Worker
+// =============================================================================
+
+export default app;

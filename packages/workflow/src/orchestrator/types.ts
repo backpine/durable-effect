@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/orchestrator/types.ts
+// packages/workflow/src/orchestrator/types.ts
 
 import type { WorkflowStatus } from "../state/types";
 import type { WorkflowDefinition } from "../primitives/make";

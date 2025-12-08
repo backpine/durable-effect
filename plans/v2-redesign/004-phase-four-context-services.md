@@ -34,7 +34,7 @@ These services provide a clean Effect-based API while abstracting storage detail
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── context/
 │   ├── index.ts               # Context exports
 │   ├── workflow-context.ts    # WorkflowContext service
@@ -56,7 +56,7 @@ packages/workflow-v2/src/
 ### 1. Workflow Context (`context/workflow-context.ts`)
 
 ```typescript
-// packages/workflow-v2/src/context/workflow-context.ts
+// packages/workflow/src/context/workflow-context.ts
 
 import { Context, Effect, Layer } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -314,7 +314,7 @@ export const WorkflowContextLayer = Layer.effect(
 ### 2. Step Context (`context/step-context.ts`)
 
 ```typescript
-// packages/workflow-v2/src/context/step-context.ts
+// packages/workflow/src/context/step-context.ts
 
 import { Context, Effect, Layer, Ref } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -536,7 +536,7 @@ export const StepContextLayer = (stepName: string) =>
 ### 3. Workflow Scope Guard (`context/workflow-scope.ts`)
 
 ```typescript
-// packages/workflow-v2/src/context/workflow-scope.ts
+// packages/workflow/src/context/workflow-scope.ts
 
 import { Context, Effect, Layer } from "effect";
 
@@ -613,7 +613,7 @@ export class WorkflowScopeError extends Error {
 ### 4. Step Scope Guard (`context/step-scope.ts`)
 
 ```typescript
-// packages/workflow-v2/src/context/step-scope.ts
+// packages/workflow/src/context/step-scope.ts
 
 import { Context, Effect, Layer } from "effect";
 
@@ -757,7 +757,7 @@ The `StepScope` guard is applied when executing a step, and `Workflow.sleep()` (
 ### 5. Context Exports (`context/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/context/index.ts
+// packages/workflow/src/context/index.ts
 
 // Workflow Context
 export {
@@ -800,7 +800,7 @@ export {
 ### 6. Update Main Index
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // ... existing exports ...
 

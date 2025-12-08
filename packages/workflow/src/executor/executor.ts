@@ -1,8 +1,11 @@
-// packages/workflow-v2/src/executor/executor.ts
+// packages/workflow/src/executor/executor.ts
 
 import { Context, Effect, Layer, Exit, Cause, Option } from "effect";
 import { StorageAdapter } from "../adapters/storage";
-import { SchedulerAdapter, type SchedulerAdapterService } from "../adapters/scheduler";
+import {
+  SchedulerAdapter,
+  type SchedulerAdapterService,
+} from "../adapters/scheduler";
 import { RuntimeAdapter } from "../adapters/runtime";
 import { WorkflowStateMachine } from "../state/machine";
 import { WorkflowContextLayer } from "../context/workflow-context";
@@ -33,11 +36,15 @@ export interface WorkflowExecutorService {
    */
   readonly execute: <Input, Output, Error, Requirements>(
     definition: WorkflowDefinition<Input, Output, Error, Requirements>,
-    context: ExecutionContext
+    context: ExecutionContext,
   ) => Effect.Effect<
     ExecutionResult<Output>,
     OrchestratorError,
-    StorageAdapter | SchedulerAdapter | RuntimeAdapter | WorkflowStateMachine | Requirements
+    | StorageAdapter
+    | SchedulerAdapter
+    | RuntimeAdapter
+    | WorkflowStateMachine
+    | Requirements
   >;
 }
 
@@ -45,7 +52,7 @@ export interface WorkflowExecutorService {
  * Effect service tag for WorkflowExecutor.
  */
 export class WorkflowExecutor extends Context.Tag(
-  "@durable-effect/WorkflowExecutor"
+  "@durable-effect/WorkflowExecutor",
 )<WorkflowExecutor, WorkflowExecutorService>() {}
 
 // =============================================================================
@@ -59,7 +66,7 @@ export const createWorkflowExecutor = Effect.gen(function* () {
   const service: WorkflowExecutorService = {
     execute: <Input, Output, Error, Requirements>(
       definition: WorkflowDefinition<Input, Output, Error, Requirements>,
-      context: ExecutionContext
+      context: ExecutionContext,
     ) =>
       Effect.gen(function* () {
         const storage = yield* StorageAdapter;
@@ -83,22 +90,19 @@ export const createWorkflowExecutor = Effect.gen(function* () {
         // - StorageAdapter, RuntimeAdapter (for primitives/steps to use)
         const adapterLayer = Layer.mergeAll(
           Layer.succeed(StorageAdapter, storage),
-          Layer.succeed(RuntimeAdapter, runtime)
+          Layer.succeed(RuntimeAdapter, runtime),
         );
 
         const executionLayer = WorkflowScopeLayer.pipe(
           Layer.provideMerge(WorkflowContextLayer),
           Layer.provideMerge(WorkflowLevelLayer),
-          Layer.provideMerge(adapterLayer)
+          Layer.provideMerge(adapterLayer),
         );
 
         // Execute the workflow
         const exit = yield* definition
           .execute(context.input as Input)
-          .pipe(
-            Effect.provide(executionLayer),
-            Effect.exit
-          );
+          .pipe(Effect.provide(executionLayer), Effect.exit);
 
         // Calculate duration
         const completedAt = yield* runtime.now();
@@ -112,7 +116,7 @@ export const createWorkflowExecutor = Effect.gen(function* () {
           exit,
           durationMs,
           completedSteps,
-          scheduler
+          scheduler,
         );
       }).pipe(
         Effect.catchAll((error) =>
@@ -120,9 +124,9 @@ export const createWorkflowExecutor = Effect.gen(function* () {
             new OrchestratorError({
               operation: "execute",
               cause: error,
-            })
-          )
-        )
+            }),
+          ),
+        ),
       ),
   };
 
@@ -136,7 +140,7 @@ function handleExit<Output>(
   exit: Exit.Exit<Output, unknown>,
   durationMs: number,
   completedSteps: ReadonlyArray<string>,
-  scheduler: SchedulerAdapterService
+  scheduler: SchedulerAdapterService,
 ): Effect.Effect<ExecutionResult<Output>, SchedulerError, never> {
   return Effect.gen(function* () {
     if (Exit.isSuccess(exit)) {
@@ -221,13 +225,10 @@ function findPauseSignal(cause: Cause.Cause<unknown>): PauseSignal | undefined {
  * Find StepCancelledError in a cause chain.
  */
 function findCancelError(
-  cause: Cause.Cause<unknown>
+  cause: Cause.Cause<unknown>,
 ): StepCancelledError | undefined {
   const failure = Cause.failureOption(cause);
-  if (
-    Option.isSome(failure) &&
-    failure.value instanceof StepCancelledError
-  ) {
+  if (Option.isSome(failure) && failure.value instanceof StepCancelledError) {
     return failure.value;
   }
 
@@ -253,5 +254,5 @@ function findCancelError(
  */
 export const WorkflowExecutorLayer = Layer.effect(
   WorkflowExecutor,
-  createWorkflowExecutor
+  createWorkflowExecutor,
 );

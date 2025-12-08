@@ -35,7 +35,7 @@ The orchestrator is the "brain" of the workflow system:
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── orchestrator/
 │   ├── index.ts               # Orchestrator exports
 │   ├── types.ts               # Orchestrator types
@@ -53,7 +53,7 @@ packages/workflow-v2/src/
 ### 1. Orchestrator Types (`orchestrator/types.ts`)
 
 ```typescript
-// packages/workflow-v2/src/orchestrator/types.ts
+// packages/workflow/src/orchestrator/types.ts
 
 import type { WorkflowStatus } from "../state/types";
 import type { WorkflowDefinition } from "../primitives/make";
@@ -127,7 +127,7 @@ export interface WorkflowStatusResult {
 ### 2. Workflow Registry (`orchestrator/registry.ts`)
 
 ```typescript
-// packages/workflow-v2/src/orchestrator/registry.ts
+// packages/workflow/src/orchestrator/registry.ts
 
 import { Context, Effect, Layer } from "effect";
 import type { WorkflowDefinition } from "../primitives/make";
@@ -218,7 +218,7 @@ export const WorkflowRegistryLayer = <W extends WorkflowRegistry>(
 ### 3. Workflow Orchestrator Service (`orchestrator/orchestrator.ts`)
 
 ```typescript
-// packages/workflow-v2/src/orchestrator/orchestrator.ts
+// packages/workflow/src/orchestrator/orchestrator.ts
 
 import { Context, Effect, Layer } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -647,7 +647,7 @@ export const WorkflowOrchestratorLayer = <W extends WorkflowRegistry>() =>
 ### 4. Orchestrator Exports (`orchestrator/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/orchestrator/index.ts
+// packages/workflow/src/orchestrator/index.ts
 
 // Types
 export type {
@@ -680,7 +680,7 @@ export {
 ### 5. Update Main Index
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // ... existing exports ...
 

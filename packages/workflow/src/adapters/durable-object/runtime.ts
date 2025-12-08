@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/adapters/durable-object/runtime.ts
+// packages/workflow/src/adapters/durable-object/runtime.ts
 
 import { Effect, Layer } from "effect";
 import { StorageAdapter } from "../storage";
@@ -13,7 +13,7 @@ import { createDOSchedulerAdapter } from "./scheduler";
  * This is the adapter that connects the workflow system to Cloudflare DOs.
  */
 export function createDurableObjectRuntime(
-  state: DurableObjectState
+  state: DurableObjectState,
 ): RuntimeLayer {
   const storageService = createDOStorageAdapter(state.storage);
   const schedulerService = createDOSchedulerAdapter(state.storage);
@@ -26,6 +26,6 @@ export function createDurableObjectRuntime(
   return Layer.mergeAll(
     Layer.succeed(StorageAdapter, storageService),
     Layer.succeed(SchedulerAdapter, schedulerService),
-    Layer.succeed(RuntimeAdapter, runtimeService)
+    Layer.succeed(RuntimeAdapter, runtimeService),
   );
 }

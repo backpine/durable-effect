@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/state/machine.ts
+// packages/workflow/src/state/machine.ts
 
 import { Context, Effect, Layer } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -64,26 +64,32 @@ export interface WorkflowStateMachineService {
   readonly initialize: (
     workflowName: string,
     input: unknown,
-    executionId?: string
+    executionId?: string,
   ) => Effect.Effect<void, StorageError>;
 
   /**
    * Get the current workflow state.
    * Returns undefined if no workflow exists.
    */
-  readonly getState: () => Effect.Effect<WorkflowState | undefined, StorageError>;
+  readonly getState: () => Effect.Effect<
+    WorkflowState | undefined,
+    StorageError
+  >;
 
   /**
    * Get just the current status.
    * Returns undefined if no workflow exists.
    */
-  readonly getStatus: () => Effect.Effect<WorkflowStatus | undefined, StorageError>;
+  readonly getStatus: () => Effect.Effect<
+    WorkflowStatus | undefined,
+    StorageError
+  >;
 
   /**
    * Check if a transition is valid from current state.
    */
   readonly canTransition: (
-    transition: WorkflowTransition
+    transition: WorkflowTransition,
   ) => Effect.Effect<boolean, StorageError>;
 
   /**
@@ -91,27 +97,30 @@ export interface WorkflowStateMachineService {
    * Fails with InvalidTransitionError if transition not allowed.
    */
   readonly applyTransition: (
-    transition: WorkflowTransition
+    transition: WorkflowTransition,
   ) => Effect.Effect<WorkflowStatus, InvalidTransitionError | StorageError>;
 
   /**
    * Check if the workflow can be recovered.
    */
   readonly checkRecoverability: (
-    staleThresholdMs: number
+    staleThresholdMs: number,
   ) => Effect.Effect<RecoverabilityInfo, StorageError>;
 
   /**
    * Add a completed step to the list.
    */
   readonly markStepCompleted: (
-    stepName: string
+    stepName: string,
   ) => Effect.Effect<void, StorageError>;
 
   /**
    * Get the list of completed steps.
    */
-  readonly getCompletedSteps: () => Effect.Effect<ReadonlyArray<string>, StorageError>;
+  readonly getCompletedSteps: () => Effect.Effect<
+    ReadonlyArray<string>,
+    StorageError
+  >;
 
   /**
    * Increment recovery attempts counter.
@@ -126,7 +135,9 @@ export interface WorkflowStateMachineService {
   /**
    * Set the pending resume time (for sleep/retry).
    */
-  readonly setPendingResumeAt: (time: number) => Effect.Effect<void, StorageError>;
+  readonly setPendingResumeAt: (
+    time: number,
+  ) => Effect.Effect<void, StorageError>;
 
   /**
    * Clear the pending resume time.
@@ -136,7 +147,10 @@ export interface WorkflowStateMachineService {
   /**
    * Get the pending resume time.
    */
-  readonly getPendingResumeAt: () => Effect.Effect<number | undefined, StorageError>;
+  readonly getPendingResumeAt: () => Effect.Effect<
+    number | undefined,
+    StorageError
+  >;
 
   /**
    * Set the cancellation flag.
@@ -153,7 +167,7 @@ export interface WorkflowStateMachineService {
  * Effect service tag for WorkflowStateMachine.
  */
 export class WorkflowStateMachine extends Context.Tag(
-  "@durable-effect/WorkflowStateMachine"
+  "@durable-effect/WorkflowStateMachine",
 )<WorkflowStateMachine, WorkflowStateMachineService>() {}
 
 // =============================================================================
@@ -166,7 +180,7 @@ export class WorkflowStateMachine extends Context.Tag(
  */
 function applyTransitionToStatus(
   transition: WorkflowTransition,
-  now: number
+  now: number,
 ): WorkflowStatus {
   switch (transition._tag) {
     case "Start":
@@ -211,8 +225,10 @@ export const createWorkflowStateMachine = Effect.gen(function* () {
   const storage = yield* StorageAdapter;
   const runtime = yield* RuntimeAdapter;
 
-  const getStatus = (): Effect.Effect<WorkflowStatus | undefined, StorageError> =>
-    storage.get<WorkflowStatus>(KEYS.status);
+  const getStatus = (): Effect.Effect<
+    WorkflowStatus | undefined,
+    StorageError
+  > => storage.get<WorkflowStatus>(KEYS.status);
 
   const getState = (): Effect.Effect<WorkflowState | undefined, StorageError> =>
     Effect.gen(function* () {
@@ -290,7 +306,7 @@ export const createWorkflowStateMachine = Effect.gen(function* () {
                 fromStatus: "none",
                 toTransition: transition._tag,
                 validTransitions: ["Queue", "Start"],
-              })
+              }),
             );
           }
         } else {
@@ -301,7 +317,7 @@ export const createWorkflowStateMachine = Effect.gen(function* () {
                 fromStatus: currentStatus._tag,
                 toTransition: transition._tag,
                 validTransitions: getValidTransitions(currentStatus._tag),
-              })
+              }),
             );
           }
         }
@@ -369,7 +385,9 @@ export const createWorkflowStateMachine = Effect.gen(function* () {
 
         // Check Paused status with pending resume
         if (status._tag === "Paused") {
-          const pendingResumeAt = yield* storage.get<number>(KEYS.pendingResumeAt);
+          const pendingResumeAt = yield* storage.get<number>(
+            KEYS.pendingResumeAt,
+          );
 
           if (pendingResumeAt !== undefined) {
             return {
@@ -396,29 +414,27 @@ export const createWorkflowStateMachine = Effect.gen(function* () {
       }),
 
     getCompletedSteps: () =>
-      storage.get<string[]>(KEYS.completedSteps).pipe(
-        Effect.map((steps) => steps ?? [])
-      ),
+      storage
+        .get<string[]>(KEYS.completedSteps)
+        .pipe(Effect.map((steps) => steps ?? [])),
 
     incrementRecoveryAttempts: () =>
       Effect.gen(function* () {
-        const current = (yield* storage.get<number>(KEYS.recoveryAttempts)) ?? 0;
+        const current =
+          (yield* storage.get<number>(KEYS.recoveryAttempts)) ?? 0;
         const next = current + 1;
         yield* storage.put(KEYS.recoveryAttempts, next);
         return next;
       }),
 
-    resetRecoveryAttempts: () =>
-      storage.put(KEYS.recoveryAttempts, 0),
+    resetRecoveryAttempts: () => storage.put(KEYS.recoveryAttempts, 0),
 
-    setPendingResumeAt: (time) =>
-      storage.put(KEYS.pendingResumeAt, time),
+    setPendingResumeAt: (time) => storage.put(KEYS.pendingResumeAt, time),
 
     clearPendingResumeAt: () =>
       storage.delete(KEYS.pendingResumeAt).pipe(Effect.asVoid),
 
-    getPendingResumeAt: () =>
-      storage.get<number>(KEYS.pendingResumeAt),
+    getPendingResumeAt: () => storage.get<number>(KEYS.pendingResumeAt),
 
     setCancelled: (reason) =>
       Effect.gen(function* () {
@@ -429,9 +445,9 @@ export const createWorkflowStateMachine = Effect.gen(function* () {
       }),
 
     isCancelled: () =>
-      storage.get<boolean>(KEYS.cancelled).pipe(
-        Effect.map((cancelled) => cancelled ?? false)
-      ),
+      storage
+        .get<boolean>(KEYS.cancelled)
+        .pipe(Effect.map((cancelled) => cancelled ?? false)),
   };
 
   return service;
@@ -443,5 +459,5 @@ export const createWorkflowStateMachine = Effect.gen(function* () {
  */
 export const WorkflowStateMachineLayer = Layer.effect(
   WorkflowStateMachine,
-  createWorkflowStateMachine
+  createWorkflowStateMachine,
 );

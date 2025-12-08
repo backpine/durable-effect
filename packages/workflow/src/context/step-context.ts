@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/context/step-context.ts
+// packages/workflow/src/context/step-context.ts
 
 import { Context, Effect, Layer } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -94,7 +94,7 @@ export interface StepContextService {
    */
   readonly setResult: <T>(
     value: T,
-    meta: StepResultMeta
+    meta: StepResultMeta,
   ) => Effect.Effect<void, StorageError>;
 
   /**
@@ -106,7 +106,7 @@ export interface StepContextService {
    * Get step-level metadata.
    */
   readonly getMeta: <T>(
-    key: string
+    key: string,
   ) => Effect.Effect<T | undefined, StorageError>;
 
   /**
@@ -114,7 +114,7 @@ export interface StepContextService {
    */
   readonly setMeta: <T>(
     key: string,
-    value: T
+    value: T,
   ) => Effect.Effect<void, StorageError>;
 
   /**
@@ -126,7 +126,7 @@ export interface StepContextService {
    * Calculate deadline time given a timeout duration.
    */
   readonly calculateDeadline: (
-    timeoutMs: number
+    timeoutMs: number,
   ) => Effect.Effect<number, StorageError>;
 }
 
@@ -182,8 +182,7 @@ export const createStepContext = (stepName: string) =>
         .get(KEYS.result(stepName))
         .pipe(Effect.map((r) => r !== undefined)),
 
-      getMeta: <T>(key: string) =>
-        storage.get<T>(KEYS.meta(stepName, key)),
+      getMeta: <T>(key: string) => storage.get<T>(KEYS.meta(stepName, key)),
 
       setMeta: <T>(key: string, value: T) =>
         storage.put(KEYS.meta(stepName, key), value),

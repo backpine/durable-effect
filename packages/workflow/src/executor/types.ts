@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/executor/types.ts
+// packages/workflow/src/executor/types.ts
 
 import type { WorkflowTransition } from "../state/types";
 
@@ -59,7 +59,7 @@ export interface ExecutionContext {
  * Map execution result to state transition.
  */
 export function resultToTransition<Output>(
-  result: ExecutionResult<Output>
+  result: ExecutionResult<Output>,
 ): WorkflowTransition {
   switch (result._tag) {
     case "Completed":
@@ -85,8 +85,7 @@ export function resultToTransition<Output>(
             result.error instanceof Error
               ? result.error.message
               : String(result.error),
-          stack:
-            result.error instanceof Error ? result.error.stack : undefined,
+          stack: result.error instanceof Error ? result.error.stack : undefined,
         },
         completedSteps: result.completedSteps,
       };

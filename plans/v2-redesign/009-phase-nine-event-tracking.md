@@ -74,7 +74,7 @@ The `EventTracker` service uses `enrichEvent()` from core to add `env`/`serviceK
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── tracker/
 │   ├── index.ts               # Tracker exports
 │   ├── tracker.ts             # EventTracker service
@@ -97,7 +97,7 @@ Note: No `events.ts` file needed - events come from `@durable-effect/core`.
 Events are imported from `@durable-effect/core` - no need to redefine them:
 
 ```typescript
-// packages/workflow-v2/src/tracker/events.ts
+// packages/workflow/src/tracker/events.ts
 // Re-export from core for convenience
 
 export {
@@ -166,7 +166,7 @@ const wireEvent = enrichEvent(internalEvent, "production", "my-service");
 ### 2. Event Tracker Service (`tracker/tracker.ts`)
 
 ```typescript
-// packages/workflow-v2/src/tracker/tracker.ts
+// packages/workflow/src/tracker/tracker.ts
 
 import { Context, Effect, Layer } from "effect";
 import type { InternalWorkflowEvent } from "@durable-effect/core";
@@ -237,7 +237,7 @@ export const flushEvents: Effect.Effect<void> = Effect.flatMap(
 ### 3. HTTP Batch Tracker (`tracker/http-batch.ts`)
 
 ```typescript
-// packages/workflow-v2/src/tracker/http-batch.ts
+// packages/workflow/src/tracker/http-batch.ts
 
 import { Effect, Layer, Ref, Schedule, Duration } from "effect";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "@effect/platform";
@@ -397,7 +397,7 @@ export const HttpBatchTrackerLayer = (config: HttpBatchTrackerConfig) =>
 ### 4. No-op Tracker (`tracker/noop.ts`)
 
 ```typescript
-// packages/workflow-v2/src/tracker/noop.ts
+// packages/workflow/src/tracker/noop.ts
 
 import { Effect, Layer } from "effect";
 import { EventTracker, type EventTrackerService } from "./tracker";
@@ -421,7 +421,7 @@ export const NoopTrackerLayer = Layer.succeed(EventTracker, noopTracker);
 ### 5. In-Memory Tracker for Testing (`tracker/in-memory.ts`)
 
 ```typescript
-// packages/workflow-v2/src/tracker/in-memory.ts
+// packages/workflow/src/tracker/in-memory.ts
 
 import { Effect, Layer, Ref } from "effect";
 import type { InternalWorkflowEvent, WorkflowEventType } from "@durable-effect/core";
@@ -505,7 +505,7 @@ export const createInMemoryTrackerLayer = () =>
 ### 6. Tracker Exports (`tracker/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/tracker/index.ts
+// packages/workflow/src/tracker/index.ts
 
 // Re-export event types and helpers from core
 export {
@@ -546,7 +546,7 @@ export {
 ### 7. Update Main Index
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // ... existing exports ...
 

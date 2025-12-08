@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/primitives/pause-signal.ts
+// packages/workflow/src/primitives/pause-signal.ts
 
 import { Data } from "effect";
 
@@ -37,7 +37,7 @@ export class PauseSignal extends Data.TaggedError("PauseSignal")<{
   static retry(
     resumeAt: number,
     stepName: string,
-    attempt: number
+    attempt: number,
   ): PauseSignal {
     return new PauseSignal({
       reason: "retry",

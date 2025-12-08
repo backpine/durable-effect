@@ -23,7 +23,7 @@ This phase implements the `WorkflowStateMachine` service - the central authority
 ## File Structure
 
 ```
-packages/workflow-v2/src/
+packages/workflow/src/
 ├── state/
 │   ├── index.ts               # State exports
 │   ├── types.ts               # Status & Transition types
@@ -42,7 +42,7 @@ packages/workflow-v2/src/
 ### 1. State Types (`state/types.ts`)
 
 ```typescript
-// packages/workflow-v2/src/state/types.ts
+// packages/workflow/src/state/types.ts
 
 /**
  * All possible workflow statuses.
@@ -209,7 +209,7 @@ export const initialWorkflowState = (
 ### 2. Transition Validation (`state/transitions.ts`)
 
 ```typescript
-// packages/workflow-v2/src/state/transitions.ts
+// packages/workflow/src/state/transitions.ts
 
 import type { StatusTag, TransitionTag } from "./types";
 
@@ -273,7 +273,7 @@ export function isRecoverableStatus(status: StatusTag): boolean {
 ### 3. State Machine Service (`state/machine.ts`)
 
 ```typescript
-// packages/workflow-v2/src/state/machine.ts
+// packages/workflow/src/state/machine.ts
 
 import { Context, Effect, Layer } from "effect";
 import { StorageAdapter } from "../adapters/storage";
@@ -727,7 +727,7 @@ export const WorkflowStateMachineLayer = Layer.effect(
 ### 4. State Exports (`state/index.ts`)
 
 ```typescript
-// packages/workflow-v2/src/state/index.ts
+// packages/workflow/src/state/index.ts
 
 // Types
 export type {
@@ -763,7 +763,7 @@ export {
 ### 5. Update Main Index
 
 ```typescript
-// packages/workflow-v2/src/index.ts
+// packages/workflow/src/index.ts
 
 // ... existing exports ...
 

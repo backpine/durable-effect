@@ -1,4 +1,4 @@
-// packages/workflow-v2/src/tracker/index.ts
+// packages/workflow/src/tracker/index.ts
 
 // Re-export event types and helpers from core
 export {
