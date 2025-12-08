@@ -33,8 +33,11 @@ describe("WorkflowExecutor", () => {
       Layer.provideMerge(runtimeLayer)
     );
 
-  const runExecutor = <A, E>(effect: Effect.Effect<A, E, any>) =>
-    effect.pipe(Effect.provide(createLayers()), Effect.runPromise);
+  const runExecutor = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.provide(createLayers() as Layer.Layer<R>),
+      Effect.runPromise
+    );
 
   // Initialize workflow state before execution
   const initWorkflow = async (name: string, input: unknown) => {
@@ -51,10 +54,7 @@ describe("WorkflowExecutor", () => {
     it("should execute simple workflow", async () => {
       await initWorkflow("simpleWorkflow", { x: 5 });
 
-      const workflow = make(
-        { name: "simpleWorkflow" },
-        (input: { x: number }) => Effect.succeed(input.x * 2)
-      );
+      const workflow = make((input: { x: number }) => Effect.succeed(input.x * 2));
 
       const result = await runExecutor(
         Effect.gen(function* () {
@@ -78,7 +78,7 @@ describe("WorkflowExecutor", () => {
     it("should execute workflow with steps", async () => {
       await initWorkflow("steppedWorkflow", {});
 
-      const workflow = make({ name: "steppedWorkflow" }, (_input: {}) =>
+      const workflow = make((_input: {}) =>
         Effect.gen(function* () {
           const a = yield* step("step1", Effect.succeed(1));
           const b = yield* step("step2", Effect.succeed(2));
@@ -111,7 +111,7 @@ describe("WorkflowExecutor", () => {
     it("should return Paused result for sleep", async () => {
       await initWorkflow("sleepWorkflow", {});
 
-      const workflow = make({ name: "sleepWorkflow" }, (_input: {}) =>
+      const workflow = make((_input: {}) =>
         Effect.gen(function* () {
           yield* sleep("5 seconds");
           return "done";
@@ -140,7 +140,7 @@ describe("WorkflowExecutor", () => {
     it("should schedule alarm for pause", async () => {
       await initWorkflow("alarmWorkflow", {});
 
-      const workflow = make({ name: "alarmWorkflow" }, (_input: {}) =>
+      const workflow = make((_input: {}) =>
         Effect.gen(function* () {
           yield* sleep("10 seconds");
           return "done";
@@ -169,7 +169,7 @@ describe("WorkflowExecutor", () => {
     it("should return Failed result for errors", async () => {
       await initWorkflow("failingWorkflow", {});
 
-      const workflow = make({ name: "failingWorkflow" }, (_input: {}) =>
+      const workflow = make((_input: {}) =>
         Effect.fail(new Error("workflow failed"))
       );
 
@@ -195,7 +195,7 @@ describe("WorkflowExecutor", () => {
     it("should return Failed result for step errors", async () => {
       await initWorkflow("stepFailWorkflow", {});
 
-      const workflow = make({ name: "stepFailWorkflow" }, (_input: {}) =>
+      const workflow = make((_input: {}) =>
         Effect.gen(function* () {
           yield* step("goodStep", Effect.succeed("ok"));
           yield* step("badStep", Effect.fail(new Error("step failed")));
@@ -235,7 +235,7 @@ describe("WorkflowExecutor", () => {
         })
       );
 
-      const workflow = make({ name: "cancelledWorkflow" }, (_input: {}) =>
+      const workflow = make((_input: {}) =>
         Effect.gen(function* () {
           yield* step("firstStep", Effect.succeed("ok"));
           return "done";
@@ -262,10 +262,7 @@ describe("WorkflowExecutor", () => {
     it("should work with fresh mode", async () => {
       await initWorkflow("freshWorkflow", { value: 42 });
 
-      const workflow = make(
-        { name: "freshWorkflow" },
-        (input: { value: number }) => Effect.succeed(input.value)
-      );
+      const workflow = make((input: { value: number }) => Effect.succeed(input.value));
 
       const result = await runExecutor(
         Effect.gen(function* () {
@@ -286,7 +283,7 @@ describe("WorkflowExecutor", () => {
       // First execution - completes first step, pauses at sleep
       await initWorkflow("resumeWorkflow", {});
 
-      const workflow = make({ name: "resumeWorkflow" }, (_input: {}) =>
+      const workflow = make((_input: {}) =>
         Effect.gen(function* () {
           yield* step("step1", Effect.succeed("first"));
           yield* sleep("1 second");
@@ -338,7 +335,7 @@ describe("WorkflowExecutor", () => {
 
       // Second run - resume mode, step1 should be cached
       let step1Executed = false;
-      const resumeWorkflow = make({ name: "resumeWorkflow" }, (_input: {}) =>
+      const resumeWorkflow = make((_input: {}) =>
         Effect.gen(function* () {
           yield* step(
             "step1",
@@ -377,7 +374,7 @@ describe("WorkflowExecutor", () => {
     it("should track execution duration", async () => {
       await initWorkflow("timedWorkflow", {});
 
-      const workflow = make({ name: "timedWorkflow" }, (_input: {}) =>
+      const workflow = make((_input: {}) =>
         Effect.succeed("done")
       );
 
@@ -402,7 +399,7 @@ describe("WorkflowExecutor", () => {
     it("should record start time in storage", async () => {
       await initWorkflow("startTimeWorkflow", {});
 
-      const workflow = make({ name: "startTimeWorkflow" }, (_input: {}) =>
+      const workflow = make((_input: {}) =>
         Effect.succeed("done")
       );
 

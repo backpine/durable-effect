@@ -10,6 +10,7 @@ import {
 } from "../context/step-context";
 import { WorkflowScope, WorkflowScopeError } from "../context/workflow-scope";
 import { StepScope } from "../context/step-scope";
+import { WorkflowLevel } from "../context/workflow-level";
 import { StorageAdapter } from "../adapters/storage";
 import { RuntimeAdapter } from "../adapters/runtime";
 import { emitEvent } from "../tracker";
@@ -82,9 +83,14 @@ export function step<A, E, R>(
   | WorkflowContext
   | StorageAdapter
   | RuntimeAdapter
+  | WorkflowLevel
   | Exclude<R, StepContext | StorageAdapter | RuntimeAdapter | StepScope>
 > {
   return Effect.gen(function* () {
+    // Access WorkflowLevel to ensure this primitive can only be used at workflow level
+    // This enables compile-time checking - if used inside a step, WorkflowLevel won't be available
+    yield* WorkflowLevel;
+
     // Verify we're in a workflow scope
     const scope = yield* Effect.serviceOption(WorkflowScope);
     if (Option.isNone(scope)) {

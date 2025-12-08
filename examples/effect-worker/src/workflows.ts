@@ -36,7 +36,7 @@ const processPayment = (order: { id: string; amount: number }) =>
     yield* randomDelay();
 
     // 70% chance of failure
-    if (Math.random() < 0.3) {
+    if (Math.random() < 0.9) {
       yield* Effect.fail(new Error("Payment processing failed"));
     }
 
@@ -65,7 +65,6 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
       "Validate",
       Effect.gen(function* () {
         yield* Effect.log(`Validating order: ${order.id}`);
-        yield* randomDelay();
         return { valid: true };
       }),
     );
@@ -75,9 +74,9 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
       "Process payment",
       processPayment(order).pipe(
         Workflow.retry({
-          maxAttempts: 20,
+          maxAttempts: 3,
           delay: Backoff.exponential({
-            max: "120 seconds",
+            max: "6 seconds",
             base: "1 second",
           }),
         }),

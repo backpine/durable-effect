@@ -160,7 +160,7 @@ export const createStepContext = (stepName: string) =>
       incrementAttempt: () =>
         Effect.gen(function* () {
           const current =
-            (yield* storage.get<number>(KEYS.attempt(stepName))) ?? 0;
+            (yield* storage.get<number>(KEYS.attempt(stepName))) ?? 1;
           const next = current + 1;
           yield* storage.put(KEYS.attempt(stepName), next);
           return next;

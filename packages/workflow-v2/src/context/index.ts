@@ -38,3 +38,10 @@ export {
   StepScopeError,
   type StepScopeService,
 } from "./step-scope";
+
+// Workflow Level (compile-time guard)
+export {
+  WorkflowLevel,
+  WorkflowLevelLayer,
+  type WorkflowLevelService,
+} from "./workflow-level";

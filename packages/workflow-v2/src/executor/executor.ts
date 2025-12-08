@@ -7,6 +7,7 @@ import { RuntimeAdapter } from "../adapters/runtime";
 import { WorkflowStateMachine } from "../state/machine";
 import { WorkflowContextLayer } from "../context/workflow-context";
 import { WorkflowScopeLayer } from "../context/workflow-scope";
+import { WorkflowLevelLayer } from "../context/workflow-level";
 import { OrchestratorError, SchedulerError } from "../errors";
 import { PauseSignal, isPauseSignal } from "../primitives/pause-signal";
 import { StepCancelledError } from "../primitives/step";
@@ -78,6 +79,7 @@ export const createWorkflowExecutor = Effect.gen(function* () {
         // We need to provide:
         // - WorkflowScope (marks we're in a workflow)
         // - WorkflowContext (workflow-level state access)
+        // - WorkflowLevel (compile-time guard for workflow-level primitives)
         // - StorageAdapter, RuntimeAdapter (for primitives/steps to use)
         const adapterLayer = Layer.mergeAll(
           Layer.succeed(StorageAdapter, storage),
@@ -86,6 +88,7 @@ export const createWorkflowExecutor = Effect.gen(function* () {
 
         const executionLayer = WorkflowScopeLayer.pipe(
           Layer.provideMerge(WorkflowContextLayer),
+          Layer.provideMerge(WorkflowLevelLayer),
           Layer.provideMerge(adapterLayer)
         );
 

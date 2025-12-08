@@ -8,6 +8,7 @@ import { RuntimeAdapter } from "../adapters/runtime";
 import { emitEvent } from "../tracker";
 import type { StorageError } from "../errors";
 import { PauseSignal } from "./pause-signal";
+import { StepScopeError } from "../context/step-scope";
 import {
   type BackoffStrategy,
   BackoffStrategies,
@@ -238,6 +239,12 @@ export function retry<A, E, R>(
         // Success! Reset attempt counter and return
         yield* stepCtx.resetAttempt();
         return result.value;
+      }
+
+      // StepScopeError is never retryable - it's a programming error
+      // that will always fail (e.g., using Workflow.sleep inside Workflow.step)
+      if (result.error instanceof StepScopeError) {
+        return yield* Effect.fail(result.error);
       }
 
       // Failure - check if retryable

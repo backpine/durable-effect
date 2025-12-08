@@ -8,6 +8,7 @@ import {
   WorkflowContextLayer,
   WorkflowScope,
   WorkflowScopeLayer,
+  WorkflowLevelLayer,
   step,
   StepCancelledError,
   WorkflowScopeError,
@@ -30,11 +31,15 @@ describe("Workflow.step", () => {
   const createLayers = () =>
     WorkflowScopeLayer.pipe(
       Layer.provideMerge(WorkflowContextLayer),
+      Layer.provideMerge(WorkflowLevelLayer),
       Layer.provideMerge(runtimeLayer)
     );
 
-  const runStep = <A, E>(effect: Effect.Effect<A, E, any>) =>
-    effect.pipe(Effect.provide(createLayers()), Effect.runPromise);
+  const runStep = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.provide(createLayers() as Layer.Layer<R>),
+      Effect.runPromise
+    );
 
   describe("basic execution", () => {
     it("should execute step and return result", async () => {
@@ -196,7 +201,8 @@ describe("Workflow.step", () => {
       const result = await Effect.gen(function* () {
         return yield* step("noScope", Effect.succeed(42)).pipe(Effect.either);
       }).pipe(
-        // No WorkflowScopeLayer!
+        // No WorkflowScopeLayer! (but WorkflowLevel is needed for compile-time check)
+        Effect.provide(WorkflowLevelLayer),
         Effect.provide(WorkflowContextLayer),
         Effect.provide(runtimeLayer),
         Effect.runPromise
