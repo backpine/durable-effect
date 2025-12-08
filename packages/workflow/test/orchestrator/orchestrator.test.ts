@@ -8,6 +8,7 @@ import {
   WorkflowOrchestrator,
   WorkflowOrchestratorLayer,
   WorkflowRegistryLayer,
+  DisabledPurgeManagerLayer,
   make,
   step,
   sleep,
@@ -68,6 +69,7 @@ describe("WorkflowOrchestrator", () => {
       Layer.provideMerge(WorkflowExecutorLayer),
       Layer.provideMerge(RecoveryManagerLayer()),
       Layer.provideMerge(WorkflowStateMachineLayer),
+      Layer.provideMerge(DisabledPurgeManagerLayer),
       Layer.provideMerge(runtimeLayer),
     );
 

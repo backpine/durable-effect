@@ -75,6 +75,23 @@ export {
   type RecoveryStats,
 } from "./recovery";
 
+// Purge
+export {
+  // Config
+  type PurgeConfig,
+  type ParsedPurgeConfig,
+  defaultPurgeDelayMs,
+  parsePurgeConfig,
+  // Manager
+  PurgeManager,
+  PurgeManagerLayer,
+  DisabledPurgeManagerLayer,
+  createPurgeManager,
+  type PurgeManagerService,
+  type PurgeExecutionResult,
+  type TerminalState,
+} from "./purge";
+
 // Context
 export {
   // Workflow Context
