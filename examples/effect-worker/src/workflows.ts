@@ -102,6 +102,9 @@ const workflows = {
 } as const;
 
 export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
+  purge: {
+    delay: "5 seconds",
+  },
   tracker: {
     env: "production",
     serviceKey: "finance-workflows",

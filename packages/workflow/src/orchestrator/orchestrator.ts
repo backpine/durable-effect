@@ -10,6 +10,7 @@ import { RecoveryManager } from "../recovery/manager";
 import { WorkflowExecutor, resultToTransition } from "../executor";
 import { OrchestratorError, StorageError } from "../errors";
 import { emitEvent } from "../tracker";
+import { PurgeManager, type TerminalState } from "../purge";
 import type { WorkflowDefinition } from "../primitives/make";
 import { WorkflowRegistryTag, WorkflowNotFoundError } from "./registry";
 import type {
@@ -107,13 +108,16 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
     const recovery = yield* RecoveryManager;
     const executor = yield* WorkflowExecutor;
     const registry = yield* WorkflowRegistryTag;
+    const purgeManager = yield* PurgeManager;
 
-    // Helper to clean up after completion
-    const cleanup = () =>
+    // Helper to clean up after terminal state
+    const cleanup = (terminalState: TerminalState) =>
       Effect.gen(function* () {
-        // Clear scheduled alarm
+        // Clear scheduled workflow alarm
         yield* scheduler.cancel();
-        // Note: We don't delete storage - keep for history/queries
+
+        // Schedule purge (no-op if purge disabled)
+        yield* purgeManager.schedulePurge(terminalState);
       });
 
     const service: WorkflowOrchestratorService<W> = {
@@ -190,7 +194,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
               completedSteps: [...result.completedSteps],
               durationMs: result.durationMs,
             });
-            yield* cleanup();
+            yield* cleanup("completed");
           } else if (result._tag === "Failed") {
             yield* emitEvent({
               ...baseEvent,
@@ -207,6 +211,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
               },
               completedSteps: [...result.completedSteps],
             });
+            yield* cleanup("failed");
           } else if (result._tag === "Paused") {
             yield* emitEvent({
               ...baseEvent,
@@ -222,6 +227,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
               reason: result.reason,
               completedSteps: [...result.completedSteps],
             });
+            yield* cleanup("cancelled");
           }
 
           return {
@@ -410,7 +416,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
               );
 
               if (result._tag === "Completed") {
-                yield* cleanup();
+                yield* cleanup("completed");
+              } else if (result._tag === "Failed") {
+                yield* cleanup("failed");
+              } else if (result._tag === "Cancelled") {
+                yield* cleanup("cancelled");
               }
               break;
             }
@@ -450,7 +460,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
               );
 
               if (result._tag === "Completed") {
-                yield* cleanup();
+                yield* cleanup("completed");
+              } else if (result._tag === "Failed") {
+                yield* cleanup("failed");
+              } else if (result._tag === "Cancelled") {
+                yield* cleanup("cancelled");
               }
               break;
             }
@@ -493,7 +507,11 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
                 );
 
                 if (result._tag === "Completed") {
-                  yield* cleanup();
+                  yield* cleanup("completed");
+                } else if (result._tag === "Failed") {
+                  yield* cleanup("failed");
+                } else if (result._tag === "Cancelled") {
+                  yield* cleanup("cancelled");
                 }
               }
               break;

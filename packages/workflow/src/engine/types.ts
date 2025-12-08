@@ -5,6 +5,7 @@ import type { WorkflowStatus } from "../state/types";
 import type { HttpBatchTrackerConfig } from "../tracker/http-batch";
 import type { RecoveryConfig } from "../recovery/config";
 import type { WorkflowClientFactory } from "../client/types";
+import type { PurgeConfig } from "../purge/config";
 
 /**
  * Options for creating durable workflows.
@@ -21,6 +22,22 @@ export interface CreateDurableWorkflowsOptions {
    * Uses defaults if not provided.
    */
   readonly recovery?: Partial<RecoveryConfig>;
+
+  /**
+   * Automatic data purging configuration.
+   * When provided, workflow data is deleted after terminal states (completed, failed, cancelled).
+   * Omit to retain data indefinitely.
+   *
+   * @example
+   * ```ts
+   * // Enable purge with default 60 second delay
+   * purge: {}
+   *
+   * // Enable purge with custom delay
+   * purge: { delay: "5 minutes" }
+   * ```
+   */
+  readonly purge?: PurgeConfig;
 }
 
 /**

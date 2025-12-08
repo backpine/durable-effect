@@ -4,6 +4,7 @@ import { DurableObject } from "cloudflare:workers";
 import { Context, Effect, Layer } from "effect";
 import { createDurableObjectRuntime } from "../adapters/durable-object";
 import { StorageAdapter } from "../adapters/storage";
+import { RuntimeAdapter } from "../adapters/runtime";
 import {
   WorkflowStateMachine,
   WorkflowStateMachineLayer,
@@ -22,6 +23,12 @@ import {
   NoopTrackerLayer,
   flushEvents,
 } from "../tracker";
+import {
+  PurgeManager,
+  PurgeManagerLayer,
+  DisabledPurgeManagerLayer,
+  parsePurgeConfig,
+} from "../purge";
 import { createClientInstance } from "../client/instance";
 import type {
   WorkflowClientFactory,
@@ -84,7 +91,9 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
       | WorkflowOrchestrator
       | RecoveryManager
       | WorkflowStateMachine
-      | StorageAdapter,
+      | StorageAdapter
+      | PurgeManager
+      | RuntimeAdapter,
       never,
       never
     >;
@@ -100,19 +109,28 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         ? HttpBatchTrackerLayer(options.tracker)
         : NoopTrackerLayer;
 
+      // Create purge layer - enabled if options.purge is provided
+      const purgeConfig = parsePurgeConfig(options?.purge);
+      const purgeLayer = purgeConfig.enabled
+        ? PurgeManagerLayer(purgeConfig)
+        : DisabledPurgeManagerLayer;
+
       // Create full orchestrator layer
       this.#orchestratorLayer = WorkflowOrchestratorLayer<W>().pipe(
         Layer.provideMerge(WorkflowRegistryLayer(workflows)),
         Layer.provideMerge(WorkflowExecutorLayer),
         Layer.provideMerge(RecoveryManagerLayer(options?.recovery)),
         Layer.provideMerge(WorkflowStateMachineLayer),
+        Layer.provideMerge(purgeLayer),
         Layer.provideMerge(trackerLayer),
         Layer.provideMerge(this.#runtimeLayer),
       ) as Layer.Layer<
         | WorkflowOrchestrator
         | RecoveryManager
         | WorkflowStateMachine
-        | StorageAdapter,
+        | StorageAdapter
+        | PurgeManager
+        | RuntimeAdapter,
         never,
         never
       >;
@@ -177,6 +195,21 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
     async alarm(): Promise<void> {
       await this.#runEffect(
         Effect.gen(function* () {
+          const purgeManager = yield* PurgeManager;
+          const runtime = yield* RuntimeAdapter;
+
+          // Check if this is a purge alarm
+          const result = yield* purgeManager.executePurgeIfDue();
+          if (result.purged) {
+            // Log the purge
+            console.log(
+              `[Workflow] Purged data for ${runtime.instanceId} (${result.reason})`
+            );
+            // Note: All storage is deleted, nothing more to do
+            return;
+          }
+
+          // Not a purge alarm - handle as workflow alarm (resume/recovery)
           const orchestrator = yield* WorkflowOrchestrator;
           yield* orchestrator.handleAlarm();
           yield* flushEvents;
