@@ -7,6 +7,7 @@ import {
   WorkflowContextLayer,
   WorkflowScope,
   WorkflowScopeLayer,
+  WorkflowLevelLayer,
   sleep,
   sleepUntil,
   PauseSignal,
@@ -31,11 +32,15 @@ describe("Workflow.sleep", () => {
   const createLayers = () =>
     WorkflowScopeLayer.pipe(
       Layer.provideMerge(WorkflowContextLayer),
+      Layer.provideMerge(WorkflowLevelLayer),
       Layer.provideMerge(runtimeLayer)
     );
 
-  const runSleep = <A, E>(effect: Effect.Effect<A, E, any>) =>
-    effect.pipe(Effect.provide(createLayers()), Effect.runPromise);
+  const runSleep = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.provide(createLayers() as Layer.Layer<R>),
+      Effect.runPromise
+    );
 
   it("should throw PauseSignal with correct resumeAt", async () => {
     const result = await runSleep(
@@ -99,10 +104,12 @@ describe("Workflow.sleep", () => {
     const result = await Effect.gen(function* () {
       return yield* sleep("5 seconds").pipe(Effect.either);
     }).pipe(
-      // No WorkflowScopeLayer
+      // No WorkflowScopeLayer (but WorkflowLevel is needed for compile-time check)
+      Effect.provide(WorkflowLevelLayer),
       Effect.provide(WorkflowContextLayer),
       Effect.provide(runtimeLayer),
-      Effect.runPromise
+      // Type assertion needed: we intentionally omit WorkflowScope to test runtime error
+      (e) => Effect.runPromise(e as Effect.Effect<typeof e extends Effect.Effect<infer A, infer _E, infer _R> ? A : never>)
     );
 
     expect(result._tag).toBe("Left");
@@ -144,6 +151,7 @@ describe("Workflow.sleepUntil", () => {
   const createLayers = () =>
     WorkflowScopeLayer.pipe(
       Layer.provideMerge(WorkflowContextLayer),
+      Layer.provideMerge(WorkflowLevelLayer),
       Layer.provideMerge(runtimeLayer)
     );
 

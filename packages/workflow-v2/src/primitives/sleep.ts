@@ -5,6 +5,7 @@ import { createBaseEvent } from "@durable-effect/core";
 import { WorkflowContext } from "../context/workflow-context";
 import { WorkflowScope, WorkflowScopeError } from "../context/workflow-scope";
 import { guardWorkflowOperation, StepScopeError } from "../context/step-scope";
+import { WorkflowLevel } from "../context/workflow-level";
 import { RuntimeAdapter } from "../adapters/runtime";
 import { StorageAdapter } from "../adapters/storage";
 import { emitEvent } from "../tracker";
@@ -40,10 +41,14 @@ export function sleep(
 ): Effect.Effect<
   void,
   PauseSignal | StorageError | WorkflowScopeError | StepScopeError,
-  WorkflowContext | WorkflowScope | RuntimeAdapter | StorageAdapter
+  WorkflowContext | WorkflowScope | RuntimeAdapter | StorageAdapter | WorkflowLevel
 > {
   return Effect.gen(function* () {
-    // Guard against calling inside a step
+    // Access WorkflowLevel to ensure this primitive can only be used at workflow level
+    // This enables compile-time checking - if used inside a step, WorkflowLevel won't be available
+    yield* WorkflowLevel;
+
+    // Guard against calling inside a step (runtime check as fallback)
     yield* guardWorkflowOperation("Workflow.sleep");
 
     // Verify we're in a workflow scope
@@ -128,10 +133,14 @@ export function sleepUntil(
 ): Effect.Effect<
   void,
   PauseSignal | StorageError | WorkflowScopeError | StepScopeError,
-  WorkflowContext | WorkflowScope | RuntimeAdapter | StorageAdapter
+  WorkflowContext | WorkflowScope | RuntimeAdapter | StorageAdapter | WorkflowLevel
 > {
   return Effect.gen(function* () {
-    // Guard against calling inside a step
+    // Access WorkflowLevel to ensure this primitive can only be used at workflow level
+    // This enables compile-time checking - if used inside a step, WorkflowLevel won't be available
+    yield* WorkflowLevel;
+
+    // Guard against calling inside a step (runtime check as fallback)
     yield* guardWorkflowOperation("Workflow.sleepUntil");
 
     const scope = yield* Effect.serviceOption(WorkflowScope);

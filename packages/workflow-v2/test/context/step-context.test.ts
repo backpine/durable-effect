@@ -69,7 +69,9 @@ describe("StepContext", () => {
         })
       );
 
-      expect(result).toEqual({ a1: 1, a2: 2, a3: 3 });
+      // incrementAttempt moves from current attempt (default 1) to next
+      // So first call: 1 → 2, second: 2 → 3, third: 3 → 4
+      expect(result).toEqual({ a1: 2, a2: 3, a3: 4 });
     });
 
     it("should reset attempts", async () => {

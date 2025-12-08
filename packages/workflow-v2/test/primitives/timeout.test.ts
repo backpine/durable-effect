@@ -7,6 +7,7 @@ import {
   WorkflowContextLayer,
   WorkflowScope,
   WorkflowScopeLayer,
+  WorkflowLevelLayer,
   step,
   timeout,
   WorkflowTimeoutError,
@@ -29,11 +30,15 @@ describe("Workflow.timeout (pipeable operator)", () => {
   const createLayers = () =>
     WorkflowScopeLayer.pipe(
       Layer.provideMerge(WorkflowContextLayer),
+      Layer.provideMerge(WorkflowLevelLayer),
       Layer.provideMerge(runtimeLayer)
     );
 
-  const runStep = <A, E>(effect: Effect.Effect<A, E, any>) =>
-    effect.pipe(Effect.provide(createLayers()), Effect.runPromise);
+  const runStep = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.provide(createLayers() as Layer.Layer<R>),
+      Effect.runPromise
+    );
 
   describe("basic timeout behavior", () => {
     it("should succeed within timeout", async () => {

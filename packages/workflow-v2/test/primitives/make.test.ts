@@ -4,19 +4,17 @@ import { make } from "../../src";
 
 describe("Workflow.make", () => {
   it("should create a workflow definition", () => {
-    const workflow = make({ name: "testWorkflow" }, (input: { value: number }) =>
+    const workflow = make((input: { value: number }) =>
       Effect.succeed(input.value * 2)
     );
 
-    expect(workflow.name).toBe("testWorkflow");
+    expect(workflow._tag).toBe("WorkflowDefinition");
     expect(typeof workflow.execute).toBe("function");
   });
 
   it("should preserve type information", () => {
-    const workflow = make(
-      { name: "typedWorkflow" },
-      (input: { name: string; count: number }) =>
-        Effect.succeed({ result: `${input.name}-${input.count}` })
+    const workflow = make((input: { name: string; count: number }) =>
+      Effect.succeed({ result: `${input.name}-${input.count}` })
     );
 
     // Type checking - these should compile
@@ -25,11 +23,11 @@ describe("Workflow.make", () => {
       ? true
       : false;
 
-    expect(workflow.name).toBe("typedWorkflow");
+    expect(workflow._tag).toBe("WorkflowDefinition");
   });
 
   it("should execute workflow effect", async () => {
-    const workflow = make({ name: "executableWorkflow" }, (input: { x: number }) =>
+    const workflow = make((input: { x: number }) =>
       Effect.gen(function* () {
         return input.x + 10;
       })
@@ -44,9 +42,7 @@ describe("Workflow.make", () => {
       readonly _tag = "CustomError";
     }
 
-    const workflow = make({ name: "failingWorkflow" }, (_input: {}) =>
-      Effect.fail(new CustomError())
-    );
+    const workflow = make((_input: {}) => Effect.fail(new CustomError()));
 
     const result = await Effect.runPromise(
       workflow.execute({}).pipe(Effect.either)
@@ -56,7 +52,7 @@ describe("Workflow.make", () => {
   });
 
   it("should handle async workflows", async () => {
-    const workflow = make({ name: "asyncWorkflow" }, (input: string) =>
+    const workflow = make((input: string) =>
       Effect.gen(function* () {
         yield* Effect.promise(() => Promise.resolve());
         return `processed: ${input}`;

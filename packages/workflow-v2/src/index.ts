@@ -104,6 +104,10 @@ export {
   rejectInsideStep,
   StepScopeError,
   type StepScopeService,
+  // Workflow Level (compile-time guard)
+  WorkflowLevel,
+  WorkflowLevelLayer,
+  type WorkflowLevelService,
 } from "./context";
 
 // Primitives

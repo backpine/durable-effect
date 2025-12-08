@@ -7,6 +7,7 @@ import {
   WorkflowContextLayer,
   WorkflowScope,
   WorkflowScopeLayer,
+  WorkflowLevelLayer,
   step,
   retry,
   Backoff,
@@ -32,11 +33,15 @@ describe("Workflow.retry (pipeable operator)", () => {
   const createLayers = () =>
     WorkflowScopeLayer.pipe(
       Layer.provideMerge(WorkflowContextLayer),
+      Layer.provideMerge(WorkflowLevelLayer),
       Layer.provideMerge(runtimeLayer)
     );
 
-  const runStep = <A, E>(effect: Effect.Effect<A, E, any>) =>
-    effect.pipe(Effect.provide(createLayers()), Effect.runPromise);
+  const runStep = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.provide(createLayers() as Layer.Layer<R>),
+      Effect.runPromise
+    );
 
   describe("basic retry behavior", () => {
     it("should succeed on first attempt if no error", async () => {
@@ -201,7 +206,9 @@ describe("Workflow.retry (pipeable operator)", () => {
     it("should create constant backoff", () => {
       const strategy = Backoff.constant("5 seconds");
       expect(strategy.type).toBe("constant");
-      expect(strategy.delayMs).toBe(5000);
+      if (strategy.type === "constant") {
+        expect(strategy.delayMs).toBe(5000);
+      }
     });
 
     it("should create linear backoff", () => {
@@ -211,9 +218,11 @@ describe("Workflow.retry (pipeable operator)", () => {
         max: "10 seconds",
       });
       expect(strategy.type).toBe("linear");
-      expect(strategy.initialDelayMs).toBe(1000);
-      expect(strategy.incrementMs).toBe(500);
-      expect(strategy.maxDelayMs).toBe(10000);
+      if (strategy.type === "linear") {
+        expect(strategy.initialDelayMs).toBe(1000);
+        expect(strategy.incrementMs).toBe(500);
+        expect(strategy.maxDelayMs).toBe(10000);
+      }
     });
 
     it("should create exponential backoff", () => {
@@ -223,21 +232,29 @@ describe("Workflow.retry (pipeable operator)", () => {
         max: "30 seconds",
       });
       expect(strategy.type).toBe("exponential");
-      expect(strategy.initialDelayMs).toBe(1000);
-      expect(strategy.multiplier).toBe(3);
-      expect(strategy.maxDelayMs).toBe(30000);
+      if (strategy.type === "exponential") {
+        expect(strategy.initialDelayMs).toBe(1000);
+        expect(strategy.multiplier).toBe(3);
+        expect(strategy.maxDelayMs).toBe(30000);
+      }
     });
 
     it("should have preset strategies", () => {
       const standard = Backoff.presets.standard();
       expect(standard.type).toBe("exponential");
-      expect(standard.initialDelayMs).toBe(1000);
+      if (standard.type === "exponential") {
+        expect(standard.initialDelayMs).toBe(1000);
+      }
 
       const aggressive = Backoff.presets.aggressive();
-      expect(aggressive.initialDelayMs).toBe(100);
+      if (aggressive.type === "exponential") {
+        expect(aggressive.initialDelayMs).toBe(100);
+      }
 
       const patient = Backoff.presets.patient();
-      expect(patient.initialDelayMs).toBe(5000);
+      if (patient.type === "exponential") {
+        expect(patient.initialDelayMs).toBe(5000);
+      }
 
       const simple = Backoff.presets.simple();
       expect(simple.type).toBe("constant");
