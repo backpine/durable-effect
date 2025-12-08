@@ -4,6 +4,7 @@ import type { WorkflowRegistry, WorkflowCall } from "../orchestrator/types";
 import type { WorkflowStatus } from "../state/types";
 import type { HttpBatchTrackerConfig } from "../tracker/http-batch";
 import type { RecoveryConfig } from "../recovery/config";
+import type { WorkflowClientFactory } from "../client/types";
 
 /**
  * Options for creating durable workflows.
@@ -44,6 +45,7 @@ export interface CreateDurableWorkflowsResult<W extends WorkflowRegistry> {
 
 /**
  * Public interface of the Durable Workflow Engine.
+ * This is the RPC interface exposed by the Durable Object.
  */
 export interface DurableWorkflowEngineInterface<W extends WorkflowRegistry> {
   /**
@@ -78,50 +80,4 @@ export interface DurableWorkflowEngineInterface<W extends WorkflowRegistry> {
    * Get workflow metadata.
    */
   getMeta<T>(key: string): Promise<T | undefined>;
-}
-
-/**
- * Workflow client factory type.
- */
-export interface WorkflowClientFactory<W extends WorkflowRegistry> {
-  /**
-   * Create a client from a Durable Object binding.
-   */
-  fromBinding(
-    binding: DurableObjectNamespace,
-    options?: { idFromName?: string; id?: DurableObjectId }
-  ): WorkflowClientInstance<W>;
-}
-
-/**
- * Type-safe workflow client instance.
- */
-export interface WorkflowClientInstance<W extends WorkflowRegistry> {
-  /**
-   * Start a workflow.
-   */
-  run(call: WorkflowCall<W>): Promise<{ id: string; completed: boolean }>;
-
-  /**
-   * Queue a workflow.
-   */
-  runAsync(call: WorkflowCall<W>): Promise<{ id: string }>;
-
-  /**
-   * Cancel a workflow.
-   */
-  cancel(options?: { reason?: string }): Promise<{
-    cancelled: boolean;
-    reason?: string;
-  }>;
-
-  /**
-   * Get status.
-   */
-  getStatus(): Promise<WorkflowStatus | undefined>;
-
-  /**
-   * Get the workflow instance ID.
-   */
-  readonly id: string;
 }

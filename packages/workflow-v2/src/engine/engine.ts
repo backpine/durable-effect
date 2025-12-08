@@ -1,7 +1,7 @@
 // packages/workflow-v2/src/engine/engine.ts
 
 import { DurableObject } from "cloudflare:workers";
-import { Effect, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
 import { createDurableObjectRuntime } from "../adapters/durable-object";
 import { StorageAdapter } from "../adapters/storage";
 import { WorkflowStateMachine, WorkflowStateMachineLayer } from "../state/machine";
@@ -19,12 +19,12 @@ import {
   NoopTrackerLayer,
   flushEvents,
 } from "../tracker";
+import { createClientInstance } from "../client/instance";
+import type { WorkflowClientFactory, WorkflowClientInstance } from "../client/types";
 import type {
   CreateDurableWorkflowsOptions,
   CreateDurableWorkflowsResult,
   DurableWorkflowEngineInterface,
-  WorkflowClientFactory,
-  WorkflowClientInstance,
 } from "./types";
 
 /**
@@ -217,26 +217,16 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
     }
   }
 
-  // Create client factory
+  // Create client factory with Effect Tag for service pattern
+  const ClientTag = Context.GenericTag<WorkflowClientInstance<W>>(
+    "@durable-effect/WorkflowClient"
+  );
+
   const WorkflowClient: WorkflowClientFactory<W> = {
-    fromBinding(binding, clientOptions) {
-      const id =
-        clientOptions?.id ??
-        (clientOptions?.idFromName
-          ? binding.idFromName(clientOptions.idFromName)
-          : binding.newUniqueId());
-
-      const stub = binding.get(id) as unknown as DurableWorkflowEngineInterface<W>;
-
-      return {
-        id: id.toString(),
-
-        run: (call) => stub.run(call),
-        runAsync: (call) => stub.runAsync(call),
-        cancel: (opts) => stub.cancel(opts),
-        getStatus: () => stub.getStatus(),
-      } as WorkflowClientInstance<W>;
+    fromBinding(binding) {
+      return createClientInstance<W>(binding);
     },
+    Tag: ClientTag,
   };
 
   return {

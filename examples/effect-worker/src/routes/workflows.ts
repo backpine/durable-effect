@@ -27,13 +27,13 @@ export const getProcessOrder = (request: Request, env: Env) =>
     const client = WorkflowClient.fromBinding(env.WORKFLOWS);
 
     yield* Effect.log(`Starting workflow for order ${orderId}`);
-    const { id } = yield* Effect.promise(() =>
-      client.runAsync({
-        workflow: "processOrder",
-        input: orderId,
-        executionId: orderId,
-      }),
-    );
+
+    // Client methods are now yieldable (return Effects)
+    const { id } = yield* client.runAsync({
+      workflow: "processOrder",
+      input: orderId,
+      execution: { id: orderId },
+    });
 
     return Response.json({
       success: true,
@@ -53,12 +53,11 @@ export const getWorkflowStatus = (
   Effect.gen(function* () {
     const client = WorkflowClient.fromBinding(env.WORKFLOWS);
 
-    const instance = yield* Effect.promise(() =>
-      client.getInstance({ workflow: "processOrder", id: instanceId }),
-    );
-    const status = yield* Effect.promise(() => instance.status());
+    // Client methods now take instanceId directly
+    const status = yield* client.status(instanceId);
 
     return Response.json({
       instanceId,
+      status,
     });
   });
