@@ -1,5 +1,9 @@
+// @ts-nocheck
 import { defineConfig } from "vitest/config";
-import path from "path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
@@ -9,8 +13,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
-      "@durable-effect/core": path.resolve(__dirname, "../core/src"),
+      // Mock cloudflare:workers for testing
+      "cloudflare:workers": resolve(__dirname, "./test/__mocks__/cloudflare-workers.ts"),
+      "@durable-effect/core": resolve(__dirname, "../core/src"),
     },
   },
 });

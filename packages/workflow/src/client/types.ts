@@ -1,12 +1,9 @@
+// packages/workflow-v2/src/client/types.ts
+
 import type { Context, Effect } from "effect";
-import type {
-  WorkflowRegistry,
-  WorkflowInput,
-  WorkflowStatus,
-  DurableWorkflowInstance,
-  CancelOptions,
-  CancelResult,
-} from "@/types";
+import type { WorkflowRegistry } from "../orchestrator/types";
+import type { WorkflowStatus } from "../state/types";
+import type { WorkflowInput } from "../primitives/make";
 
 /**
  * Error thrown by workflow client operations.
@@ -16,11 +13,12 @@ export class WorkflowClientError extends Error {
 
   constructor(
     readonly operation: string,
-    readonly cause: unknown,
+    readonly cause: unknown
   ) {
     super(
-      `Workflow client ${operation} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `Workflow client ${operation} failed: ${cause instanceof Error ? cause.message : String(cause)}`
     );
+    this.name = "WorkflowClientError";
   }
 }
 
@@ -33,7 +31,6 @@ export interface WorkflowRunResult {
 
 /**
  * Execution options for controlling workflow instance behavior.
- * Extensible for future features like concurrency control, buffering, etc.
  */
 export interface ExecutionOptions {
   /**
@@ -41,15 +38,26 @@ export interface ExecutionOptions {
    * If not provided, a random UUID is generated.
    */
   readonly id?: string;
+}
 
-  // Future options:
-  // readonly concurrency?: { key: string; max: number };
-  // readonly buffer?: { strategy: "latest" | "queue" };
+/**
+ * Options for cancelling a workflow.
+ */
+export interface CancelOptions {
+  readonly reason?: string;
+}
+
+/**
+ * Result of a cancel operation.
+ */
+export interface CancelResult {
+  readonly cancelled: boolean;
+  readonly reason?: string;
 }
 
 /**
  * Type-safe workflow run request.
- * Uses discriminated union so `workflow` determines the `input` type.
+ * The `workflow` field determines the `input` type.
  */
 export type WorkflowRunRequest<W extends WorkflowRegistry> = {
   [K in keyof W & string]: {
@@ -61,20 +69,21 @@ export type WorkflowRunRequest<W extends WorkflowRegistry> = {
 
 /**
  * A workflow client instance with type-safe operations.
+ * All methods return Effects, making them yieldable.
  */
 export interface WorkflowClientInstance<W extends WorkflowRegistry> {
   /**
    * Run workflow synchronously (blocks until complete/pause/fail).
    */
   run(
-    request: WorkflowRunRequest<W>,
+    request: WorkflowRunRequest<W>
   ): Effect.Effect<WorkflowRunResult, WorkflowClientError>;
 
   /**
    * Run workflow asynchronously (returns immediately).
    */
   runAsync(
-    request: WorkflowRunRequest<W>,
+    request: WorkflowRunRequest<W>
   ): Effect.Effect<WorkflowRunResult, WorkflowClientError>;
 
   /**
@@ -82,21 +91,21 @@ export interface WorkflowClientInstance<W extends WorkflowRegistry> {
    */
   cancel(
     instanceId: string,
-    options?: CancelOptions,
+    options?: CancelOptions
   ): Effect.Effect<CancelResult, WorkflowClientError>;
 
   /**
    * Get workflow status by instance ID.
    */
   status(
-    instanceId: string,
+    instanceId: string
   ): Effect.Effect<WorkflowStatus | undefined, WorkflowClientError>;
 
   /**
    * Get completed steps by instance ID.
    */
   completedSteps(
-    instanceId: string,
+    instanceId: string
   ): Effect.Effect<ReadonlyArray<string>, WorkflowClientError>;
 
   /**
@@ -104,7 +113,7 @@ export interface WorkflowClientInstance<W extends WorkflowRegistry> {
    */
   meta<T>(
     instanceId: string,
-    key: string,
+    key: string
   ): Effect.Effect<T | undefined, WorkflowClientError>;
 }
 
@@ -116,7 +125,7 @@ export interface WorkflowClientFactory<W extends WorkflowRegistry> {
    * Create a client instance from a Durable Object binding.
    */
   fromBinding(
-    binding: DurableObjectNamespace<DurableWorkflowInstance<W>>,
+    binding: DurableObjectNamespace
   ): WorkflowClientInstance<W>;
 
   /**

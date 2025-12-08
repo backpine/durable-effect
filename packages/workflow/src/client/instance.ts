@@ -1,57 +1,50 @@
+// packages/workflow-v2/src/client/instance.ts
+
 import { Effect } from "effect";
-import type {
-  WorkflowRegistry,
-  DurableWorkflowInstance,
-  CancelOptions,
-  CancelResult,
-} from "@/types";
+import type { WorkflowRegistry } from "../orchestrator/types";
+import type { DurableWorkflowEngineInterface } from "../engine/types";
 import type {
   WorkflowClientInstance,
   WorkflowRunRequest,
-  WorkflowRunResult,
+  CancelOptions,
+  CancelResult,
 } from "./types";
 import { WorkflowClientError } from "./types";
 
 /**
- * Create a workflow client instance from a binding.
+ * Create a workflow client instance from a Durable Object binding.
  */
 export function createClientInstance<W extends WorkflowRegistry>(
-  binding: DurableObjectNamespace<DurableWorkflowInstance<W>>,
+  binding: DurableObjectNamespace
 ): WorkflowClientInstance<W> {
   /**
-   * Resolve the full instance ID, always namespaced by workflow name.
+   * Resolve the full instance ID, namespaced by workflow name.
    *
    * ID Format: `{workflow}:{identifier}`
    *
    * This namespacing ensures:
    * 1. Different workflows can use the same user-provided ID without collision
    * 2. IDs are always deterministic and predictable
-   * 3. Query methods (status, completedSteps, meta) work with the same ID format
+   * 3. Query methods work with the same ID format
    */
   const resolveInstanceId = (workflow: string, providedId?: string): string => {
-    // Always prepend workflow name for namespacing
     if (providedId) {
       return `${workflow}:${providedId}`;
     }
-
-    // No ID provided - generate random UUID
-    const uniqueId = crypto.randomUUID();
-    return `${workflow}:${uniqueId}`;
+    return `${workflow}:${crypto.randomUUID()}`;
   };
 
   /**
    * Get stub from instance ID string.
    * Always uses idFromName - the instanceId is the full namespaced string.
    */
-  const getStub = (instanceId: string) => {
+  const getStub = (instanceId: string): DurableWorkflowEngineInterface<W> => {
     const id = binding.idFromName(instanceId);
-    return binding.get(id);
+    return binding.get(id) as unknown as DurableWorkflowEngineInterface<W>;
   };
 
   return {
-    run(
-      request: WorkflowRunRequest<W>,
-    ): Effect.Effect<WorkflowRunResult, WorkflowClientError> {
+    run(request: WorkflowRunRequest<W>) {
       return Effect.tryPromise({
         try: async () => {
           const { workflow, input, execution } = request;
@@ -68,9 +61,7 @@ export function createClientInstance<W extends WorkflowRegistry>(
       });
     },
 
-    runAsync(
-      request: WorkflowRunRequest<W>,
-    ): Effect.Effect<WorkflowRunResult, WorkflowClientError> {
+    runAsync(request: WorkflowRunRequest<W>) {
       return Effect.tryPromise({
         try: async () => {
           const { workflow, input, execution } = request;
@@ -87,12 +78,9 @@ export function createClientInstance<W extends WorkflowRegistry>(
       });
     },
 
-    cancel(
-      instanceId: string,
-      options?: CancelOptions,
-    ): Effect.Effect<CancelResult, WorkflowClientError> {
+    cancel(instanceId: string, options?: CancelOptions) {
       return Effect.tryPromise({
-        try: async () => {
+        try: async (): Promise<CancelResult> => {
           const stub = getStub(instanceId);
           return stub.cancel(options);
         },

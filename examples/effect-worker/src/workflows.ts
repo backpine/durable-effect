@@ -3,7 +3,7 @@ import {
   Backoff,
   Workflow,
   createDurableWorkflows,
-} from "@durable-effect/workflow-v2";
+} from "@durable-effect/workflow";
 
 // =============================================================================
 // Example Effects (simulated async operations)

@@ -1,10 +1,14 @@
-export { createWorkflowClientFactory } from "./factory";
+// packages/workflow-v2/src/client/index.ts
+
 export { createClientInstance } from "./instance";
-export { WorkflowClientError } from "./types";
-export type {
-  WorkflowClientFactory,
-  WorkflowClientInstance,
-  WorkflowRunRequest,
-  WorkflowRunResult,
-  ExecutionOptions,
+
+export {
+  WorkflowClientError,
+  type WorkflowRunResult,
+  type ExecutionOptions,
+  type CancelOptions,
+  type CancelResult,
+  type WorkflowRunRequest,
+  type WorkflowClientInstance,
+  type WorkflowClientFactory,
 } from "./types";
