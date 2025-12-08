@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-11-28",
   "observability": {
-    "enabled": true
+    "enabled": true,
   },
 
   // Durable Objects
@@ -12,24 +12,23 @@
     "bindings": [
       {
         "name": "WORKFLOWS",
-        "class_name": "Workflows"
+        "class_name": "Workflows",
       },
-      {
-        "name": "PULSE_TRACKER",
-        "class_name": "PulseTracker"
-      }
-    ]
+    ],
   },
 
   // Migrations for Durable Objects
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["Workflows"]
+      "new_classes": ["Workflows"],
     },
     {
       "tag": "v2",
-      "new_classes": ["PulseTracker"]
-    }
-  ]
+    },
+    {
+      "tag": "v3",
+      "deleted_classes": ["PulseTracker"],
+    },
+  ],
 }

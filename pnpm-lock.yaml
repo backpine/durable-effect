@@ -26,9 +26,9 @@ importers:
 
   examples/effect-worker:
     dependencies:
-      '@durable-effect/workflow':
+      '@durable-effect/workflow-v2':
         specifier: workspace:*
-        version: link:../../packages/workflow
+        version: link:../../packages/workflow-v2
       '@effect/platform':
         specifier: 'catalog:'
         version: 0.75.4(effect@3.19.8)
@@ -85,10 +85,20 @@ importers:
         version: 2.1.9
 
   packages/workflow-v2:
+    dependencies:
+      '@durable-effect/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20241127.0
+        version: 4.20251127.0
       effect:
         specifier: 'catalog:'
         version: 3.19.8
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9
 
 packages:
 
