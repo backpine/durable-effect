@@ -345,7 +345,7 @@ type WorkflowStatus =
 
 ## Event Tracking
 
-v2 includes built-in event tracking for monitoring workflow execution. Configure a tracker endpoint to receive events.
+Configure a tracker endpoint to monitor workflow execution and receive events.
 
 ### Configuration
 
@@ -714,7 +714,7 @@ import {
 
 ## Recovery
 
-v2 includes automatic recovery for workflows interrupted by infrastructure failures. If a workflow is in "Running" state when the Durable Object restarts, it will automatically schedule recovery.
+Workflows automatically recover from infrastructure failures. If a workflow is in "Running" state when the Durable Object restarts, it will automatically schedule recovery.
 
 ### Configuration
 
