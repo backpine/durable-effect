@@ -38,6 +38,8 @@ This library brings [Effect's](https://effect.website/) composable, type-safe pr
   - [Selective Retry with Effect Error Handling](#selective-retry-with-effect-error-handling)
 - [Timeouts](#timeouts)
 - [Providing Services](#providing-services)
+- [Recovery](#recovery)
+- [Automatic Data Purging](#automatic-data-purging)
 
 ---
 
@@ -788,6 +790,67 @@ export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
   },
 });
 ```
+
+---
+
+## Automatic Data Purging
+
+By default, workflow data (state, step results, metadata) persists in Durable Object storage indefinitely. For high-volume workflows, this can lead to storage bloat. Enable automatic purging to delete workflow data after completion.
+
+### Configuration
+
+```typescript
+export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
+  purge: {
+    delay: "5 minutes",  // Delete data 5 minutes after terminal state
+  },
+});
+```
+
+When enabled, workflow data is automatically purged after the workflow reaches a terminal state (completed, failed, or cancelled). The delay gives you time to query final status before cleanup.
+
+### Delay Formats
+
+The `delay` option accepts Effect duration strings or milliseconds:
+
+```typescript
+// String formats
+purge: { delay: "30 seconds" }
+purge: { delay: "5 minutes" }
+purge: { delay: "1 hour" }
+purge: { delay: "1 day" }
+
+// Milliseconds
+purge: { delay: 60000 }
+
+```
+
+### What Gets Purged
+
+When purge executes, **all** Durable Object storage for that workflow instance is deleted:
+- Workflow state and status
+- Step results and metadata
+- Recovery tracking data
+- Any custom metadata stored via `getMeta()`
+
+### Disabling Purge
+
+Omit the `purge` option to retain data indefinitely (default behavior):
+
+```typescript
+// No purge - data retained forever
+export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows);
+```
+
+### Logs
+
+When a purge executes, it logs:
+
+```
+[Workflow] Purged data for {instanceId} ({reason})
+```
+
+Where `reason` is the terminal state that triggered the purge (`completed`, `failed`, or `cancelled`).
 
 ---
 
