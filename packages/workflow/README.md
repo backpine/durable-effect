@@ -21,7 +21,6 @@ This library brings [Effect's](https://effect.website/) composable, type-safe pr
 ## Table of Contents
 
 - [Installation](#installation)
-- [What's New in v2](#whats-new-in-v2)
 - [High-Level Usage](#high-level-usage)
   - [Building a Basic Workflow](#building-a-basic-workflow)
   - [Steps](#steps)
@@ -47,68 +46,6 @@ This library brings [Effect's](https://effect.website/) composable, type-safe pr
 
 ```bash
 pnpm add @durable-effect/workflow effect
-```
-
----
-
-## What's New in v2
-
-### Simplified Workflow Definition
-
-Workflow names are now derived from the registry key, eliminating duplication:
-
-```typescript
-// v1 - name specified twice
-const workflow = Workflow.make({ name: "processOrder" }, (input) => ...);
-const workflows = { processOrder: workflow };
-
-// v2 - name comes from the registry key
-const workflow = Workflow.make((input) => ...);
-const workflows = { processOrder: workflow };  // name is "processOrder"
-```
-
-### Yieldable Client
-
-All client methods now return Effects, making them yieldable:
-
-```typescript
-// v1 - Promise-based
-const result = await client.runAsync({ workflow: "processOrder", input });
-
-// v2 - Effect-based, yieldable
-const { id } = yield* client.runAsync({
-  workflow: "processOrder",
-  input,
-  execution: { id: "custom-id" },
-});
-```
-
-### Instance ID Namespacing
-
-Instance IDs are automatically namespaced by workflow name to prevent collisions:
-
-```typescript
-// ID format: {workflow}:{identifier}
-const { id } = yield* client.runAsync({
-  workflow: "processOrder",
-  input: orderId,
-  execution: { id: orderId },
-});
-// id = "processOrder:order-123"
-```
-
-### Built-in Event Tracking
-
-Configure event tracking to monitor workflow execution:
-
-```typescript
-export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
-  tracker: {
-    endpoint: "https://events.example.com/ingest",
-    env: "production",
-    serviceKey: "my-service",
-  },
-});
 ```
 
 ---
