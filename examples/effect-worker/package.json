@@ -14,7 +14,7 @@
     "wrangler": "^4.51.0"
   },
   "dependencies": {
-    "@durable-effect/workflow": "workspace:*",
+    "@durable-effect/workflow-v2": "workspace:*",
     "@effect/platform": "catalog:",
     "@effect/schema": "catalog:",
     "effect": "catalog:"

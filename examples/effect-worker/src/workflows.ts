@@ -3,7 +3,7 @@ import {
   Backoff,
   Workflow,
   createDurableWorkflows,
-} from "@durable-effect/workflow";
+} from "@durable-effect/workflow-v2";
 
 // =============================================================================
 // Example Effects (simulated async operations)
@@ -11,13 +11,15 @@ import {
 
 const randomDelay = () =>
   Effect.promise(() => {
-    const ms = 18000 + Math.random() * 2000; // 2-4 seconds
+    const ms = 2000 + Math.random() * 2000; // 2-4 seconds
     return new Promise((resolve) => setTimeout(resolve, ms));
   });
 
 const fetchOrder = (orderId: string) =>
   Effect.gen(function* () {
     yield* Effect.log(`Fetching order ${orderId}...`);
+    yield* Workflow.sleep("1 seconds");
+
     yield* randomDelay();
     return {
       id: orderId,
@@ -64,6 +66,7 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
       "Validate",
       Effect.gen(function* () {
         yield* Effect.log(`Validating order: ${order.id}`);
+        yield* Workflow.sleep("1 seconds");
         yield* randomDelay();
         return { valid: true };
       }),
@@ -105,13 +108,11 @@ export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
   tracker: {
     env: "production",
     serviceKey: "finance-workflows",
-    url: "https://tanstack-trpc-on-cloudflare.backpine.workers.dev/sync",
-    accessToken: "token",
+    endpoint: "https://tanstack-trpc-on-cloudflare.backpine.workers.dev/sync",
+    batchSize: 2,
+
     retry: {
       maxAttempts: 2,
-    },
-    batch: {
-      maxSize: 20,
     },
   },
 });
