@@ -10,6 +10,29 @@ export type {
   StatusTag,
 } from "./types";
 
+// Status classes
+export {
+  Pending,
+  Queued,
+  Running,
+  Paused,
+  Completed,
+  Failed,
+  Cancelled,
+} from "./types";
+
+// Transition classes
+export {
+  Start,
+  Queue,
+  Resume,
+  Recover,
+  Complete,
+  Pause,
+  Fail,
+  Cancel,
+} from "./types";
+
 export { initialWorkflowState } from "./types";
 
 // Transition validation

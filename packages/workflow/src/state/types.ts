@@ -1,5 +1,72 @@
 // packages/workflow/src/state/types.ts
 
+import { Data } from "effect";
+
+// =============================================================================
+// Workflow Status - Data.TaggedClass variants
+// =============================================================================
+
+/**
+ * Workflow is initialized but not yet started.
+ */
+export class Pending extends Data.TaggedClass("Pending")<{}> {}
+
+/**
+ * Workflow is queued for async execution.
+ */
+export class Queued extends Data.TaggedClass("Queued")<{
+  /** When the workflow was queued */
+  readonly queuedAt: number;
+}> {}
+
+/**
+ * Workflow is actively executing.
+ */
+export class Running extends Data.TaggedClass("Running")<{
+  /** When execution started (for stale detection) */
+  readonly runningAt: number;
+}> {}
+
+/**
+ * Workflow is paused (sleep or retry).
+ */
+export class Paused extends Data.TaggedClass("Paused")<{
+  /** Why paused: sleep or retry */
+  readonly reason: "sleep" | "retry";
+  /** When to resume */
+  readonly resumeAt: number;
+  /** Step that caused the pause (for retry) */
+  readonly stepName?: string;
+}> {}
+
+/**
+ * Workflow completed successfully.
+ */
+export class Completed extends Data.TaggedClass("Completed")<{
+  /** When completed */
+  readonly completedAt: number;
+}> {}
+
+/**
+ * Workflow failed with an error.
+ */
+export class Failed extends Data.TaggedClass("Failed")<{
+  /** When failed */
+  readonly failedAt: number;
+  /** Error details */
+  readonly error: WorkflowError;
+}> {}
+
+/**
+ * Workflow was cancelled.
+ */
+export class Cancelled extends Data.TaggedClass("Cancelled")<{
+  /** When cancelled */
+  readonly cancelledAt: number;
+  /** Optional cancellation reason */
+  readonly reason?: string;
+}> {}
+
 /**
  * All possible workflow statuses.
  *
@@ -11,45 +78,13 @@
  *              Running → Failed/Cancelled
  */
 export type WorkflowStatus =
-  | { readonly _tag: "Pending" }
-  | {
-      readonly _tag: "Queued";
-      /** When the workflow was queued */
-      readonly queuedAt: number;
-    }
-  | {
-      readonly _tag: "Running";
-      /** When execution started (for stale detection) */
-      readonly runningAt: number;
-    }
-  | {
-      readonly _tag: "Paused";
-      /** Why paused: sleep or retry */
-      readonly reason: "sleep" | "retry";
-      /** When to resume */
-      readonly resumeAt: number;
-      /** Step that caused the pause (for retry) */
-      readonly stepName?: string;
-    }
-  | {
-      readonly _tag: "Completed";
-      /** When completed */
-      readonly completedAt: number;
-    }
-  | {
-      readonly _tag: "Failed";
-      /** When failed */
-      readonly failedAt: number;
-      /** Error details */
-      readonly error: WorkflowError;
-    }
-  | {
-      readonly _tag: "Cancelled";
-      /** When cancelled */
-      readonly cancelledAt: number;
-      /** Optional cancellation reason */
-      readonly reason?: string;
-    };
+  | Pending
+  | Queued
+  | Running
+  | Paused
+  | Completed
+  | Failed
+  | Cancelled;
 
 /**
  * Error information stored with failed workflows.
@@ -57,9 +92,74 @@ export type WorkflowStatus =
 export interface WorkflowError {
   readonly message: string;
   readonly stack?: string;
+  readonly code?: string;
   readonly stepName?: string;
   readonly attempt?: number;
 }
+
+// =============================================================================
+// Workflow Transitions - Data.TaggedClass variants
+// =============================================================================
+
+/**
+ * Start a workflow.
+ */
+export class Start extends Data.TaggedClass("Start")<{
+  readonly input: unknown;
+}> {}
+
+/**
+ * Queue a workflow for async execution.
+ */
+export class Queue extends Data.TaggedClass("Queue")<{
+  readonly input: unknown;
+}> {}
+
+/**
+ * Resume a paused workflow.
+ */
+export class Resume extends Data.TaggedClass("Resume")<{}> {}
+
+/**
+ * Recover a workflow after infrastructure failure.
+ */
+export class Recover extends Data.TaggedClass("Recover")<{
+  readonly reason: "infrastructure_restart" | "stale_detection" | "manual";
+  readonly attempt: number;
+}> {}
+
+/**
+ * Complete a workflow successfully.
+ */
+export class Complete extends Data.TaggedClass("Complete")<{
+  readonly completedSteps: ReadonlyArray<string>;
+  readonly durationMs: number;
+}> {}
+
+/**
+ * Pause a workflow (sleep or retry).
+ */
+export class Pause extends Data.TaggedClass("Pause")<{
+  readonly reason: "sleep" | "retry";
+  readonly resumeAt: number;
+  readonly stepName?: string;
+}> {}
+
+/**
+ * Fail a workflow with an error.
+ */
+export class Fail extends Data.TaggedClass("Fail")<{
+  readonly error: WorkflowError;
+  readonly completedSteps: ReadonlyArray<string>;
+}> {}
+
+/**
+ * Cancel a workflow.
+ */
+export class Cancel extends Data.TaggedClass("Cancel")<{
+  readonly reason?: string;
+  readonly completedSteps: ReadonlyArray<string>;
+}> {}
 
 /**
  * All possible workflow transitions.
@@ -67,43 +167,14 @@ export interface WorkflowError {
  * Each transition represents a state change action.
  */
 export type WorkflowTransition =
-  | {
-      readonly _tag: "Start";
-      readonly input: unknown;
-    }
-  | {
-      readonly _tag: "Queue";
-      readonly input: unknown;
-    }
-  | {
-      readonly _tag: "Resume";
-    }
-  | {
-      readonly _tag: "Recover";
-      readonly reason: "infrastructure_restart" | "stale_detection" | "manual";
-      readonly attempt: number;
-    }
-  | {
-      readonly _tag: "Complete";
-      readonly completedSteps: ReadonlyArray<string>;
-      readonly durationMs: number;
-    }
-  | {
-      readonly _tag: "Pause";
-      readonly reason: "sleep" | "retry";
-      readonly resumeAt: number;
-      readonly stepName?: string;
-    }
-  | {
-      readonly _tag: "Fail";
-      readonly error: WorkflowError;
-      readonly completedSteps: ReadonlyArray<string>;
-    }
-  | {
-      readonly _tag: "Cancel";
-      readonly reason?: string;
-      readonly completedSteps: ReadonlyArray<string>;
-    };
+  | Start
+  | Queue
+  | Resume
+  | Recover
+  | Complete
+  | Pause
+  | Fail
+  | Cancel;
 
 /**
  * Extract the tag from a transition for validation.
@@ -149,7 +220,7 @@ export const initialWorkflowState = (
   input: unknown,
   executionId?: string,
 ): WorkflowState => ({
-  status: { _tag: "Pending" },
+  status: new Pending(),
   workflowName,
   input,
   executionId,

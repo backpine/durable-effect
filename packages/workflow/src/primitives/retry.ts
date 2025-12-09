@@ -280,10 +280,8 @@ export function retry<A, E, R>(
       yield* stepCtx.incrementAttempt();
 
       // Calculate delay for next attempt
-      let delayMs = getDelay(delay, attempt);
-      if (jitter) {
-        delayMs = addJitter(delayMs);
-      }
+      const baseDelay = getDelay(delay, attempt);
+      const delayMs = jitter ? addJitter(baseDelay) : baseDelay;
 
       const resumeAt = now + delayMs;
 

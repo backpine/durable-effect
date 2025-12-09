@@ -51,7 +51,7 @@ export interface WorkflowContextService {
   /**
    * Get the workflow input.
    */
-  readonly input: <T>() => Effect.Effect<T, StorageError>;
+  readonly input: <T>() => Effect.Effect<T | undefined, StorageError>;
 
   /**
    * Get the execution/correlation ID (optional).
@@ -184,7 +184,7 @@ export const createWorkflowContext = Effect.gen(function* () {
       .get<string>(KEYS.workflowName)
       .pipe(Effect.map((name) => name ?? "unknown")),
 
-    input: <T>() => storage.get<T>(KEYS.input).pipe(Effect.map((i) => i as T)),
+    input: <T>() => storage.get<T>(KEYS.input),
 
     executionId: storage.get<string>(KEYS.executionId),
 

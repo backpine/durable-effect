@@ -1,5 +1,7 @@
 // packages/workflow/src/recovery/config.ts
 
+import { Schema } from "effect";
+
 /**
  * Configuration for the recovery system.
  */
@@ -62,7 +64,33 @@ export function createRecoveryConfig(
 }
 
 /**
+ * Schema for validating recovery config.
+ */
+export const RecoveryConfigSchema = Schema.Struct({
+  staleThresholdMs: Schema.Number.pipe(
+    Schema.greaterThanOrEqualTo(1000),
+    Schema.annotations({ message: () => "staleThresholdMs must be at least 1000ms" }),
+  ),
+  maxRecoveryAttempts: Schema.Number.pipe(
+    Schema.greaterThanOrEqualTo(1),
+    Schema.annotations({ message: () => "maxRecoveryAttempts must be at least 1" }),
+  ),
+  recoveryDelayMs: Schema.Number.pipe(
+    Schema.greaterThanOrEqualTo(0),
+    Schema.annotations({ message: () => "recoveryDelayMs must be non-negative" }),
+  ),
+  emitRecoveryEvents: Schema.Boolean,
+});
+
+/**
+ * Validate recovery config using Schema (Effect-based).
+ */
+export const validateRecoveryConfigEffect = (config: unknown) =>
+  Schema.decodeUnknown(RecoveryConfigSchema)(config);
+
+/**
  * Validate recovery config values.
+ * @deprecated Use validateRecoveryConfigEffect for Effect-based validation
  */
 export function validateRecoveryConfig(config: RecoveryConfig): void {
   if (config.staleThresholdMs < 1000) {

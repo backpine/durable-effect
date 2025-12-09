@@ -39,9 +39,9 @@ export class StepScope extends Context.Tag("@durable-effect/StepScope")<
  */
 export const StepScopeLayer = (stepName: string) =>
   Layer.succeed(StepScope, {
-    _marker: "step-scope-active",
+    _marker: "step-scope-active" as const,
     stepName,
-  });
+  } satisfies StepScopeService);
 
 /**
  * Check if currently inside a step scope.

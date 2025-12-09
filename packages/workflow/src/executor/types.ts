@@ -1,6 +1,12 @@
 // packages/workflow/src/executor/types.ts
 
-import type { WorkflowTransition } from "../state/types";
+import {
+  type WorkflowTransition,
+  Complete,
+  Pause,
+  Fail,
+  Cancel,
+} from "../state/types";
 
 /**
  * Execution mode determines how the workflow is run.
@@ -63,23 +69,20 @@ export function resultToTransition<Output>(
 ): WorkflowTransition {
   switch (result._tag) {
     case "Completed":
-      return {
-        _tag: "Complete",
+      return new Complete({
         completedSteps: result.completedSteps,
         durationMs: result.durationMs,
-      };
+      });
 
     case "Paused":
-      return {
-        _tag: "Pause",
+      return new Pause({
         reason: result.reason,
         resumeAt: result.resumeAt,
         stepName: result.stepName,
-      };
+      });
 
     case "Failed":
-      return {
-        _tag: "Fail",
+      return new Fail({
         error: {
           message:
             result.error instanceof Error
@@ -88,13 +91,12 @@ export function resultToTransition<Output>(
           stack: result.error instanceof Error ? result.error.stack : undefined,
         },
         completedSteps: result.completedSteps,
-      };
+      });
 
     case "Cancelled":
-      return {
-        _tag: "Cancel",
+      return new Cancel({
         reason: result.reason,
         completedSteps: result.completedSteps,
-      };
+      });
   }
 }

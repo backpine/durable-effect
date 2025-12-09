@@ -90,9 +90,10 @@ export function make<Input, Output, Error, Requirements>(
   return {
     _tag: "WorkflowDefinition",
     execute,
-    _Input: undefined as any,
-    _Output: undefined as any,
-    _Error: undefined as any,
+    // Type witnesses - runtime value is never used, only type information matters
+    _Input: undefined as unknown as Types.Covariant<Input>,
+    _Output: undefined as unknown as Types.Covariant<Output>,
+    _Error: undefined as unknown as Types.Covariant<Error>,
   };
 }
 

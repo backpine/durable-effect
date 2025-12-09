@@ -88,10 +88,10 @@ export function timeout<A, E, R>(
       const executionId = yield* workflowCtx.executionId;
 
       // Get or set start time (for deadline calculation)
-      let startedAt = yield* stepCtx.startedAt;
-      const isFirstExecution = startedAt === undefined;
-      if (startedAt === undefined) {
-        startedAt = now;
+      const existingStartedAt = yield* stepCtx.startedAt;
+      const isFirstExecution = existingStartedAt === undefined;
+      const startedAt = existingStartedAt ?? now;
+      if (isFirstExecution) {
         yield* stepCtx.setStartedAt(startedAt);
       }
 

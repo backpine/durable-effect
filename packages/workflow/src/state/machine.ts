@@ -8,6 +8,14 @@ import {
   type WorkflowStatus,
   type WorkflowTransition,
   type WorkflowState,
+  // Status classes
+  Pending,
+  Queued,
+  Running,
+  Paused,
+  Completed,
+  Failed,
+  Cancelled,
 } from "./types";
 import {
   isValidTransition,
@@ -186,35 +194,32 @@ function applyTransitionToStatus(
     case "Start":
     case "Resume":
     case "Recover":
-      return { _tag: "Running", runningAt: now };
+      return new Running({ runningAt: now });
 
     case "Queue":
-      return { _tag: "Queued", queuedAt: now };
+      return new Queued({ queuedAt: now });
 
     case "Pause":
-      return {
-        _tag: "Paused",
+      return new Paused({
         reason: transition.reason,
         resumeAt: transition.resumeAt,
         stepName: transition.stepName,
-      };
+      });
 
     case "Complete":
-      return { _tag: "Completed", completedAt: now };
+      return new Completed({ completedAt: now });
 
     case "Fail":
-      return {
-        _tag: "Failed",
+      return new Failed({
         failedAt: now,
         error: transition.error,
-      };
+      });
 
     case "Cancel":
-      return {
-        _tag: "Cancelled",
+      return new Cancelled({
         cancelledAt: now,
         reason: transition.reason,
-      };
+      });
   }
 }
 
@@ -274,7 +279,7 @@ export const createWorkflowStateMachine = Effect.gen(function* () {
   const service: WorkflowStateMachineService = {
     initialize: (workflowName, input, executionId) =>
       storage.putBatch({
-        [KEYS.status]: { _tag: "Pending" } satisfies WorkflowStatus,
+        [KEYS.status]: new Pending(),
         [KEYS.name]: workflowName,
         [KEYS.input]: input,
         [KEYS.executionId]: executionId,

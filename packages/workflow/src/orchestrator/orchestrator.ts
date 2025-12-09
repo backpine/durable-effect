@@ -6,6 +6,7 @@ import { StorageAdapter } from "../adapters/storage";
 import { SchedulerAdapter } from "../adapters/scheduler";
 import { RuntimeAdapter } from "../adapters/runtime";
 import { WorkflowStateMachine } from "../state/machine";
+import { Start, Queue, Resume, Cancel } from "../state/types";
 import { RecoveryManager } from "../recovery/manager";
 import { WorkflowExecutor, resultToTransition } from "../executor";
 import { OrchestratorError, StorageError } from "../errors";
@@ -152,10 +153,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
           );
 
           // Transition to Running
-          yield* stateMachine.applyTransition({
-            _tag: "Start",
-            input: call.input,
-          });
+          yield* stateMachine.applyTransition(new Start({ input: call.input }));
 
           // Emit workflow.started event
           yield* emitEvent({
@@ -275,10 +273,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
           );
 
           // Transition to Queued
-          yield* stateMachine.applyTransition({
-            _tag: "Queue",
-            input: call.input,
-          });
+          yield* stateMachine.applyTransition(new Queue({ input: call.input }));
 
           // Emit workflow.queued event
           yield* emitEvent({
@@ -384,10 +379,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
               const definition = yield* registry.get(state.workflowName);
 
-              yield* stateMachine.applyTransition({
-                _tag: "Start",
-                input: state.input,
-              });
+              yield* stateMachine.applyTransition(new Start({ input: state.input }));
 
               // Emit workflow.started event
               yield* emitEvent({
@@ -432,7 +424,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
               const definition = yield* registry.get(state.workflowName);
 
-              yield* stateMachine.applyTransition({ _tag: "Resume" });
+              yield* stateMachine.applyTransition(new Resume());
 
               // Emit workflow.resumed event
               yield* emitEvent({
@@ -565,11 +557,9 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
           if (status._tag === "Queued" || status._tag === "Paused") {
             const completedSteps = yield* stateMachine.getCompletedSteps();
 
-            yield* stateMachine.applyTransition({
-              _tag: "Cancel",
-              reason: options?.reason,
-              completedSteps,
-            });
+            yield* stateMachine.applyTransition(
+              new Cancel({ reason: options?.reason, completedSteps })
+            );
 
             // Emit workflow.cancelled event
             const state = yield* stateMachine.getState();

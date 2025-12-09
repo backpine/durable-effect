@@ -8,6 +8,7 @@ import {
   WorkflowStateMachine,
   type RecoverabilityInfo,
 } from "../state/machine";
+import { Fail, Recover } from "../state/types";
 import { RecoveryError, StorageError, SchedulerError } from "../errors";
 import { type RecoveryConfig, defaultRecoveryConfig } from "./config";
 
@@ -233,15 +234,20 @@ export const createRecoveryManager = (
             // Mark workflow as failed due to max recovery attempts
             const completedSteps = yield* stateMachine.getCompletedSteps();
             yield* stateMachine
-              .applyTransition({
-                _tag: "Fail",
-                error: {
-                  message: `Workflow failed after ${stats.maxAttempts} recovery attempts`,
-                },
-                completedSteps,
-              })
+              .applyTransition(
+                new Fail({
+                  error: {
+                    message: `Workflow failed after ${stats.maxAttempts} recovery attempts`,
+                  },
+                  completedSteps,
+                }),
+              )
               .pipe(
-                Effect.catchTag("InvalidTransitionError", () => Effect.void),
+                Effect.catchTag("InvalidTransitionError", (error) =>
+                  Effect.logDebug("Transition error during recovery failure (expected)", { error }).pipe(
+                    Effect.zipRight(Effect.void)
+                  )
+                ),
               );
 
             return yield* Effect.fail(
@@ -258,14 +264,15 @@ export const createRecoveryManager = (
 
           // Apply recovery transition
           const transitionResult = yield* stateMachine
-            .applyTransition({
-              _tag: "Recover",
-              reason:
-                status._tag === "Running"
-                  ? "stale_detection"
-                  : "infrastructure_restart",
-              attempt,
-            })
+            .applyTransition(
+              new Recover({
+                reason:
+                  status._tag === "Running"
+                    ? "stale_detection"
+                    : "infrastructure_restart",
+                attempt,
+              }),
+            )
             .pipe(
               Effect.map((newStatus) => ({
                 success: true as const,
