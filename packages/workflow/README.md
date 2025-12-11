@@ -5,9 +5,15 @@ Write workflows that survive server restarts, network failures, and deployments.
 ```typescript
 const orderWorkflow = Workflow.make((orderId: string) =>
   Effect.gen(function* () {
-    const order = yield* Workflow.step("Fetch", fetchOrder(orderId));
+    const order = yield* Workflow.step({
+      name: "Fetch",
+      execute: fetchOrder(orderId),
+    });
     yield* Workflow.sleep("24 hours");  // Yes, actually sleep for a day
-    yield* Workflow.step("Charge", chargeCard(order));
+    yield* Workflow.step({
+      name: "Charge",
+      execute: chargeCard(order),
+    });
   })
 );
 ```
@@ -34,7 +40,7 @@ This library brings [Effect's](https://effect.website/) composable, type-safe pr
   - [Jitter](#jitter)
   - [Presets](#presets)
   - [Max Duration](#max-duration)
-  - [Selective Retry with Effect Error Handling](#selective-retry-with-effect-error-handling)
+  - [Selective Retry with isRetryable](#selective-retry-with-isretryable)
 - [Timeouts](#timeouts)
 - [Providing Services](#providing-services)
 - [Recovery](#recovery)
@@ -63,16 +69,25 @@ import { Workflow } from "@durable-effect/workflow";
 const myWorkflow = Workflow.make((orderId: string) =>
   Effect.gen(function* () {
     // Fetch order data
-    const order = yield* Workflow.step("Fetch order", fetchOrder(orderId));
+    const order = yield* Workflow.step({
+      name: "Fetch order",
+      execute: fetchOrder(orderId),
+    });
 
     // Wait before processing
     yield* Workflow.sleep("5 seconds");
 
     // Process the order
-    yield* Workflow.step("Process order", processOrder(order));
+    yield* Workflow.step({
+      name: "Process order",
+      execute: processOrder(order),
+    });
 
     // Send confirmation
-    yield* Workflow.step("Send confirmation", sendEmail(order.email));
+    yield* Workflow.step({
+      name: "Send confirmation",
+      execute: sendEmail(order.email),
+    });
   })
 );
 ```
@@ -97,22 +112,30 @@ const processData = (input: string) =>
   });
 
 // Use it in a step - the result gets cached automatically
-const result = yield* Workflow.step("Process data", processData(orderId));
+const result = yield* Workflow.step({
+  name: "Process data",
+  execute: processData(orderId),
+});
 
 // Same pattern for any effect
-const user = yield* Workflow.step("Fetch user", fetchUser(userId));
+const user = yield* Workflow.step({
+  name: "Fetch user",
+  execute: fetchUser(userId),
+});
 
 // Step with non-serializable result - use Effect.asVoid to discard
-yield* Workflow.step("Update database",
-  updateRecord(id).pipe(Effect.asVoid)
-);
+yield* Workflow.step({
+  name: "Update database",
+  execute: updateRecord(id).pipe(Effect.asVoid),
+});
 
 // Step with complex result - extract serializable fields
-yield* Workflow.step("Create order",
-  createOrder(data).pipe(
+yield* Workflow.step({
+  name: "Create order",
+  execute: createOrder(data).pipe(
     Effect.map((order) => ({ id: order.id, status: order.status }))
-  )
-);
+  ),
+});
 ```
 
 **Important**: Step results must be serializable. If your effect returns a complex object (ORM result, class instance, etc.), map it to a plain object or use `Effect.asVoid` to discard it.
@@ -156,19 +179,25 @@ import { Workflow, Backoff, createDurableWorkflows } from "@durable-effect/workf
 // Define your workflow (name comes from registry key)
 const processOrderWorkflow = Workflow.make((orderId: string) =>
   Effect.gen(function* () {
-    const order = yield* Workflow.step("Fetch order", fetchOrder(orderId));
+    const order = yield* Workflow.step({
+      name: "Fetch order",
+      execute: fetchOrder(orderId),
+    });
     yield* Workflow.sleep("3 seconds");
 
-    yield* Workflow.step("Process payment",
-      processPayment(order).pipe(
-        Workflow.retry({
-          maxAttempts: 5,
-          delay: Backoff.exponential({ base: "1 second", max: "60 seconds" }),
-        })
-      )
-    );
+    yield* Workflow.step({
+      name: "Process payment",
+      execute: processPayment(order),
+      retry: {
+        maxAttempts: 5,
+        delay: Backoff.exponential({ base: "1 second", max: "60 seconds" }),
+      },
+    });
 
-    yield* Workflow.step("Send confirmation", sendEmail(order.email));
+    yield* Workflow.step({
+      name: "Send confirmation",
+      execute: sendEmail(order.email),
+    });
   })
 );
 
@@ -410,24 +439,25 @@ export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows);
 
 ## Retry Features
 
-The `Workflow.retry()` operator provides durable retries that persist across workflow restarts. Retries are applied **inside** a step:
+Steps support durable retries that persist across workflow restarts. Configure retries directly in the step config:
 
 ```typescript
-yield* Workflow.step("External API call",
-  callExternalAPI().pipe(
-    Workflow.retry({ maxAttempts: 3, delay: "5 seconds" })
-  )
-);
+yield* Workflow.step({
+  name: "External API call",
+  execute: callExternalAPI(),
+  retry: { maxAttempts: 3, delay: "5 seconds" },
+});
 ```
 
 ### Basic Retry Configuration
 
 ```typescript
-interface RetryOptions {
+interface RetryConfig {
   maxAttempts: number;              // Number of retries (not including initial attempt)
   delay?: DelayConfig;              // Delay between retries
   maxDuration?: string | number;    // Total time budget for all attempts
   jitter?: boolean;                 // Add randomness to delays (default: true)
+  isRetryable?: (error: unknown) => boolean;  // Filter which errors trigger retry
 }
 ```
 
@@ -435,16 +465,28 @@ interface RetryOptions {
 
 ```typescript
 // Fixed delay
-Workflow.retry({ maxAttempts: 3, delay: "5 seconds" })
+yield* Workflow.step({
+  name: "API call",
+  execute: callAPI(),
+  retry: { maxAttempts: 3, delay: "5 seconds" },
+});
 
 // No delay (immediate retry)
-Workflow.retry({ maxAttempts: 3 })
+yield* Workflow.step({
+  name: "Quick retry",
+  execute: quickOperation(),
+  retry: { maxAttempts: 3 },
+});
 
 // Custom delay function
-Workflow.retry({
-  maxAttempts: 5,
-  delay: (attempt) => 1000 * Math.pow(2, attempt)
-})
+yield* Workflow.step({
+  name: "Custom backoff",
+  execute: operation(),
+  retry: {
+    maxAttempts: 5,
+    delay: (attempt) => 1000 * Math.pow(2, attempt),
+  },
+});
 ```
 
 ### Backoff Strategies
@@ -460,14 +502,18 @@ import { Backoff } from "@durable-effect/workflow";
 Delay grows exponentially: `base * factor^attempt`
 
 ```typescript
-Workflow.retry({
-  maxAttempts: 5,
-  delay: Backoff.exponential({
-    base: "1 second",       // Starting delay
-    factor: 2,              // Multiplier (default: 2)
-    max: "30 seconds",      // Maximum delay cap
-  })
-})
+yield* Workflow.step({
+  name: "API call",
+  execute: callAPI(),
+  retry: {
+    maxAttempts: 5,
+    delay: Backoff.exponential({
+      base: "1 second",       // Starting delay
+      factor: 2,              // Multiplier (default: 2)
+      max: "30 seconds",      // Maximum delay cap
+    }),
+  },
+});
 // Delays: 1s -> 2s -> 4s -> 8s -> 16s (capped at 30s)
 ```
 
@@ -476,14 +522,18 @@ Workflow.retry({
 Delay grows linearly: `initial + (attempt * increment)`
 
 ```typescript
-Workflow.retry({
-  maxAttempts: 5,
-  delay: Backoff.linear({
-    initial: "1 second",
-    increment: "2 seconds",
-    max: "10 seconds",
-  })
-})
+yield* Workflow.step({
+  name: "API call",
+  execute: callAPI(),
+  retry: {
+    maxAttempts: 5,
+    delay: Backoff.linear({
+      initial: "1 second",
+      increment: "2 seconds",
+      max: "10 seconds",
+    }),
+  },
+});
 // Delays: 1s -> 3s -> 5s -> 7s -> 9s (capped at 10s)
 ```
 
@@ -492,10 +542,14 @@ Workflow.retry({
 Fixed delay between retries:
 
 ```typescript
-Workflow.retry({
-  maxAttempts: 3,
-  delay: Backoff.constant("5 seconds")
-})
+yield* Workflow.step({
+  name: "API call",
+  execute: callAPI(),
+  retry: {
+    maxAttempts: 3,
+    delay: Backoff.constant("5 seconds"),
+  },
+});
 ```
 
 ### Jitter
@@ -504,11 +558,15 @@ Jitter adds randomness to delays to prevent the "thundering herd" problem when m
 
 ```typescript
 // Disable jitter
-Workflow.retry({
-  maxAttempts: 3,
-  delay: "5 seconds",
-  jitter: false,
-})
+yield* Workflow.step({
+  name: "Precise timing",
+  execute: operation(),
+  retry: {
+    maxAttempts: 3,
+    delay: "5 seconds",
+    jitter: false,
+  },
+});
 ```
 
 ### Presets
@@ -535,14 +593,14 @@ Backoff.presets.simple()
 **Usage:**
 
 ```typescript
-yield* Workflow.step("Call rate-limited API",
-  callAPI().pipe(
-    Workflow.retry({
-      maxAttempts: 10,
-      delay: Backoff.presets.patient(),
-    })
-  )
-);
+yield* Workflow.step({
+  name: "Call rate-limited API",
+  execute: callAPI(),
+  retry: {
+    maxAttempts: 10,
+    delay: Backoff.presets.patient(),
+  },
+});
 ```
 
 ### Max Duration
@@ -550,18 +608,20 @@ yield* Workflow.step("Call rate-limited API",
 Set a total time budget for all retry attempts:
 
 ```typescript
-Workflow.retry({
-  maxAttempts: 100,
-  delay: Backoff.exponential({ base: "1 second" }),
-  maxDuration: "5 minutes",  // Stop retrying after 5 minutes total
-})
+yield* Workflow.step({
+  name: "Time-bounded operation",
+  execute: operation(),
+  retry: {
+    maxAttempts: 100,
+    delay: Backoff.exponential({ base: "1 second" }),
+    maxDuration: "5 minutes",  // Stop retrying after 5 minutes total
+  },
+});
 ```
 
-### Selective Retry with Effect Error Handling
+### Selective Retry with isRetryable
 
-One of the most powerful features of using Effect with a durable runtime is **fine-grained error control**. You can use Effect's error handling to decide which errors should trigger retries and which should fail immediately.
-
-#### Using `catchTag` to Skip Retries
+You can use the `isRetryable` option to decide which errors should trigger retries and which should fail immediately:
 
 ```typescript
 import { Effect, Data } from "effect";
@@ -578,35 +638,53 @@ class NetworkError extends Data.TaggedError("NetworkError")<{
 // Workflow with selective retry
 const processPaymentWorkflow = Workflow.make((paymentId: string) =>
   Effect.gen(function* () {
-    yield* Workflow.step("Process payment",
-      processPayment(paymentId).pipe(
-        // Catch validation errors - don't retry, fail immediately
-        Effect.catchTag("ValidationError", (err) =>
-          Effect.fail(new PaymentFailed({ reason: err.message }))
-        ),
-        // Network errors bubble up for retry
-        Workflow.retry({
-          maxAttempts: 5,
-          delay: Backoff.presets.standard(),
-        })
-      )
-    );
+    yield* Workflow.step({
+      name: "Process payment",
+      execute: processPayment(paymentId),
+      retry: {
+        maxAttempts: 5,
+        delay: Backoff.presets.standard(),
+        // Only retry network errors, not validation errors
+        isRetryable: (error) => error instanceof NetworkError,
+      },
+    });
   })
 );
+```
+
+#### Using Effect's `catchTag` for Error Transformation
+
+You can also use Effect's error handling to transform errors before the retry logic:
+
+```typescript
+yield* Workflow.step({
+  name: "Process payment",
+  execute: processPayment(paymentId).pipe(
+    // Catch validation errors - transform to non-retryable error
+    Effect.catchTag("ValidationError", (err) =>
+      Effect.fail(new PaymentFailed({ reason: err.message }))
+    )
+    // Network errors bubble up and will be retried
+  ),
+  retry: {
+    maxAttempts: 5,
+    delay: Backoff.presets.standard(),
+  },
+});
 ```
 
 ---
 
 ## Timeouts
 
-The `Workflow.timeout()` operator sets a deadline for step execution. The deadline persists across workflow restarts.
+Steps support timeouts that set a deadline for execution. The deadline persists across workflow restarts.
 
 ```typescript
-yield* Workflow.step("External API",
-  callExternalAPI().pipe(
-    Workflow.timeout("30 seconds")
-  )
-);
+yield* Workflow.step({
+  name: "External API",
+  execute: callExternalAPI(),
+  timeout: "30 seconds",
+});
 ```
 
 ### Timeout with Retry
@@ -614,12 +692,12 @@ yield* Workflow.step("External API",
 When combining timeout and retry, the timeout applies to **each attempt individually**:
 
 ```typescript
-yield* Workflow.step("API call",
-  callAPI().pipe(
-    Workflow.timeout("30 seconds"),  // Each attempt has 30 seconds
-    Workflow.retry({ maxAttempts: 3 })
-  )
-);
+yield* Workflow.step({
+  name: "API call",
+  execute: callAPI(),
+  timeout: "30 seconds",  // Each attempt has 30 seconds
+  retry: { maxAttempts: 3 },
+});
 // Total max time: 3 attempts * 30 seconds = 90 seconds (plus delays)
 ```
 
@@ -628,10 +706,13 @@ yield* Workflow.step("API call",
 Both `timeout` and `sleep` accept string or number formats:
 
 ```typescript
-Workflow.timeout("30 seconds")
-Workflow.timeout("5 minutes")
-Workflow.timeout("2 hours")
-Workflow.timeout(5000)  // milliseconds
+// String formats
+timeout: "30 seconds"
+timeout: "5 minutes"
+timeout: "2 hours"
+
+// Milliseconds
+timeout: 5000
 ```
 
 ---
@@ -661,12 +742,16 @@ const EmailServiceLive = Layer.succeed(EmailService, {
 // Workflow using the service
 const notificationWorkflow = Workflow.make((userId: string) =>
   Effect.gen(function* () {
-    const user = yield* Workflow.step("Fetch user", fetchUser(userId));
+    const user = yield* Workflow.step({
+      name: "Fetch user",
+      execute: fetchUser(userId),
+    });
 
     const emailService = yield* EmailService;
-    yield* Workflow.step("Send email",
-      emailService.send(user.email, "Hello!").pipe(Effect.asVoid)
-    );
+    yield* Workflow.step({
+      name: "Send email",
+      execute: emailService.send(user.email, "Hello!").pipe(Effect.asVoid),
+    });
   }).pipe(
     Effect.provide(EmailServiceLive)
   )

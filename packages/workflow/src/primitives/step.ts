@@ -9,16 +9,99 @@ import {
   type StepResultMeta,
 } from "../context/step-context";
 import { WorkflowScope, WorkflowScopeError } from "../context/workflow-scope";
-import { StepScope } from "../context/step-scope";
+import { StepScope, StepScopeError } from "../context/step-scope";
 import { WorkflowLevel } from "../context/workflow-level";
 import { StorageAdapter } from "../adapters/storage";
 import { RuntimeAdapter } from "../adapters/runtime";
 import { emitEvent } from "../tracker";
 import type { StorageError } from "../errors";
-import { isPauseSignal } from "./pause-signal";
+import { PauseSignal, isPauseSignal } from "./pause-signal";
+import {
+  type BackoffStrategy,
+  BackoffStrategies,
+  calculateBackoffDelay,
+  addJitter,
+  parseDuration,
+} from "./backoff";
 
 // =============================================================================
 // Types
+// =============================================================================
+
+/**
+ * Flexible duration input supporting multiple formats.
+ */
+export type DurationInput = string | number;
+
+/**
+ * Configuration for step retry behavior.
+ */
+export interface RetryConfig {
+  /**
+   * Maximum number of retry attempts (not including initial attempt).
+   */
+  readonly maxAttempts: number;
+
+  /**
+   * Delay between retries.
+   * - string: Human-readable duration ("5 seconds", "1 minute")
+   * - number: Milliseconds
+   * - BackoffStrategy: From Backoff.constant/linear/exponential
+   * - function: Custom delay based on attempt number
+   *
+   * Default: Exponential backoff starting at 1 second
+   */
+  readonly delay?: DurationInput | BackoffStrategy | ((attempt: number) => number);
+
+  /**
+   * Whether to add jitter to delays to prevent thundering herd.
+   * Default: true
+   */
+  readonly jitter?: boolean;
+
+  /**
+   * Optional predicate to determine if an error is retryable.
+   * Default: All errors are retryable.
+   */
+  readonly isRetryable?: (error: unknown) => boolean;
+
+  /**
+   * Maximum total duration for all retry attempts.
+   * If exceeded, fails with RetryExhaustedError.
+   */
+  readonly maxDuration?: DurationInput;
+}
+
+/**
+ * Configuration for a durable workflow step.
+ */
+export interface StepConfig<A, E, R> {
+  /**
+   * Unique name for this step within the workflow.
+   * Used for caching, logging, and debugging.
+   */
+  readonly name: string;
+
+  /**
+   * The effect to execute.
+   */
+  readonly execute: Effect.Effect<A, E, R>;
+
+  /**
+   * Retry configuration.
+   * If provided, failed executions will be retried with the specified options.
+   */
+  readonly retry?: RetryConfig;
+
+  /**
+   * Timeout for each execution attempt (not total time).
+   * Applied before retry - each attempt gets the full timeout.
+   */
+  readonly timeout?: DurationInput;
+}
+
+// =============================================================================
+// Error Classes
 // =============================================================================
 
 /**
@@ -35,9 +118,112 @@ export class StepCancelledError extends Error {
   }
 }
 
+/**
+ * Error when all retries are exhausted.
+ */
+export class RetryExhaustedError extends Error {
+  readonly _tag = "RetryExhaustedError";
+  readonly stepName: string;
+  readonly attempts: number;
+  readonly lastError: unknown;
+
+  constructor(stepName: string, attempts: number, lastError: unknown) {
+    super(
+      `Step "${stepName}" failed after ${attempts} attempts: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+    );
+    this.name = "RetryExhaustedError";
+    this.stepName = stepName;
+    this.attempts = attempts;
+    this.lastError = lastError;
+  }
+}
+
+/**
+ * Error when a step times out.
+ */
+export class WorkflowTimeoutError extends Error {
+  readonly _tag = "WorkflowTimeoutError";
+  readonly stepName: string;
+  readonly timeoutMs: number;
+  readonly elapsedMs: number;
+
+  constructor(stepName: string, timeoutMs: number, elapsedMs: number) {
+    super(
+      `Step "${stepName}" timed out after ${elapsedMs}ms (timeout: ${timeoutMs}ms)`,
+    );
+    this.name = "WorkflowTimeoutError";
+    this.stepName = stepName;
+    this.timeoutMs = timeoutMs;
+    this.elapsedMs = elapsedMs;
+  }
+}
+
+// =============================================================================
+// Type Guards
+// =============================================================================
+
+function isBackoffStrategy(value: unknown): value is BackoffStrategy {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    ["constant", "linear", "exponential"].includes((value as { type: string }).type)
+  );
+}
+
+// =============================================================================
+// Delay Calculation
+// =============================================================================
+
+function getDelay(
+  config: RetryConfig["delay"],
+  attempt: number,
+): number {
+  if (config === undefined) {
+    // Default: exponential backoff starting at 1 second
+    return calculateBackoffDelay(
+      BackoffStrategies.exponential(1000, { maxDelayMs: 60000 }),
+      attempt,
+    );
+  }
+
+  if (typeof config === "string") {
+    return parseDuration(config);
+  }
+
+  if (typeof config === "number") {
+    return config;
+  }
+
+  if (typeof config === "function") {
+    return config(attempt);
+  }
+
+  // BackoffStrategy
+  return calculateBackoffDelay(config, attempt);
+}
+
 // =============================================================================
 // Step Implementation
 // =============================================================================
+
+type StepErrors<E> =
+  | E
+  | StorageError
+  | StepCancelledError
+  | WorkflowScopeError
+  | PauseSignal
+  | RetryExhaustedError
+  | WorkflowTimeoutError;
+
+type StepRequirements<R> =
+  | WorkflowContext
+  | StorageAdapter
+  | RuntimeAdapter
+  | WorkflowLevel
+  | Exclude<R, StepContext | StorageAdapter | RuntimeAdapter | StepScope>;
 
 /**
  * Execute a durable step within a workflow.
@@ -46,52 +232,48 @@ export class StepCancelledError extends Error {
  * - Results are cached and returned on replay
  * - Each step has a unique name for identification
  * - Steps check for cancellation before executing
- * - Retry and timeout operators can be piped inside
+ * - Retry and timeout can be configured
  *
- * @param name - Unique name for this step within the workflow
- * @param effect - The effect to execute (can include piped operators)
+ * @param config - Step configuration
  *
  * @example
  * ```ts
  * // Simple step
- * const result = yield* Workflow.step("fetchUser",
- *   Effect.tryPromise(() => fetch(`/api/users/${userId}`))
- * );
+ * const user = yield* Workflow.step({
+ *   name: "Fetch user",
+ *   execute: fetchUser(userId),
+ * });
  *
  * // Step with retry
- * yield* Workflow.step("callAPI",
- *   callAPI().pipe(
- *     Workflow.retry({ maxAttempts: 5, delay: "5 seconds" })
- *   )
- * );
+ * const data = yield* Workflow.step({
+ *   name: "Call API",
+ *   execute: callAPI(),
+ *   retry: { maxAttempts: 5, delay: "5 seconds" },
+ * });
  *
  * // Step with timeout and retry
- * yield* Workflow.step("resilientCall",
- *   riskyOperation().pipe(
- *     Workflow.timeout("30 seconds"),
- *     Workflow.retry({ maxAttempts: 3 })
- *   )
- * );
+ * const result = yield* Workflow.step({
+ *   name: "Resilient call",
+ *   execute: riskyOperation(),
+ *   timeout: "30 seconds",
+ *   retry: {
+ *     maxAttempts: 3,
+ *     delay: Backoff.exponential({ base: "1 second", max: "30 seconds" }),
+ *   },
+ * });
  * ```
  */
 export function step<A, E, R>(
-  name: string,
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<
-  A,
-  E | StorageError | StepCancelledError | WorkflowScopeError,
-  | WorkflowContext
-  | StorageAdapter
-  | RuntimeAdapter
-  | WorkflowLevel
-  | Exclude<R, StepContext | StorageAdapter | RuntimeAdapter | StepScope>
-> {
+  config: StepConfig<A, E, R>,
+): Effect.Effect<A, StepErrors<E>, StepRequirements<R>> {
+  const { name } = config;
+
   return Effect.gen(function* () {
-    // Access WorkflowLevel to ensure this primitive can only be used at workflow level
-    // This enables compile-time checking - if used inside a step, WorkflowLevel won't be available
+    // -------------------------------------------------------------------------
+    // Phase 1: Validate workflow context
+    // -------------------------------------------------------------------------
     yield* WorkflowLevel;
 
-    // Verify we're in a workflow scope
     const scope = yield* Effect.serviceOption(WorkflowScope);
     if (Option.isNone(scope)) {
       return yield* Effect.fail(
@@ -106,7 +288,7 @@ export function step<A, E, R>(
     const runtime = yield* RuntimeAdapter;
 
     // -------------------------------------------------------------------------
-    // Phase 1: Check for cancellation
+    // Phase 2: Check for cancellation
     // -------------------------------------------------------------------------
     const isCancelled = yield* storage
       .get<boolean>("workflow:cancelled")
@@ -117,33 +299,30 @@ export function step<A, E, R>(
     }
 
     // -------------------------------------------------------------------------
-    // Phase 2: Check cache for existing result
+    // Phase 3: Check cache for existing result
     // -------------------------------------------------------------------------
-    // Create StepContext to check cache
     const stepCtx = yield* createStepContext(name);
 
-    // Get workflow identity for events
     const workflowId = yield* workflowCtx.workflowId;
     const workflowName = yield* workflowCtx.workflowName;
     const executionId = yield* workflowCtx.executionId;
 
     const cached = yield* stepCtx.getResult<A>();
     if (cached !== undefined) {
-      // Step already completed - return cached result (no event needed)
       return cached.value;
     }
 
     // -------------------------------------------------------------------------
-    // Phase 3: Set start time if not set
+    // Phase 4: Initialize step state
     // -------------------------------------------------------------------------
     const now = yield* runtime.now();
     const startedAt = yield* stepCtx.startedAt;
     const currentAttempt = yield* stepCtx.attempt;
+
     if (startedAt === undefined) {
       yield* stepCtx.setStartedAt(now);
     }
 
-    // Emit step.started event
     yield* emitEvent({
       ...createBaseEvent(workflowId, workflowName, executionId),
       type: "step.started",
@@ -152,22 +331,99 @@ export function step<A, E, R>(
     });
 
     // -------------------------------------------------------------------------
-    // Phase 4: Execute the effect with StepContext and StepScope provided
+    // Phase 5: Check retry exhaustion and max duration
     // -------------------------------------------------------------------------
-    // The effect can include piped operators like retry() and timeout()
-    // that require StepContext and RuntimeAdapter.
-    //
-    // We provide services directly to avoid complex layer composition issues:
-    // - StepContext (already created as stepCtx)
-    // - StepScope (for guard checks)
-    // - RuntimeAdapter (for retry/timeout operators)
-    // - StorageAdapter (in case the effect needs it directly)
+    if (config.retry) {
+      // Check max duration
+      if (config.retry.maxDuration !== undefined && startedAt !== undefined) {
+        const maxDurationMs = parseDuration(config.retry.maxDuration);
+        const elapsed = now - startedAt;
+        if (elapsed >= maxDurationMs) {
+          yield* emitEvent({
+            ...createBaseEvent(workflowId, workflowName, executionId),
+            type: "retry.exhausted",
+            stepName: name,
+            attempts: currentAttempt - 1,
+          });
+
+          const lastError = yield* stepCtx.getMeta<unknown>("lastError");
+          return yield* Effect.fail(
+            new RetryExhaustedError(
+              name,
+              currentAttempt - 1,
+              lastError ?? new Error("Max duration exceeded"),
+            ),
+          );
+        }
+      }
+
+      // Check max attempts
+      if (currentAttempt > config.retry.maxAttempts + 1) {
+        yield* emitEvent({
+          ...createBaseEvent(workflowId, workflowName, executionId),
+          type: "retry.exhausted",
+          stepName: name,
+          attempts: currentAttempt - 1,
+        });
+
+        const lastError = yield* stepCtx.getMeta<unknown>("lastError");
+        return yield* Effect.fail(
+          new RetryExhaustedError(name, currentAttempt - 1, lastError),
+        );
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 6: Build the effect with timeout if configured
+    // -------------------------------------------------------------------------
+    let effect: Effect.Effect<A, E | WorkflowTimeoutError, R> = config.execute;
+
+    if (config.timeout) {
+      const timeoutMs = parseDuration(config.timeout);
+      const effectStartedAt = startedAt ?? now;
+      const deadline = effectStartedAt + timeoutMs;
+      const remainingMs = deadline - now;
+
+      // Emit timeout.set event on first execution
+      if (startedAt === undefined) {
+        yield* emitEvent({
+          ...createBaseEvent(workflowId, workflowName, executionId),
+          type: "timeout.set",
+          stepName: name,
+          deadline: new Date(deadline).toISOString(),
+          timeoutMs,
+        });
+      }
+
+      if (remainingMs <= 0) {
+        yield* emitEvent({
+          ...createBaseEvent(workflowId, workflowName, executionId),
+          type: "timeout.exceeded",
+          stepName: name,
+          timeoutMs,
+        });
+
+        return yield* Effect.fail(
+          new WorkflowTimeoutError(name, timeoutMs, now - effectStartedAt),
+        );
+      }
+
+      effect = effect.pipe(
+        Effect.timeoutFail({
+          duration: remainingMs,
+          onTimeout: () => new WorkflowTimeoutError(name, timeoutMs, now - effectStartedAt),
+        }),
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 7: Execute the effect with provided context
+    // -------------------------------------------------------------------------
     const stepScopeService = {
       _marker: "step-scope-active" as const,
       stepName: name,
     };
 
-    // Build a single layer that provides all step-execution dependencies
     const stepLayer = Layer.mergeAll(
       Layer.succeed(StepContext, stepCtx),
       Layer.succeed(StepScope, stepScopeService),
@@ -179,16 +435,29 @@ export function step<A, E, R>(
       Effect.provide(stepLayer),
       Effect.map((value) => ({ _tag: "Success" as const, value })),
       Effect.catchAll((error) =>
-        Effect.succeed({ _tag: "Failure" as const, error: error as E }),
+        Effect.succeed({ _tag: "Failure" as const, error: error as E | WorkflowTimeoutError }),
       ),
     );
 
-    // Handle failure
+    // -------------------------------------------------------------------------
+    // Phase 8: Handle failure with retry logic
+    // -------------------------------------------------------------------------
     if (effectResult._tag === "Failure") {
       const error = effectResult.error;
 
-      // Don't emit step.failed for PauseSignal (it's a control flow signal)
-      if (!isPauseSignal(error)) {
+      // Never retry PauseSignal - it's a control flow signal
+      if (isPauseSignal(error)) {
+        return yield* Effect.fail(error as unknown as PauseSignal);
+      }
+
+      // Never retry StepScopeError - it's a programming error
+      if (error instanceof StepScopeError) {
+        return yield* Effect.fail(error as unknown as E);
+      }
+
+      // Check if retry is configured
+      if (!config.retry) {
+        // No retry configured - emit failure and propagate error
         yield* emitEvent({
           ...createBaseEvent(workflowId, workflowName, executionId),
           type: "step.failed",
@@ -198,21 +467,72 @@ export function step<A, E, R>(
             message: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined,
           },
-          willRetry: false, // At step level we don't know - retry operator handles this
+          willRetry: false,
         });
+        return yield* Effect.fail(error);
       }
 
-      return yield* Effect.fail(error);
+      // Check isRetryable
+      if (config.retry.isRetryable && !config.retry.isRetryable(error)) {
+        yield* emitEvent({
+          ...createBaseEvent(workflowId, workflowName, executionId),
+          type: "step.failed",
+          stepName: name,
+          attempt: currentAttempt,
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+          willRetry: false,
+        });
+        return yield* Effect.fail(error);
+      }
+
+      // Check if retries exhausted
+      if (currentAttempt > config.retry.maxAttempts) {
+        yield* emitEvent({
+          ...createBaseEvent(workflowId, workflowName, executionId),
+          type: "retry.exhausted",
+          stepName: name,
+          attempts: currentAttempt,
+        });
+
+        return yield* Effect.fail(
+          new RetryExhaustedError(name, currentAttempt, error),
+        );
+      }
+
+      // Schedule retry
+      yield* stepCtx.setMeta("lastError", error);
+      yield* stepCtx.incrementAttempt();
+
+      const baseDelay = getDelay(config.retry.delay, currentAttempt);
+      const jitter = config.retry.jitter ?? true;
+      const delayMs = jitter ? addJitter(baseDelay) : baseDelay;
+      const resumeAt = now + delayMs;
+
+      yield* emitEvent({
+        ...createBaseEvent(workflowId, workflowName, executionId),
+        type: "retry.scheduled",
+        stepName: name,
+        attempt: currentAttempt,
+        nextAttemptAt: new Date(resumeAt).toISOString(),
+        delayMs,
+      });
+
+      return yield* Effect.fail(
+        PauseSignal.retry(resumeAt, name, currentAttempt + 1),
+      );
     }
 
+    // -------------------------------------------------------------------------
+    // Phase 9: Cache successful result
+    // -------------------------------------------------------------------------
     const result = effectResult.value;
-
-    // -------------------------------------------------------------------------
-    // Phase 5: Cache result (only on success, not on PauseSignal)
-    // -------------------------------------------------------------------------
     const completedAt = yield* runtime.now();
     const attempt = yield* stepCtx.attempt;
     const durationMs = completedAt - (startedAt ?? now);
+
     const meta: StepResultMeta = {
       completedAt,
       attempt,
@@ -220,13 +540,8 @@ export function step<A, E, R>(
     };
 
     yield* stepCtx.setResult(result, meta);
-
-    // -------------------------------------------------------------------------
-    // Phase 6: Mark step as completed
-    // -------------------------------------------------------------------------
     yield* workflowCtx.markStepCompleted(name);
 
-    // Emit step.completed event
     yield* emitEvent({
       ...createBaseEvent(workflowId, workflowName, executionId),
       type: "step.completed",

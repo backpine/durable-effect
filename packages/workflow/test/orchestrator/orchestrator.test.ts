@@ -27,10 +27,10 @@ const testWorkflows = {
     Effect.gen(function* () {
       const results: string[] = [];
       for (const item of input.items) {
-        const result = yield* step(
-          `process-${item}`,
-          Effect.succeed(item.toUpperCase()),
-        );
+        const result = yield* step({
+          name: `process-${item}`,
+          execute: Effect.succeed(item.toUpperCase()),
+        });
         results.push(result);
       }
       return results;
@@ -39,9 +39,9 @@ const testWorkflows = {
 
   sleepingWorkflow: make((_input: {}) =>
     Effect.gen(function* () {
-      yield* step("before", Effect.succeed("before"));
+      yield* step({ name: "before", execute: Effect.succeed("before") });
       yield* sleep("5 seconds");
-      yield* step("after", Effect.succeed("after"));
+      yield* step({ name: "after", execute: Effect.succeed("after") });
       return "done";
     }),
   ),

@@ -82,7 +82,10 @@ const analyzeData = (data: { id: string; sections: string[] }) =>
     };
   });
 
-const exportToPdf = (reportId: string, analysis: { insights: number; score: number }) =>
+const exportToPdf = (
+  reportId: string,
+  analysis: { insights: number; score: number },
+) =>
   Effect.gen(function* () {
     yield* Effect.log(`Exporting report ${reportId} to PDF...`);
     yield* randomDelay();
@@ -108,45 +111,36 @@ const notifyStakeholders = (reportId: string) =>
 // =============================================================================
 const processOrderWorkflow = Workflow.make((orderId: string) =>
   Effect.gen(function* () {
-    const order = yield* Workflow.step("Fetch order", fetchOrder(orderId));
+    const order = yield* Workflow.step({
+      name: "Fetch order",
+      execute: fetchOrder(orderId),
+    });
     yield* Workflow.sleep("3 seconds");
-    yield* Workflow.step(
-      {
-        name: "Process data",
-        retries: {
-          maxAttempts: 3,
-          delay: Backoff.exponential({
-            max: "6 seconds",
-            base: "1 second",
-          }),
-        },
-        timeout: "10 seconds",
-        execute: function* () {
-          yield* Effect.log(`Processing order data: ${order.id}`);
-          return { processed: true };
-        },
-      }
-     ),
-    );
+    yield* Workflow.step({
+      name: "Validate",
+      execute: Effect.gen(function* () {
+        yield* Effect.log(`Validating order: ${order.id}`);
+        return { valid: true };
+      }),
+    });
     yield* Workflow.sleep("1 seconds");
 
-    const payment = yield* Workflow.step(
-      "Process payment",
-      processPayment(order).pipe(
-        Workflow.retry({
-          maxAttempts: 3,
-          delay: Backoff.exponential({
-            max: "6 seconds",
-            base: "1 second",
-          }),
+    const payment = yield* Workflow.step({
+      name: "Process payment",
+      execute: processPayment(order),
+      retry: {
+        maxAttempts: 1,
+        delay: Backoff.exponential({
+          max: "6 seconds",
+          base: "1 second",
         }),
-      ),
-    );
+      },
+    });
 
-    yield* Workflow.step(
-      "Send confirmation",
-      sendConfirmation(order.email, order.id),
-    );
+    yield* Workflow.step({
+      name: "Send confirmation",
+      execute: sendConfirmation(order.email, order.id),
+    });
     yield* Workflow.sleep("1 seconds");
 
     return { order, payment };
@@ -156,43 +150,43 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
 const generateReportWorkflow = Workflow.make((reportId: string) =>
   Effect.gen(function* () {
     // Step 1: Generate initial report structure
-    const report = yield* Workflow.step("Generate report", generateReport(reportId));
+    const report = yield* Workflow.step({
+      name: "Generate report",
+      execute: generateReport(reportId),
+    });
     yield* Workflow.sleep("2 seconds");
 
     // Step 2: Validate report structure
-    yield* Workflow.step(
-      "Validate structure",
-      Effect.gen(function* () {
-        yield* Effect.log(`Validating report structure: ${report.sections.length} sections`);
+    yield* Workflow.step({
+      name: "Validate structure",
+      execute: Effect.gen(function* () {
+        yield* Effect.log(
+          `Validating report structure: ${report.sections.length} sections`,
+        );
         return { valid: true, sections: report.sections.length };
       }),
-    );
+    });
     yield* Workflow.sleep("1 seconds");
 
     // Step 3: Analyze data with retry
-    const analysis = yield* Workflow.step(
-      "Analyze data",
-      analyzeData(report).pipe(
-        Workflow.retry({
-          maxAttempts: 4,
-          delay: Backoff.exponential({
-            max: "8 seconds",
-            base: "500 millis",
-          }),
-        }),
-      ),
-    );
+    const analysis = yield* Workflow.step({
+      name: "Analyze data",
+      execute: analyzeData(report),
+    });
     yield* Workflow.sleep("2 seconds");
 
     // Step 4: Export to PDF
-    const pdf = yield* Workflow.step("Export to PDF", exportToPdf(report.id, analysis));
+    const pdf = yield* Workflow.step({
+      name: "Export to PDF",
+      execute: exportToPdf(report.id, analysis),
+    });
     yield* Workflow.sleep("1 seconds");
 
     // Step 5: Notify stakeholders
-    const notification = yield* Workflow.step(
-      "Notify stakeholders",
-      notifyStakeholders(report.id),
-    );
+    const notification = yield* Workflow.step({
+      name: "Notify stakeholders",
+      execute: notifyStakeholders(report.id),
+    });
 
     return {
       report,

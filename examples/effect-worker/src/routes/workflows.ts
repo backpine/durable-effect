@@ -71,7 +71,7 @@ export const getGenerateReport: RouteEffect<Response> = Effect.gen(
 
     return c.json({
       success: true,
-      workflowId: id,
+      workflowId: processId,
       processOrderRes,
       generateReportRes,
     });

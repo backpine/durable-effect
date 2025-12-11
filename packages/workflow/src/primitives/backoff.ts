@@ -157,3 +157,59 @@ export function parseDuration(duration: string | number): number {
       throw new Error(`Unknown duration unit: "${unit}"`);
   }
 }
+
+/**
+ * Helper to create backoff strategies with human-readable durations.
+ */
+export const Backoff = {
+  /**
+   * Constant delay between retries.
+   */
+  constant: (delayValue: string | number): BackoffStrategy =>
+    BackoffStrategies.constant(parseDuration(delayValue)),
+
+  /**
+   * Linear backoff: delay increases by a fixed amount.
+   */
+  linear: (options: {
+    initial: string | number;
+    increment: string | number;
+    max?: string | number;
+  }): BackoffStrategy =>
+    BackoffStrategies.linear(
+      parseDuration(options.initial),
+      parseDuration(options.increment),
+      options.max !== undefined ? parseDuration(options.max) : undefined,
+    ),
+
+  /**
+   * Exponential backoff: delay doubles (or multiplies) each time.
+   */
+  exponential: (options: {
+    base: string | number;
+    factor?: number;
+    max?: string | number;
+  }): BackoffStrategy =>
+    BackoffStrategies.exponential(parseDuration(options.base), {
+      multiplier: options.factor,
+      maxDelayMs:
+        options.max !== undefined ? parseDuration(options.max) : undefined,
+    }),
+
+  /**
+   * Preset strategies for common scenarios.
+   */
+  presets: {
+    /** Standard: 1s -> 2s -> 4s -> 8s -> 16s (max 30s) */
+    standard: () => BackoffStrategies.exponential(1000, { maxDelayMs: 30000 }),
+
+    /** Aggressive: 100ms -> 200ms -> 400ms (max 5s) */
+    aggressive: () => BackoffStrategies.exponential(100, { maxDelayMs: 5000 }),
+
+    /** Patient: 5s -> 10s -> 20s -> 40s (max 2min) */
+    patient: () => BackoffStrategies.exponential(5000, { maxDelayMs: 120000 }),
+
+    /** Simple: 1s constant */
+    simple: () => BackoffStrategies.constant(1000),
+  },
+};

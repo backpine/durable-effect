@@ -29,9 +29,15 @@ This is also the first pass at making Durable Objects effectful. Things will cha
 ```typescript
 const orderWorkflow = Workflow.make((orderId: string) =>
   Effect.gen(function* () {
-    const order = yield* Workflow.step("Fetch", fetchOrder(orderId));
+    const order = yield* Workflow.step({
+      name: "Fetch",
+      execute: fetchOrder(orderId),
+    });
     yield* Workflow.sleep("24 hours");
-    yield* Workflow.step("Charge", chargeCard(order));
+    yield* Workflow.step({
+      name: "Charge",
+      execute: chargeCard(order),
+    });
   })
 );
 ```
