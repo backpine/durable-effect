@@ -141,22 +141,19 @@ export {
   type WorkflowOutput,
   type WorkflowError as WorkflowErrorType,
   type WorkflowRequirements,
-  // Workflow.step
+  // Workflow.step (with integrated retry/timeout)
   step,
   StepCancelledError,
+  RetryExhaustedError,
+  WorkflowTimeoutError,
+  type StepConfig,
+  type RetryConfig,
+  type DurationInput,
   // Workflow.sleep
   sleep,
   sleepUntil,
-  // Workflow.retry
-  retry,
-  Backoff,
-  RetryExhaustedError,
-  type RetryOptions,
-  type DelayConfig,
-  // Workflow.timeout
-  timeout,
-  WorkflowTimeoutError,
   // Backoff utilities
+  Backoff,
   type BackoffStrategy,
   BackoffStrategies,
   calculateBackoffDelay,

@@ -80,8 +80,8 @@ describe("WorkflowExecutor", () => {
 
       const workflow = make((_input: {}) =>
         Effect.gen(function* () {
-          const a = yield* step("step1", Effect.succeed(1));
-          const b = yield* step("step2", Effect.succeed(2));
+          const a = yield* step({ name: "step1", execute: Effect.succeed(1) });
+          const b = yield* step({ name: "step2", execute: Effect.succeed(2) });
           return a + b;
         })
       );
@@ -197,8 +197,8 @@ describe("WorkflowExecutor", () => {
 
       const workflow = make((_input: {}) =>
         Effect.gen(function* () {
-          yield* step("goodStep", Effect.succeed("ok"));
-          yield* step("badStep", Effect.fail(new Error("step failed")));
+          yield* step({ name: "goodStep", execute: Effect.succeed("ok") });
+          yield* step({ name: "badStep", execute: Effect.fail(new Error("step failed")) });
           return "done";
         })
       );
@@ -237,7 +237,7 @@ describe("WorkflowExecutor", () => {
 
       const workflow = make((_input: {}) =>
         Effect.gen(function* () {
-          yield* step("firstStep", Effect.succeed("ok"));
+          yield* step({ name: "firstStep", execute: Effect.succeed("ok") });
           return "done";
         })
       );
@@ -285,9 +285,9 @@ describe("WorkflowExecutor", () => {
 
       const workflow = make((_input: {}) =>
         Effect.gen(function* () {
-          yield* step("step1", Effect.succeed("first"));
+          yield* step({ name: "step1", execute: Effect.succeed("first") });
           yield* sleep("1 second");
-          const second = yield* step("step2", Effect.succeed("second"));
+          const second = yield* step({ name: "step2", execute: Effect.succeed("second") });
           return second;
         })
       );
@@ -337,15 +337,15 @@ describe("WorkflowExecutor", () => {
       let step1Executed = false;
       const resumeWorkflow = make((_input: {}) =>
         Effect.gen(function* () {
-          yield* step(
-            "step1",
-            Effect.sync(() => {
+          yield* step({
+            name: "step1",
+            execute: Effect.sync(() => {
               step1Executed = true;
               return "first";
-            })
-          );
+            }),
+          });
           yield* sleep("1 second");
-          const second = yield* step("step2", Effect.succeed("second"));
+          const second = yield* step({ name: "step2", execute: Effect.succeed("second") });
           return second;
         })
       );

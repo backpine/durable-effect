@@ -14,26 +14,23 @@ export {
   type WorkflowRequirements,
 } from "./make";
 
-// Workflow.step
-export { step, StepCancelledError } from "./step";
+// Workflow.step (with integrated retry/timeout)
+export {
+  step,
+  StepCancelledError,
+  RetryExhaustedError,
+  WorkflowTimeoutError,
+  type StepConfig,
+  type RetryConfig,
+  type DurationInput,
+} from "./step";
 
 // Workflow.sleep
 export { sleep, sleepUntil } from "./sleep";
 
-// Workflow.retry (pipeable operator)
-export {
-  retry,
-  Backoff,
-  RetryExhaustedError,
-  type RetryOptions,
-  type DelayConfig,
-} from "./retry";
-
-// Workflow.timeout (pipeable operator)
-export { timeout, WorkflowTimeoutError } from "./timeout";
-
 // Backoff utilities
 export {
+  Backoff,
   type BackoffStrategy,
   BackoffStrategies,
   calculateBackoffDelay,
