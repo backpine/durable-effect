@@ -27,14 +27,10 @@ This library brings [Effect's](https://effect.website/) composable, type-safe pr
 ## Table of Contents
 
 - [Installation](#installation)
-- [High-Level Usage](#high-level-usage)
-  - [Building a Basic Workflow](#building-a-basic-workflow)
-  - [Steps](#steps)
-  - [Sleep](#sleep)
-- [Exporting the Workflow Class](#exporting-the-workflow-class)
-- [Using the Workflow Client](#using-the-workflow-client)
-- [Event Tracking](#event-tracking)
-- [Retry Features](#retry-features)
+- [Building a Workflow](#building-a-workflow)
+- [Steps](#steps)
+- [Sleep](#sleep)
+- [Retry](#retry)
   - [Basic Retry Configuration](#basic-retry-configuration)
   - [Backoff Strategies](#backoff-strategies)
   - [Jitter](#jitter)
@@ -42,9 +38,8 @@ This library brings [Effect's](https://effect.website/) composable, type-safe pr
   - [Max Duration](#max-duration)
   - [Selective Retry with isRetryable](#selective-retry-with-isretryable)
 - [Timeouts](#timeouts)
-- [Providing Services](#providing-services)
-- [Recovery](#recovery)
-- [Automatic Data Purging](#automatic-data-purging)
+- [Setting Up with Cloudflare](#setting-up-with-cloudflare)
+- [Using the Workflow Client](#using-the-workflow-client)
 
 ---
 
@@ -56,9 +51,7 @@ pnpm add @durable-effect/workflow effect
 
 ---
 
-## High-Level Usage
-
-### Building a Basic Workflow
+## Building a Workflow
 
 Workflows are built using `Workflow.make()`. A workflow is a function that takes an input and returns an Effect containing your workflow logic.
 
@@ -92,7 +85,9 @@ const myWorkflow = Workflow.make((orderId: string) =>
 );
 ```
 
-### Steps
+---
+
+## Steps
 
 Steps are the core building blocks of a workflow. Each step:
 
@@ -140,7 +135,9 @@ yield* Workflow.step({
 
 **Important**: Step results must be serializable. If your effect returns a complex object (ORM result, class instance, etc.), map it to a plain object or use `Effect.asVoid` to discard it.
 
-### Sleep
+---
+
+## Sleep
 
 Sleeps are fully durable. Your workflow can sleep for a few seconds or a few months - it all depends on your business use case. The workflow will resume exactly where it left off, even across deployments and server restarts.
 
@@ -160,284 +157,7 @@ yield* Workflow.sleep(5000);
 
 ---
 
-## Exporting the Workflow Class
-
-To use your workflows with Cloudflare Workers, you need to:
-
-1. **Define your workflows** as a registry object
-2. **Create the Durable Object class and client** using `createDurableWorkflows()`
-3. **Export the Workflows class** from your worker entry point
-
-### Step 1: Define and Export Workflows
-
-Create a file (e.g., `workflows.ts`) that defines and exports your workflows:
-
-```typescript
-import { Effect } from "effect";
-import { Workflow, Backoff, createDurableWorkflows } from "@durable-effect/workflow";
-
-// Define your workflow (name comes from registry key)
-const processOrderWorkflow = Workflow.make((orderId: string) =>
-  Effect.gen(function* () {
-    const order = yield* Workflow.step({
-      name: "Fetch order",
-      execute: fetchOrder(orderId),
-    });
-    yield* Workflow.sleep("3 seconds");
-
-    yield* Workflow.step({
-      name: "Process payment",
-      execute: processPayment(order),
-      retry: {
-        maxAttempts: 5,
-        delay: Backoff.exponential({ base: "1 second", max: "60 seconds" }),
-      },
-    });
-
-    yield* Workflow.step({
-      name: "Send confirmation",
-      execute: sendEmail(order.email),
-    });
-  })
-);
-
-// Create a registry of all workflows
-// The key becomes the workflow name
-const workflows = {
-  processOrder: processOrderWorkflow,
-} as const;
-
-// Create and export the Durable Object class and client
-export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows);
-```
-
-### Step 2: Export from Worker Entry Point
-
-In your main worker file (e.g., `index.ts`), export the `Workflows` class:
-
-```typescript
-import { Workflows } from "./workflows";
-
-// Export the Durable Object class
-export { Workflows };
-
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    // Your fetch handler
-  },
-};
-```
-
-### Step 3: Configure Wrangler
-
-Add the Durable Object binding to your `wrangler.jsonc`:
-
-```jsonc
-{
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "my-worker",
-  "main": "src/index.ts",
-  "compatibility_date": "2025-11-28",
-
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "WORKFLOWS",
-        "class_name": "Workflows"
-      }
-    ]
-  },
-
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_classes": ["Workflows"]
-    }
-  ]
-}
-```
-
----
-
-## Using the Workflow Client
-
-The `WorkflowClient` provides a type-safe, Effect-based interface for invoking and managing workflows. All methods are yieldable.
-
-### Creating a Client
-
-Create a client from your Durable Object binding:
-
-```typescript
-import { Effect } from "effect";
-import { WorkflowClient } from "./workflows";
-
-export const startWorkflow = (request: Request, env: Env) =>
-  Effect.gen(function* () {
-    const client = WorkflowClient.fromBinding(env.WORKFLOWS);
-
-    // Start a workflow - yields an Effect
-    const { id } = yield* client.runAsync({
-      workflow: "processOrder",
-      input: "order-123",
-      execution: { id: "order-123" }, // Optional: custom execution ID
-    });
-
-    return Response.json({ workflowId: id });
-  });
-```
-
-### Client Methods
-
-All methods return Effects, making them yieldable:
-
-```typescript
-const client = WorkflowClient.fromBinding(env.WORKFLOWS);
-
-// Start a workflow asynchronously (returns immediately)
-const { id } = yield* client.runAsync({
-  workflow: "processOrder",
-  input: orderId,
-  execution: { id: orderId }, // Optional custom ID
-});
-// id = "processOrder:order-123" (namespaced)
-
-// Start a workflow synchronously (waits for completion/pause/failure)
-const { id } = yield* client.run({
-  workflow: "processOrder",
-  input: orderId,
-});
-
-// Get workflow status
-const status = yield* client.status(workflowId);
-// Returns: { _tag: "Running" } | { _tag: "Completed", completedAt: number } | ...
-
-// Get completed steps
-const steps = yield* client.completedSteps(workflowId);
-// Returns: ["Fetch order", "Process payment"]
-
-// Get workflow metadata
-const meta = yield* client.meta<MyMetaType>(workflowId, "myKey");
-
-// Cancel a workflow
-yield* client.cancel(workflowId, { reason: "User requested cancellation" });
-```
-
-### Using with Effect.runPromise
-
-If you need to use the client outside of an Effect context:
-
-```typescript
-const client = WorkflowClient.fromBinding(env.WORKFLOWS);
-
-const { id } = await Effect.runPromise(
-  client.runAsync({
-    workflow: "processOrder",
-    input: orderId,
-    execution: { id: orderId },
-  })
-);
-```
-
-### Service Pattern with Effect Tag
-
-The client factory includes an Effect Tag for use with the service pattern:
-
-```typescript
-const client = WorkflowClient.fromBinding(env.WORKFLOWS);
-
-// Use the Tag for dependency injection
-const program = Effect.gen(function* () {
-  const client = yield* WorkflowClient.Tag;
-  yield* client.runAsync({ workflow: "processOrder", input: "order-123" });
-});
-
-// Provide the client
-Effect.runPromise(
-  program.pipe(Effect.provideService(WorkflowClient.Tag, client))
-);
-```
-
-### Workflow Status Types
-
-```typescript
-type WorkflowStatus =
-  | { _tag: "Pending" }
-  | { _tag: "Queued"; queuedAt: number }
-  | { _tag: "Running" }
-  | { _tag: "Paused"; reason: string; resumeAt: number }
-  | { _tag: "Completed"; completedAt: number }
-  | { _tag: "Failed"; error: unknown; failedAt: number }
-  | { _tag: "Cancelled"; cancelledAt: number; reason?: string };
-```
-
----
-
-## Event Tracking
-
-Configure a tracker endpoint to monitor workflow execution and receive events.
-
-### Configuration
-
-```typescript
-export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
-  tracker: {
-    // Required
-    endpoint: "https://events.example.com/ingest",
-    env: "production",
-    serviceKey: "my-service",
-
-    // Optional
-    batchSize: 10,           // Events per batch (default: 10)
-    flushIntervalMs: 5000,   // Auto-flush interval (default: 5000)
-    retry: {
-      maxAttempts: 3,        // Retry failed sends (default: 3)
-    },
-  },
-});
-```
-
-### Event Types
-
-The tracker emits the following events:
-
-**Workflow Events:**
-- `workflow.started` - Workflow execution began
-- `workflow.completed` - Workflow finished successfully
-- `workflow.failed` - Workflow failed with an error
-- `workflow.paused` - Workflow paused (sleep/retry)
-- `workflow.resumed` - Workflow resumed from pause
-- `workflow.cancelled` - Workflow was cancelled
-- `workflow.queued` - Workflow queued for async execution
-
-**Step Events:**
-- `step.started` - Step execution began
-- `step.completed` - Step finished successfully
-- `step.failed` - Step failed with an error
-
-**Retry Events:**
-- `retry.scheduled` - Retry attempt scheduled
-- `retry.exhausted` - All retries exhausted
-
-**Sleep Events:**
-- `sleep.started` - Sleep began
-- `sleep.completed` - Sleep completed
-
-**Timeout Events:**
-- `timeout.set` - Timeout deadline set
-- `timeout.exceeded` - Timeout fired
-
-### Disabling Tracking
-
-If no tracker is configured, events are not emitted:
-
-```typescript
-// No tracker - events disabled
-export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows);
-```
-
----
-
-## Retry Features
+## Retry
 
 Steps support durable retries that persist across workflow restarts. Configure retries directly in the step config:
 
@@ -621,7 +341,7 @@ yield* Workflow.step({
 
 ### Selective Retry with isRetryable
 
-You can use the `isRetryable` option to decide which errors should trigger retries and which should fail immediately:
+Use the `isRetryable` option to decide which errors should trigger retries:
 
 ```typescript
 import { Effect, Data } from "effect";
@@ -635,40 +355,14 @@ class NetworkError extends Data.TaggedError("NetworkError")<{
   readonly message: string;
 }> {}
 
-// Workflow with selective retry
-const processPaymentWorkflow = Workflow.make((paymentId: string) =>
-  Effect.gen(function* () {
-    yield* Workflow.step({
-      name: "Process payment",
-      execute: processPayment(paymentId),
-      retry: {
-        maxAttempts: 5,
-        delay: Backoff.presets.standard(),
-        // Only retry network errors, not validation errors
-        isRetryable: (error) => error instanceof NetworkError,
-      },
-    });
-  })
-);
-```
-
-#### Using Effect's `catchTag` for Error Transformation
-
-You can also use Effect's error handling to transform errors before the retry logic:
-
-```typescript
+// Only retry network errors, not validation errors
 yield* Workflow.step({
   name: "Process payment",
-  execute: processPayment(paymentId).pipe(
-    // Catch validation errors - transform to non-retryable error
-    Effect.catchTag("ValidationError", (err) =>
-      Effect.fail(new PaymentFailed({ reason: err.message }))
-    )
-    // Network errors bubble up and will be retried
-  ),
+  execute: processPayment(paymentId),
   retry: {
     maxAttempts: 5,
     delay: Backoff.presets.standard(),
+    isRetryable: (error) => error instanceof NetworkError,
   },
 });
 ```
@@ -717,162 +411,158 @@ timeout: 5000
 
 ---
 
-## Providing Services
+## Setting Up with Cloudflare
 
-Workflows support Effect's service pattern for dependency injection. Provide services at the end of your workflow using `.pipe()`.
+### Step 1: Define and Export Workflows
 
-### Basic Service Provision
+Create a file (e.g., `workflows.ts`) that defines and exports your workflows:
 
 ```typescript
-import { Effect, Context, Layer } from "effect";
+import { Effect } from "effect";
+import { Workflow, Backoff, createDurableWorkflows } from "@durable-effect/workflow";
 
-// Define a service
-class EmailService extends Context.Tag("EmailService")<
-  EmailService,
-  {
-    readonly send: (to: string, body: string) => Effect.Effect<void>;
-  }
->() {}
-
-// Create a layer
-const EmailServiceLive = Layer.succeed(EmailService, {
-  send: (to, body) => Effect.promise(() => sendEmailViaAPI(to, body)),
-});
-
-// Workflow using the service
-const notificationWorkflow = Workflow.make((userId: string) =>
+// Define your workflow
+const processOrderWorkflow = Workflow.make((orderId: string) =>
   Effect.gen(function* () {
-    const user = yield* Workflow.step({
-      name: "Fetch user",
-      execute: fetchUser(userId),
+    const order = yield* Workflow.step({
+      name: "Fetch order",
+      execute: fetchOrder(orderId),
     });
+    yield* Workflow.sleep("3 seconds");
 
-    const emailService = yield* EmailService;
     yield* Workflow.step({
-      name: "Send email",
-      execute: emailService.send(user.email, "Hello!").pipe(Effect.asVoid),
+      name: "Process payment",
+      execute: processPayment(order),
+      retry: {
+        maxAttempts: 5,
+        delay: Backoff.exponential({ base: "1 second", max: "60 seconds" }),
+      },
     });
-  }).pipe(
-    Effect.provide(EmailServiceLive)
-  )
-);
-```
 
-### Multiple Services
-
-```typescript
-const MyServices = Layer.mergeAll(
-  EmailServiceLive,
-  DatabaseServiceLive,
-  LoggingServiceLive
+    yield* Workflow.step({
+      name: "Send confirmation",
+      execute: sendEmail(order.email),
+    });
+  })
 );
 
-const complexWorkflow = Workflow.make((input: Input) =>
-  Effect.gen(function* () {
-    // ... workflow logic using services
-  }).pipe(
-    Effect.provide(MyServices)
-  )
-);
-```
+// Create a registry of all workflows
+const workflows = {
+  processOrder: processOrderWorkflow,
+} as const;
 
----
-
-## Error Types
-
-The library exports typed errors for proper error handling:
-
-```typescript
-import {
-  WorkflowClientError,      // Client operation failed
-  StepCancelledError,       // Step was cancelled
-  RetryExhaustedError,      // All retries exhausted
-  WorkflowTimeoutError,     // Step exceeded timeout
-  StorageError,             // Durable Object storage error
-  OrchestratorError,        // Orchestration error
-  WorkflowScopeError,       // Operation used outside workflow
-  StepScopeError,           // Sleep/sleepUntil used inside step
-} from "@durable-effect/workflow";
-```
-
----
-
-## Recovery
-
-Workflows automatically recover from infrastructure failures. If a workflow is in "Running" state when the Durable Object restarts, it will automatically schedule recovery.
-
-### Configuration
-
-```typescript
-export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
-  recovery: {
-    staleThresholdMs: 30000,     // Consider stale after 30s (default)
-    maxRecoveryAttempts: 3,       // Max recovery attempts (default: 3)
-    recoveryDelayMs: 1000,        // Delay before recovery (default: 1000)
-  },
-});
-```
-
----
-
-## Automatic Data Purging
-
-By default, workflow data (state, step results, metadata) persists in Durable Object storage indefinitely. For high-volume workflows, this can lead to storage bloat. Enable automatic purging to delete workflow data after completion.
-
-### Configuration
-
-```typescript
-export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows, {
-  purge: {
-    delay: "5 minutes",  // Delete data 5 minutes after terminal state
-  },
-});
-```
-
-When enabled, workflow data is automatically purged after the workflow reaches a terminal state (completed, failed, or cancelled). The delay gives you time to query final status before cleanup.
-
-### Delay Formats
-
-The `delay` option accepts Effect duration strings or milliseconds:
-
-```typescript
-// String formats
-purge: { delay: "30 seconds" }
-purge: { delay: "5 minutes" }
-purge: { delay: "1 hour" }
-purge: { delay: "1 day" }
-
-// Milliseconds
-purge: { delay: 60000 }
-
-```
-
-### What Gets Purged
-
-When purge executes, **all** Durable Object storage for that workflow instance is deleted:
-- Workflow state and status
-- Step results and metadata
-- Recovery tracking data
-- Any custom metadata stored via `getMeta()`
-
-### Disabling Purge
-
-Omit the `purge` option to retain data indefinitely (default behavior):
-
-```typescript
-// No purge - data retained forever
+// Create and export the Durable Object class and client
 export const { Workflows, WorkflowClient } = createDurableWorkflows(workflows);
 ```
 
-### Logs
+### Step 2: Export from Worker Entry Point
 
-When a purge executes, it logs:
+In your main worker file (e.g., `index.ts`), export the `Workflows` class:
 
+```typescript
+import { Workflows } from "./workflows";
+
+// Export the Durable Object class
+export { Workflows };
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    // Your fetch handler
+  },
+};
 ```
-[Workflow] Purged data for {instanceId} ({reason})
+
+### Step 3: Configure Wrangler
+
+Add the Durable Object binding to your `wrangler.jsonc`:
+
+```jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "my-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-11-28",
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKFLOWS",
+        "class_name": "Workflows"
+      }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["Workflows"]
+    }
+  ]
+}
 ```
 
-Where `reason` is the terminal state that triggered the purge (`completed`, `failed`, or `cancelled`).
+---
+
+## Using the Workflow Client
+
+The `WorkflowClient` provides a type-safe interface for invoking and managing workflows.
+
+### Creating a Client
+
+```typescript
+import { Effect } from "effect";
+import { WorkflowClient } from "./workflows";
+
+const client = WorkflowClient.fromBinding(env.WORKFLOWS);
+```
+
+### Starting Workflows (Yieldable)
+
+All client methods return Effects, making them yieldable in `Effect.gen`:
+
+```typescript
+Effect.gen(function* () {
+  const client = WorkflowClient.fromBinding(env.WORKFLOWS);
+
+  // Start a workflow asynchronously (returns immediately)
+  const { id } = yield* client.runAsync({
+    workflow: "processOrder",
+    input: orderId,
+    execution: { id: orderId }, // Optional custom ID
+  });
+
+  // Start a workflow synchronously (waits for completion/pause/failure)
+  const { id } = yield* client.run({
+    workflow: "processOrder",
+    input: orderId,
+  });
+
+  // Get workflow status
+  const status = yield* client.status(workflowId);
+
+  // Get completed steps
+  const steps = yield* client.completedSteps(workflowId);
+
+  // Cancel a workflow
+  yield* client.cancel(workflowId, { reason: "User requested" });
+});
+```
+
+### Using with Effect.runPromise
+
+If you need to use the client outside of an Effect context:
+
+```typescript
+const client = WorkflowClient.fromBinding(env.WORKFLOWS);
+
+const { id } = await Effect.runPromise(
+  client.runAsync({
+    workflow: "processOrder",
+    input: orderId,
+    execution: { id: orderId },
+  })
+);
+```
 
 ---
 
