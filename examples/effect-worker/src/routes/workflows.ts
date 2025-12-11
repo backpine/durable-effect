@@ -8,9 +8,12 @@ import { WorkflowClient } from "../workflows";
 export const getWorkflows: RouteEffect<Response> = Effect.gen(function* () {
   const c = yield* HonoCtx;
   return c.json({
-    workflows: ["processOrder"],
+    workflows: ["processOrder", "generateReport"],
     endpoints: {
-      "GET /workflows/processOrder?orderId=xxx": "Start order processing workflow",
+      "GET /workflows/processOrder?orderId=xxx":
+        "Start order processing workflow",
+      "GET /workflows/generateReport?reportId=xxx":
+        "Start report generation workflow",
       "GET /workflows/:id/status": "Get workflow status",
     },
   });
@@ -42,19 +45,55 @@ export const getProcessOrder: RouteEffect<Response> = Effect.gen(function* () {
 });
 
 /**
+ * GET /workflows/generateReport - Start report generation workflow
+ */
+export const getGenerateReport: RouteEffect<Response> = Effect.gen(
+  function* () {
+    const c = yield* HonoCtx;
+    const env = yield* CloudflareEnv;
+
+    const processId = c.req.query("reportId") ?? `report-${Date.now()}`;
+    const client = WorkflowClient.fromBinding(env.WORKFLOWS);
+
+    const processOrderRes = yield* client.runAsync({
+      workflow: "processOrder",
+      input: processId,
+      execution: { id: processId },
+    });
+
+    yield* Effect.log(`Starting report generation workflow for ${processId}`);
+
+    const generateReportRes = yield* client.runAsync({
+      workflow: "generateReport",
+      input: processId,
+      execution: { id: processId },
+    });
+
+    return c.json({
+      success: true,
+      workflowId: id,
+      processOrderRes,
+      generateReportRes,
+    });
+  },
+);
+
+/**
  * GET /workflows/:id/status - Get workflow status
  */
-export const getWorkflowStatus: RouteEffect<Response> = Effect.gen(function* () {
-  const c = yield* HonoCtx;
-  const env = yield* CloudflareEnv;
+export const getWorkflowStatus: RouteEffect<Response> = Effect.gen(
+  function* () {
+    const c = yield* HonoCtx;
+    const env = yield* CloudflareEnv;
 
-  const instanceId = c.req.param("id");
-  const client = WorkflowClient.fromBinding(env.WORKFLOWS);
+    const instanceId = c.req.param("id");
+    const client = WorkflowClient.fromBinding(env.WORKFLOWS);
 
-  const status = yield* client.status(instanceId);
+    const status = yield* client.status(instanceId);
 
-  return c.json({
-    instanceId,
-    status,
-  });
-});
+    return c.json({
+      instanceId,
+      status,
+    });
+  },
+);

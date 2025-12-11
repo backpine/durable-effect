@@ -7,6 +7,7 @@ import {
   getWorkflows,
   getWorkflowStatus,
   getProcessOrder,
+  getGenerateReport,
 } from "./routes/workflows";
 import { Workflows } from "./workflows";
 
@@ -35,6 +36,7 @@ app.get("/health/ready", effectHandler(getHealthReady));
 // Workflow routes
 app.get("/workflows", effectHandler(getWorkflows));
 app.get("/workflows/processOrder", effectHandler(getProcessOrder));
+app.get("/workflows/generateReport", effectHandler(getGenerateReport));
 app.get("/workflows/:id/status", effectHandler(getWorkflowStatus));
 
 // 404 handler
