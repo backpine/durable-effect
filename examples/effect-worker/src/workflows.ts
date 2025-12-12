@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import {
   Backoff,
   Workflow,
@@ -27,6 +27,7 @@ const fetchOrder = (orderId: string) =>
       items: ["item1", "item2"],
     };
   });
+class HttpError extends Data.TaggedError("HttpError")<{}> {}
 
 const processPayment = (order: { id: string; amount: number }) =>
   Effect.gen(function* () {
@@ -37,7 +38,7 @@ const processPayment = (order: { id: string; amount: number }) =>
 
     // 70% chance of failure
     if (Math.random() < 0.6) {
-      yield* Effect.fail(new Error("Payment processing failed"));
+      yield* Effect.fail(new HttpError());
     }
 
     return {
@@ -130,6 +131,7 @@ const processOrderWorkflow = Workflow.make((orderId: string) =>
       execute: processPayment(order),
       retry: {
         maxAttempts: 1,
+
         delay: Backoff.exponential({
           max: "6 seconds",
           base: "1 second",

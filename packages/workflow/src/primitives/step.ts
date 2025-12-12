@@ -36,7 +36,7 @@ export type DurationInput = string | number;
 /**
  * Configuration for step retry behavior.
  */
-export interface RetryConfig {
+export interface RetryConfig<E = unknown> {
   /**
    * Maximum number of retry attempts (not including initial attempt).
    */
@@ -51,7 +51,10 @@ export interface RetryConfig {
    *
    * Default: Exponential backoff starting at 1 second
    */
-  readonly delay?: DurationInput | BackoffStrategy | ((attempt: number) => number);
+  readonly delay?:
+    | DurationInput
+    | BackoffStrategy
+    | ((attempt: number) => number);
 
   /**
    * Whether to add jitter to delays to prevent thundering herd.
@@ -63,7 +66,7 @@ export interface RetryConfig {
    * Optional predicate to determine if an error is retryable.
    * Default: All errors are retryable.
    */
-  readonly isRetryable?: (error: unknown) => boolean;
+  readonly isRetryable?: (error: E | WorkflowTimeoutError) => boolean;
 
   /**
    * Maximum total duration for all retry attempts.
@@ -91,7 +94,7 @@ export interface StepConfig<A, E, R> {
    * Retry configuration.
    * If provided, failed executions will be retried with the specified options.
    */
-  readonly retry?: RetryConfig;
+  readonly retry?: RetryConfig<E>;
 
   /**
    * Timeout for each execution attempt (not total time).
@@ -169,7 +172,9 @@ function isBackoffStrategy(value: unknown): value is BackoffStrategy {
     typeof value === "object" &&
     value !== null &&
     "type" in value &&
-    ["constant", "linear", "exponential"].includes((value as { type: string }).type)
+    ["constant", "linear", "exponential"].includes(
+      (value as { type: string }).type,
+    )
   );
 }
 
@@ -177,10 +182,7 @@ function isBackoffStrategy(value: unknown): value is BackoffStrategy {
 // Delay Calculation
 // =============================================================================
 
-function getDelay(
-  config: RetryConfig["delay"],
-  attempt: number,
-): number {
+function getDelay(config: RetryConfig["delay"], attempt: number): number {
   if (config === undefined) {
     // Default: exponential backoff starting at 1 second
     return calculateBackoffDelay(
@@ -411,7 +413,8 @@ export function step<A, E, R>(
       effect = effect.pipe(
         Effect.timeoutFail({
           duration: remainingMs,
-          onTimeout: () => new WorkflowTimeoutError(name, timeoutMs, now - effectStartedAt),
+          onTimeout: () =>
+            new WorkflowTimeoutError(name, timeoutMs, now - effectStartedAt),
         }),
       );
     }
@@ -435,7 +438,10 @@ export function step<A, E, R>(
       Effect.provide(stepLayer),
       Effect.map((value) => ({ _tag: "Success" as const, value })),
       Effect.catchAll((error) =>
-        Effect.succeed({ _tag: "Failure" as const, error: error as E | WorkflowTimeoutError }),
+        Effect.succeed({
+          _tag: "Failure" as const,
+          error: error as E | WorkflowTimeoutError,
+        }),
       ),
     );
 
