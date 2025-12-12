@@ -237,42 +237,24 @@ export const createWorkflowStateMachine = Effect.gen(function* () {
 
   const getState = (): Effect.Effect<WorkflowState | undefined, StorageError> =>
     Effect.gen(function* () {
-      const status = yield* getStatus();
-      if (!status) return undefined;
+      // Use batch read with list() instead of individual get() calls
+      const entries = yield* storage.list<unknown>("workflow:");
 
-      const [
-        workflowName,
-        input,
-        executionId,
-        completedSteps,
-        completedPauseIndex,
-        pendingResumeAt,
-        recoveryAttempts,
-        cancelled,
-        cancelReason,
-      ] = yield* Effect.all([
-        storage.get<string>(KEYS.name),
-        storage.get<unknown>(KEYS.input),
-        storage.get<string>(KEYS.executionId),
-        storage.get<string[]>(KEYS.completedSteps),
-        storage.get<number>(KEYS.completedPauseIndex),
-        storage.get<number>(KEYS.pendingResumeAt),
-        storage.get<number>(KEYS.recoveryAttempts),
-        storage.get<boolean>(KEYS.cancelled),
-        storage.get<string>(KEYS.cancelReason),
-      ]);
+      // If no status, no workflow exists
+      const status = entries.get(KEYS.status) as WorkflowStatus | undefined;
+      if (!status) return undefined;
 
       return {
         status,
-        workflowName: workflowName ?? "unknown",
-        input,
-        executionId,
-        completedSteps: completedSteps ?? [],
-        completedPauseIndex: completedPauseIndex ?? 0,
-        pendingResumeAt,
-        recoveryAttempts: recoveryAttempts ?? 0,
-        cancelled: cancelled ?? false,
-        cancelReason,
+        workflowName: (entries.get(KEYS.name) as string) ?? "unknown",
+        input: entries.get(KEYS.input),
+        executionId: entries.get(KEYS.executionId) as string | undefined,
+        completedSteps: (entries.get(KEYS.completedSteps) as string[]) ?? [],
+        completedPauseIndex: (entries.get(KEYS.completedPauseIndex) as number) ?? 0,
+        pendingResumeAt: entries.get(KEYS.pendingResumeAt) as number | undefined,
+        recoveryAttempts: (entries.get(KEYS.recoveryAttempts) as number) ?? 0,
+        cancelled: (entries.get(KEYS.cancelled) as boolean) ?? false,
+        cancelReason: entries.get(KEYS.cancelReason) as string | undefined,
       };
     });
 

@@ -171,10 +171,12 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         Effect.gen(function* () {
           const orchestrator = yield* WorkflowOrchestrator;
           const result = yield* orchestrator.start(call);
-          yield* flushEvents;
           return result;
         }),
       );
+
+      // Fire-and-forget event flushing - don't block response
+      this.ctx.waitUntil(this.#runEffect(flushEvents));
 
       return { id: result.id, completed: result.completed };
     }
@@ -184,10 +186,12 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         Effect.gen(function* () {
           const orchestrator = yield* WorkflowOrchestrator;
           const result = yield* orchestrator.queue(call);
-          yield* flushEvents;
           return result;
         }),
       );
+
+      // Fire-and-forget event flushing - don't block response
+      this.ctx.waitUntil(this.#runEffect(flushEvents));
 
       return { id: result.id };
     }
@@ -212,9 +216,11 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
           // Not a purge alarm - handle as workflow alarm (resume/recovery)
           const orchestrator = yield* WorkflowOrchestrator;
           yield* orchestrator.handleAlarm();
-          yield* flushEvents;
         }),
       );
+
+      // Fire-and-forget event flushing - don't block alarm completion
+      this.ctx.waitUntil(this.#runEffect(flushEvents));
     }
 
     async cancel(options?: { reason?: string }): Promise<{
