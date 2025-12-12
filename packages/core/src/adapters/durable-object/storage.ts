@@ -1,4 +1,4 @@
-// packages/workflow/src/adapters/durable-object/storage.ts
+// packages/core/src/adapters/durable-object/storage.ts
 
 import { Effect, Schedule, Duration } from "effect";
 import { StorageError } from "../../errors";

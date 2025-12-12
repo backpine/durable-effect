@@ -1,8 +1,7 @@
 // packages/workflow/src/adapters/in-memory/storage.ts
 
 import { Effect, Ref } from "effect";
-import { StorageError } from "../../errors";
-import type { StorageAdapterService } from "../storage";
+import { StorageError, type StorageAdapterService } from "@durable-effect/core";
 
 /**
  * In-memory storage state.

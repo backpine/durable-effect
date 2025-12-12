@@ -4,20 +4,17 @@ import { Context, Effect } from "effect";
 import type { InternalWorkflowEvent } from "@durable-effect/core";
 
 // =============================================================================
-// Service Interface
+// Workflow-specific EventTracker
 // =============================================================================
 
 /**
- * EventTracker service interface.
- *
- * Accepts internal events (without env/serviceKey) and handles
- * enrichment and delivery to the tracking backend.
+ * Workflow-specific EventTracker service interface.
+ * Uses InternalWorkflowEvent instead of generic BaseTrackingEvent.
  */
 export interface EventTrackerService {
   /**
-   * Emit an event.
+   * Emit a workflow event.
    * Events may be buffered for batch delivery.
-   * The tracker will enrich with env/serviceKey before sending.
    */
   readonly emit: (event: InternalWorkflowEvent) => Effect.Effect<void>;
 
@@ -34,7 +31,10 @@ export interface EventTrackerService {
 }
 
 /**
- * Effect service tag for EventTracker.
+ * Effect service tag for workflow EventTracker.
+ *
+ * This is the workflow-specific tracker that uses InternalWorkflowEvent.
+ * It has the same tag ID as core's EventTracker for compatibility.
  */
 export class EventTracker extends Context.Tag("@durable-effect/EventTracker")<
   EventTracker,
@@ -46,7 +46,7 @@ export class EventTracker extends Context.Tag("@durable-effect/EventTracker")<
 // =============================================================================
 
 /**
- * Emit an event using the tracker from context.
+ * Emit a workflow event using the tracker from context.
  * Safe to call - does nothing if tracker not available.
  */
 export const emitEvent = (event: InternalWorkflowEvent): Effect.Effect<void> =>

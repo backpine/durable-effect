@@ -1,5 +1,8 @@
 // packages/workflow/src/adapters/durable-object/index.ts
 
-export { createDOStorageAdapter } from "./storage";
-export { createDOSchedulerAdapter } from "./scheduler";
-export { createDurableObjectRuntime } from "./runtime";
+// Re-export from core
+export {
+  createDOStorageAdapter,
+  createDOSchedulerAdapter,
+  createDurableObjectRuntime,
+} from "@durable-effect/core";

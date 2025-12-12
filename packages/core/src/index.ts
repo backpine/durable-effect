@@ -1,5 +1,5 @@
 // Errors
-export { PauseSignal } from "./errors";
+export { PauseSignal, StorageError, SchedulerError } from "./errors";
 
 // Event Schemas
 export {
@@ -85,7 +85,59 @@ export {
   type TimeoutExceededEvent,
 } from "./events";
 
-// Services (internal)
+// Adapters
+export {
+  StorageAdapter,
+  type StorageAdapterService,
+  SchedulerAdapter,
+  type SchedulerAdapterService,
+  RuntimeAdapter,
+  type RuntimeAdapterService,
+  type LifecycleEvent,
+  type RuntimeLayer,
+} from "./adapters";
+
+// DO Adapters
+export {
+  createDOStorageAdapter,
+  createDOSchedulerAdapter,
+  createDurableObjectRuntime,
+} from "./adapters/durable-object";
+
+// Tracker
+export {
+  EventTracker,
+  emitEvent,
+  flushEvents,
+  getPendingEvents,
+  createHttpBatchTracker,
+  HttpBatchTrackerLayer,
+  HttpTrackerError,
+  noopTracker,
+  NoopTrackerLayer,
+  createInMemoryTracker,
+  createInMemoryTrackerLayer,
+  type EventTrackerService,
+  type BaseTrackingEvent,
+  type HttpBatchTrackerConfig,
+  type InMemoryTrackerHandle,
+} from "./tracker";
+
+// Testing
+export {
+  createInMemoryStorage,
+  createInMemoryStorageWithHandle,
+  createInMemoryScheduler,
+  createInMemorySchedulerWithHandle,
+  createInMemoryRuntime,
+  createInMemoryRuntimeWithHandles,
+  createTestRuntime,
+  type InMemoryStorageHandle,
+  type InMemorySchedulerHandle,
+  type InMemoryRuntimeHandles,
+} from "./testing";
+
+// Services (DEPRECATED - use RuntimeAdapter instead)
 export {
   ExecutionContext,
   createExecutionContext,

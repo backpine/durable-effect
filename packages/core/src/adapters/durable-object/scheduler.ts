@@ -1,4 +1,4 @@
-// packages/workflow/src/adapters/durable-object/scheduler.ts
+// packages/core/src/adapters/durable-object/scheduler.ts
 
 import { Effect } from "effect";
 import { SchedulerError } from "../../errors";
