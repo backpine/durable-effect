@@ -1,4 +1,4 @@
-// packages/workflow/src/adapters/durable-object/runtime.ts
+// packages/core/src/adapters/durable-object/runtime.ts
 
 import { Effect, Layer } from "effect";
 import { StorageAdapter } from "../storage";

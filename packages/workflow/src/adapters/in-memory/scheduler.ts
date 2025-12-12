@@ -1,7 +1,7 @@
 // packages/workflow/src/adapters/in-memory/scheduler.ts
 
 import { Effect, Ref } from "effect";
-import type { SchedulerAdapterService } from "../scheduler";
+import type { SchedulerAdapterService } from "@durable-effect/core";
 
 /**
  * In-memory scheduler state.

@@ -65,6 +65,19 @@ importers:
         specifier: 'catalog:'
         version: 3.19.8
 
+  packages/primatives:
+    dependencies:
+      '@durable-effect/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 3.19.8
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9
+
   packages/workflow:
     dependencies:
       '@durable-effect/core':

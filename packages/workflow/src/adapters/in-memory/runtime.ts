@@ -1,9 +1,12 @@
 // packages/workflow/src/adapters/in-memory/runtime.ts
 
 import { Effect, Layer, Ref } from "effect";
-import { StorageAdapter } from "../storage";
-import { SchedulerAdapter } from "../scheduler";
-import { RuntimeAdapter, type RuntimeLayer } from "../runtime";
+import {
+  StorageAdapter,
+  SchedulerAdapter,
+  RuntimeAdapter,
+  type RuntimeLayer,
+} from "@durable-effect/core";
 import { createInMemoryStorage, type InMemoryStorageState } from "./storage";
 import {
   createInMemoryScheduler,
