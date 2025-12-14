@@ -11,7 +11,7 @@ import type {
   QueueAggregatedStatus,
   ClientError,
 } from "./types";
-import { narrowResponseEffect, primitiveCallError } from "./response";
+import { narrowResponseEffect } from "./response";
 
 // =============================================================================
 // Instance ID Resolution

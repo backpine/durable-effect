@@ -8,7 +8,6 @@ export {
   ContinuousHandler,
   ContinuousHandlerLayer,
   createContinuousContext,
-  executeUserFunction,
   type ContinuousHandlerI,
   type ContinuousResponse,
   type StateHolder,

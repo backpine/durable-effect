@@ -23,13 +23,8 @@ export type PrimitiveType = "continuous" | "buffer" | "queue";
 export type PrimitiveStatus =
   | "initializing"
   | "running"
-  | "buffering"
-  | "processing"
-  | "idle"
-  | "paused"
   | "stopped"
-  | "terminated" // State was purged via ctx.terminate()
-  | "completed";
+  | "terminated"; // State was purged via ctx.terminate()
 
 /**
  * Metadata stored for every primitive instance.

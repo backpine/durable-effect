@@ -24,7 +24,6 @@
 
 export {
   createDurablePrimitives,
-  type CreateDurablePrimitivesOptions,
   type CreateDurablePrimitivesResult,
   type InferRegistryFromDefinitions,
 } from "./factory";
@@ -167,7 +166,6 @@ export {
   DurablePrimitivesEngine,
   type DurablePrimitivesEngineInterface,
   type PrimitivesEngineConfig,
-  type TrackerConfig,
   type PrimitivesEnv,
 } from "./engine";
 
@@ -215,7 +213,6 @@ export {
   ContinuousHandler,
   ContinuousHandlerLayer,
   createContinuousContext,
-  executeUserFunction,
   type ContinuousHandlerI,
   type ContinuousResponse,
   type StateHolder,

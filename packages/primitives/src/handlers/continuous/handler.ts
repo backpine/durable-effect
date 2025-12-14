@@ -1,6 +1,6 @@
 // packages/primitives/src/handlers/continuous/handler.ts
 
-import { Context, Effect, Layer, Ref } from "effect";
+import { Context, Effect, Layer } from "effect";
 import {
   RuntimeAdapter,
   StorageAdapter,
@@ -87,17 +87,19 @@ export const ContinuousHandlerLayer = Layer.effect(
 
     const scheduleNext = (
       def: ContinuousDefinition<unknown, unknown, never>
-    ): Effect.Effect<void, SchedulerError> => {
+    ): Effect.Effect<void, SchedulerError | ExecutionError> => {
       const schedule = def.schedule;
       switch (schedule._tag) {
         case "Every":
           return alarm.schedule(schedule.interval);
         case "Cron":
-          // TODO: Implement cron parsing
-          return alarm.schedule("1 hour").pipe(
-            Effect.tap(() =>
-              Effect.logWarning("Cron schedules not yet implemented, using 1 hour default")
-            )
+          return Effect.fail(
+            new ExecutionError({
+              primitiveType: "continuous",
+              primitiveName: def.name,
+              instanceId: runtime.instanceId,
+              cause: new Error("Cron schedules are not supported yet"),
+            })
           );
       }
     };

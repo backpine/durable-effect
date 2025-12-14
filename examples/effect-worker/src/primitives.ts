@@ -15,9 +15,9 @@ const tokenRefresher = Continuous.make({
   }),
 
   // Execute every 30 minutes
-  schedule: Continuous.every("10 seconds"),
+  schedule: Continuous.every("45 seconds"),
 
-  startImmediately: true,
+  startImmediately: false,
   onError: (error) => Effect.logError(error),
 
   // The function to run

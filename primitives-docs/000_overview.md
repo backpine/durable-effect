@@ -65,3 +65,13 @@ const { Primitives, PrimitiveClient } = createDurablePrimitives({
   tracker: { endpoint: "https://events.example.com/ingest" },
 });
 ```
+
+### Simplification audit (current primitives package)
+
+1. **Trim unimplemented buffer/queue surface area** — the runtime only routes continuous requests but the public API still exposes buffer/queue clients, request/response types, registry slots, and storage keys (`packages/primitives/src/runtime/dispatcher.ts:68-121`, `packages/primitives/src/client/client.ts:186-507`, `packages/primitives/src/runtime/types.ts`, `packages/primitives/src/storage-keys.ts`). This overpromises working features and bloats the bundle. Either hide these until handlers exist or gate them behind an explicit “experimental” flag.
+2. **[DONE] Remove or wire the unused tracker plumbing** — removed the unused tracker config path from the factory/engine/runtime to avoid dead options and confusion.
+3. **[DONE] Collapse continuous execution to one path** — dropped the deprecated executor file/exports so only the inline handler path remains.
+4. **[DONE] Fail fast when registry/config is missing** — runtime now requires a registry and throws if absent; the engine guards env injection accordingly.
+5. **[DONE] Make schedule semantics explicit** — cron schedules now fail immediately instead of silently defaulting; Duration-based intervals remain validated by Effect.
+6. **[DONE] Tighten status/metadata to active primitives** — pared the status union down to the continuous lifecycle values in use.
+7. **[DONE] Remove minor unused/duplicated pieces** — removed unused imports/exports (e.g., `Ref`, tracker options, primitive executor helper) to keep the surface lean while only continuous is implemented.
