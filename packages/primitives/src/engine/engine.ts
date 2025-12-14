@@ -62,11 +62,14 @@ export class DurablePrimitivesEngine
   constructor(state: DurableObjectState, env: PrimitivesEngineConfig) {
     super(state, env);
 
+    if (!env.__PRIMITIVE_REGISTRY__) {
+      throw new Error("DurablePrimitivesEngine requires __PRIMITIVE_REGISTRY__ in env");
+    }
+
     // Create the runtime with DO state and registry
     // The runtime handles all Effect complexity
     this.#runtime = createPrimitivesRuntime({
       doState: state,
-      tracker: env.__TRACKER_CONFIG__,
       registry: env.__PRIMITIVE_REGISTRY__,
     });
   }

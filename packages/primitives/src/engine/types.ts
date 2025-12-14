@@ -17,46 +17,6 @@ export interface PrimitivesEngineConfig {
    * The primitive registry containing all registered primitives.
    */
   readonly __PRIMITIVE_REGISTRY__: PrimitiveRegistry;
-
-  /**
-   * Optional tracker configuration for event tracking.
-   */
-  readonly __TRACKER_CONFIG__?: TrackerConfig;
-}
-
-/**
- * Tracker configuration for event observability.
- */
-export interface TrackerConfig {
-  /**
-   * Whether tracking is enabled.
-   */
-  readonly enabled: boolean;
-
-  /**
-   * HTTP endpoint to send events to.
-   */
-  readonly endpoint?: string;
-
-  /**
-   * Environment name (e.g., "production", "staging").
-   */
-  readonly env?: string;
-
-  /**
-   * Service key for identification.
-   */
-  readonly serviceKey?: string;
-
-  /**
-   * Optional batch size for event batching.
-   */
-  readonly batchSize?: number;
-
-  /**
-   * Optional flush interval in milliseconds.
-   */
-  readonly flushIntervalMs?: number;
 }
 
 // =============================================================================

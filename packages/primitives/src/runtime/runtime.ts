@@ -1,12 +1,7 @@
 // packages/primitives/src/runtime/runtime.ts
 
 import { Effect, Layer } from "effect";
-import {
-  createDurableObjectRuntime,
-  NoopTrackerLayer,
-  flushEvents,
-  type RuntimeLayer,
-} from "@durable-effect/core";
+import { createDurableObjectRuntime, flushEvents, type RuntimeLayer } from "@durable-effect/core";
 import { RuntimeServicesLayer, RegistryServiceLayer } from "../services";
 import { PrimitiveHandlersLayer } from "../handlers";
 import { Dispatcher, DispatcherLayer } from "./dispatcher";
@@ -27,16 +22,10 @@ export interface PrimitivesRuntimeConfig {
   readonly doState: DurableObjectState;
 
   /**
-   * Optional tracker configuration.
-   * If not provided, uses NoopTrackerLayer.
-   */
-  readonly tracker?: unknown; // TODO: Define TrackerConfig type
-
-  /**
    * Registry of primitive definitions.
    * Required for handlers to look up definitions.
    */
-  readonly registry?: PrimitiveRegistry;
+  readonly registry: PrimitiveRegistry;
 }
 
 /**
@@ -81,10 +70,7 @@ function createDispatcherLayer(
   const registryLayer = RegistryServiceLayer(registry);
 
   // Runtime services layer (MetadataService, AlarmService, IdempotencyService)
-  const servicesLayer = RuntimeServicesLayer.pipe(
-    Layer.provideMerge(NoopTrackerLayer),
-    Layer.provideMerge(coreLayer)
-  );
+  const servicesLayer = RuntimeServicesLayer.pipe(Layer.provideMerge(coreLayer));
 
   // Handlers layer (ContinuousHandler, etc.)
   const handlersLayer = PrimitiveHandlersLayer.pipe(
@@ -94,17 +80,6 @@ function createDispatcherLayer(
 
   // Dispatcher layer (routes requests to handlers)
   return DispatcherLayer.pipe(Layer.provideMerge(handlersLayer));
-}
-
-/**
- * Create empty registry for backwards compatibility.
- */
-function createEmptyRegistry(): PrimitiveRegistry {
-  return {
-    continuous: new Map(),
-    buffer: new Map(),
-    queue: new Map(),
-  };
 }
 
 /**
@@ -179,9 +154,12 @@ function createRuntimeFromDispatcherLayer(
 export function createPrimitivesRuntime(
   config: PrimitivesRuntimeConfig
 ): PrimitivesRuntime {
+  if (!config.registry) {
+    throw new Error("createPrimitivesRuntime requires a registry");
+  }
+
   const coreLayer = createDurableObjectRuntime(config.doState);
-  const registry = config.registry ?? createEmptyRegistry();
-  const dispatcherLayer = createDispatcherLayer(coreLayer, registry);
+  const dispatcherLayer = createDispatcherLayer(coreLayer, config.registry);
 
   return createRuntimeFromDispatcherLayer(dispatcherLayer);
 }
@@ -191,7 +169,7 @@ export function createPrimitivesRuntime(
 // =============================================================================
 
 /**
- * Creates a primitives runtime from a provided layer with optional registry.
+ * Creates a primitives runtime from a provided layer with a registry.
  *
  * Used for testing with in-memory adapters.
  *
@@ -207,10 +185,9 @@ export function createPrimitivesRuntime(
  */
 export function createPrimitivesRuntimeFromLayer(
   coreLayer: RuntimeLayer,
-  registry?: PrimitiveRegistry
+  registry: PrimitiveRegistry
 ): PrimitivesRuntime {
-  const actualRegistry = registry ?? createEmptyRegistry();
-  const dispatcherLayer = createDispatcherLayer(coreLayer, actualRegistry);
+  const dispatcherLayer = createDispatcherLayer(coreLayer, registry);
 
   return createRuntimeFromDispatcherLayer(dispatcherLayer);
 }

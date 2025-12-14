@@ -2,11 +2,7 @@
 
 import { Context } from "effect";
 import { DurableObject } from "cloudflare:workers";
-import {
-  DurablePrimitivesEngine,
-  type PrimitivesEngineConfig,
-  type TrackerConfig,
-} from "./engine";
+import { DurablePrimitivesEngine, type PrimitivesEngineConfig } from "./engine";
 import {
   createPrimitiveRegistry,
   type AnyUnregisteredDefinition,
@@ -23,25 +19,6 @@ import {
   type PrimitivesClient,
   type PrimitivesClientFactory,
 } from "./client";
-
-// =============================================================================
-// Factory Options
-// =============================================================================
-
-/**
- * Options for creating durable primitives (optional configuration).
- */
-export interface CreateDurablePrimitivesOptions {
-  /**
-   * Optional tracking configuration.
-   */
-  readonly tracking?: {
-    readonly enabled: boolean;
-    readonly endpoint?: string;
-    readonly env?: string;
-    readonly serviceKey?: string;
-  };
-}
 
 /**
  * Result of creating durable primitives.
@@ -125,7 +102,6 @@ export type InferRegistryFromDefinitions<
  * - `registry`: The primitive registry (for advanced use cases)
  *
  * @param definitions - Object of primitive definitions (keys become primitive names)
- * @param options - Optional configuration for tracking, etc.
  *
  * @example
  * ```ts
@@ -151,19 +127,6 @@ export type InferRegistryFromDefinitions<
  *   tokenRefresher,
  * });
  *
- * // With tracking options
- * const { Primitives, PrimitivesClient } = createDurablePrimitives(
- *   { tokenRefresher },
- *   {
- *     tracking: {
- *       enabled: true,
- *       endpoint: "https://events.example.com/ingest",
- *       env: "production",
- *       serviceKey: "my-service",
- *     },
- *   }
- * );
- *
  * // Export for Cloudflare
  * export { Primitives };
  *
@@ -186,21 +149,10 @@ export type InferRegistryFromDefinitions<
 export function createDurablePrimitives<
   const T extends Record<string, AnyUnregisteredDefinition>,
 >(
-  definitions: T,
-  options?: CreateDurablePrimitivesOptions
+  definitions: T
 ): CreateDurablePrimitivesResult<T> {
   // Create registry from definitions
   const registry = createPrimitiveRegistry(definitions);
-
-  // Create tracker config if provided
-  const trackerConfig: TrackerConfig | undefined = options?.tracking
-    ? {
-        enabled: options.tracking.enabled,
-        endpoint: options.tracking.endpoint,
-        env: options.tracking.env,
-        serviceKey: options.tracking.serviceKey,
-      }
-    : undefined;
 
   // Create bound DO class with registry and config injected
   class BoundPrimitivesEngine extends DurablePrimitivesEngine {
@@ -209,7 +161,6 @@ export function createDurablePrimitives<
       const enrichedEnv: PrimitivesEngineConfig = {
         ...(env as object),
         __PRIMITIVE_REGISTRY__: registry,
-        __TRACKER_CONFIG__: trackerConfig,
       };
 
       super(state, enrichedEnv);
