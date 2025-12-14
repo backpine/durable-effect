@@ -340,7 +340,7 @@ stepA({
 
 ## Integration with Workflow Package
 
-Looking at the current implementation in `packages/workflow/src/primitives/step.ts`:
+Looking at the current implementation in `packages/workflow/src/jobs/step.ts`:
 
 ### Current Implementation
 

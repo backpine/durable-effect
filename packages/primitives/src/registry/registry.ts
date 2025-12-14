@@ -1,12 +1,12 @@
-// packages/primitives/src/registry/registry.ts
+// packages/jobs/src/registry/registry.ts
 
 import type {
   AnyUnregisteredDefinition,
-  AnyPrimitiveDefinition,
-  BufferDefinition,
+  AnyJobDefinition,
+  DebounceDefinition,
   ContinuousDefinition,
-  PrimitiveRegistry,
-  QueueDefinition,
+  JobRegistry,
+  WorkerPoolDefinition,
 } from "./types";
 
 // =============================================================================
@@ -14,29 +14,29 @@ import type {
 // =============================================================================
 
 /**
- * Creates a primitive registry from a definitions object.
+ * Creates a job registry from a definitions object.
  *
  * The registry organizes definitions by type for efficient lookup.
  *
  * @example
  * ```ts
- * const registry = createPrimitiveRegistry({
+ * const registry = createJobRegistry({
  *   tokenRefresher: Continuous.make({ ... }),
- *   webhookBuffer: Buffer.make({ ... }),
- *   emailQueue: Queue.make({ ... }),
+ *   webhookDebounce: Debounce.make({ ... }),
+ *   emailWorkerPool: WorkerPool.make({ ... }),
  * });
  *
  * // Lookup by type and name
  * const def = registry.continuous.get("tokenRefresher");
  * ```
  */
-export function createPrimitiveRegistry<
+export function createJobRegistry<
   T extends Record<string, AnyUnregisteredDefinition>,
->(definitions: T): PrimitiveRegistry {
-  const registry: PrimitiveRegistry = {
+>(definitions: T): JobRegistry {
+  const registry: JobRegistry = {
     continuous: new Map<string, ContinuousDefinition<any, any, any>>(),
-    buffer: new Map<string, BufferDefinition<any, any, any, any>>(),
-    queue: new Map<string, QueueDefinition<any, any, any>>(),
+    debounce: new Map<string, DebounceDefinition<any, any, any, any>>(),
+    workerPool: new Map<string, WorkerPoolDefinition<any, any, any>>(),
   };
 
   for (const [name, def] of Object.entries(definitions)) {
@@ -50,14 +50,14 @@ export function createPrimitiveRegistry<
           withName as ContinuousDefinition<any, any, any>
         );
         break;
-      case "BufferDefinition":
-        registry.buffer.set(
+      case "DebounceDefinition":
+        registry.debounce.set(
           name,
-          withName as BufferDefinition<any, any, any, any>
+          withName as DebounceDefinition<any, any, any, any>
         );
         break;
-      case "QueueDefinition":
-        registry.queue.set(name, withName as QueueDefinition<any, any, any>);
+      case "WorkerPoolDefinition":
+        registry.workerPool.set(name, withName as WorkerPoolDefinition<any, any, any>);
         break;
     }
   }
@@ -74,64 +74,64 @@ export function createPrimitiveRegistry<
  * Returns undefined if not found.
  */
 export function getContinuousDefinition(
-  registry: PrimitiveRegistry,
+  registry: JobRegistry,
   name: string
 ): ContinuousDefinition<any, any, any> | undefined {
   return registry.continuous.get(name);
 }
 
 /**
- * Get a buffer definition by name.
+ * Get a debounce definition by name.
  * Returns undefined if not found.
  */
-export function getBufferDefinition(
-  registry: PrimitiveRegistry,
+export function getDebounceDefinition(
+  registry: JobRegistry,
   name: string
-): BufferDefinition<any, any, any, any> | undefined {
-  return registry.buffer.get(name);
+): DebounceDefinition<any, any, any, any> | undefined {
+  return registry.debounce.get(name);
 }
 
 /**
- * Get a queue definition by name.
+ * Get a workerPool definition by name.
  * Returns undefined if not found.
  */
-export function getQueueDefinition(
-  registry: PrimitiveRegistry,
+export function getWorkerPoolDefinition(
+  registry: JobRegistry,
   name: string
-): QueueDefinition<any, any, any> | undefined {
-  return registry.queue.get(name);
+): WorkerPoolDefinition<any, any, any> | undefined {
+  return registry.workerPool.get(name);
 }
 
 /**
- * Get any primitive definition by type and name.
+ * Get any job definition by type and name.
  * Returns undefined if not found.
  */
-export function getPrimitiveDefinition(
-  registry: PrimitiveRegistry,
-  type: "continuous" | "buffer" | "queue",
+export function getJobDefinition(
+  registry: JobRegistry,
+  type: "continuous" | "debounce" | "workerPool",
   name: string
-): AnyPrimitiveDefinition | undefined {
+): AnyJobDefinition | undefined {
   switch (type) {
     case "continuous":
       return registry.continuous.get(name);
-    case "buffer":
-      return registry.buffer.get(name);
-    case "queue":
-      return registry.queue.get(name);
+    case "debounce":
+      return registry.debounce.get(name);
+    case "workerPool":
+      return registry.workerPool.get(name);
   }
 }
 
 /**
- * Get all primitive names in the registry.
+ * Get all job names in the registry.
  */
-export function getAllPrimitiveNames(registry: PrimitiveRegistry): {
+export function getAllJobNames(registry: JobRegistry): {
   continuous: string[];
-  buffer: string[];
-  queue: string[];
+  debounce: string[];
+  workerPool: string[];
 } {
   return {
     continuous: Array.from(registry.continuous.keys()),
-    buffer: Array.from(registry.buffer.keys()),
-    queue: Array.from(registry.queue.keys()),
+    debounce: Array.from(registry.debounce.keys()),
+    workerPool: Array.from(registry.workerPool.keys()),
   };
 }

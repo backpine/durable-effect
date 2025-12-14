@@ -4,11 +4,11 @@
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "Workflows" | "Primitives";
+		durableNamespaces: "Workflows" | "Jobs";
 	}
 	interface Env {
 		WORKFLOWS: DurableObjectNamespace<import("./src/index").Workflows>;
-		PRIMITIVES: DurableObjectNamespace<import("./src/index").Primitives>;
+		JOBS: DurableObjectNamespace<import("./src/index").Jobs>;
 	}
 }
 interface Env extends Cloudflare.Env {}
@@ -88,7 +88,7 @@ declare class DOMException extends Error {
 type WorkerGlobalScopeEventMap = {
     fetch: FetchEvent;
     scheduled: ScheduledEvent;
-    queue: QueueEvent;
+    workerPool: WorkerPoolEvent;
     unhandledrejection: PromiseRejectionEvent;
     rejectionhandled: PromiseRejectionEvent;
 };
@@ -213,7 +213,7 @@ interface Console {
     warn(...data: any[]): void;
 }
 declare const console: Console;
-type BufferSource = ArrayBufferView | ArrayBuffer;
+type DebounceSource = ArrayDebounceView | ArrayDebounce;
 type TypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array;
 declare namespace WebAssembly {
     class CompileError extends Error {
@@ -248,7 +248,7 @@ declare namespace WebAssembly {
     }
     class Memory {
         constructor(descriptor: MemoryDescriptor);
-        readonly buffer: ArrayBuffer;
+        readonly debounce: ArrayDebounce;
         grow(delta: number): number;
     }
     type ImportExportKind = "function" | "global" | "memory" | "table";
@@ -262,7 +262,7 @@ declare namespace WebAssembly {
         name: string;
     }
     abstract class Module {
-        static customSections(module: Module, sectionName: string): ArrayBuffer[];
+        static customSections(module: Module, sectionName: string): ArrayDebounce[];
         static exports(module: Module): ModuleExportDescriptor[];
         static imports(module: Module): ModuleImportDescriptor[];
     }
@@ -280,7 +280,7 @@ declare namespace WebAssembly {
         set(index: number, value?: any): void;
     }
     function instantiate(module: Module, imports?: Imports): Promise<Instance>;
-    function validate(bytes: BufferSource): boolean;
+    function validate(bytes: DebounceSource): boolean;
 }
 /**
  * The **`ServiceWorkerGlobalScope`** interface of the Service Worker API represents the global execution context of a service worker.
@@ -299,7 +299,7 @@ interface ServiceWorkerGlobalScope extends WorkerGlobalScope {
     setInterval(callback: (...args: any[]) => void, msDelay?: number): number;
     setInterval<Args extends any[]>(callback: (...args: Args) => void, msDelay?: number, ...args: Args): number;
     clearInterval(timeoutId: number | null): void;
-    queueMicrotask(task: Function): void;
+    workerPoolMicrotask(task: Function): void;
     structuredClone<T>(value: T, options?: StructuredSerializeOptions): T;
     reportError(error: any): void;
     fetch(input: RequestInfo | URL, init?: RequestInit<RequestInitCfProperties>): Promise<Response>;
@@ -393,8 +393,8 @@ declare function setInterval(callback: (...args: any[]) => void, msDelay?: numbe
 declare function setInterval<Args extends any[]>(callback: (...args: Args) => void, msDelay?: number, ...args: Args): number;
 /* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/clearInterval) */
 declare function clearInterval(timeoutId: number | null): void;
-/* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/queueMicrotask) */
-declare function queueMicrotask(task: Function): void;
+/* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/workerPoolMicrotask) */
+declare function workerPoolMicrotask(task: Function): void;
 /* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/structuredClone) */
 declare function structuredClone<T>(value: T, options?: StructuredSerializeOptions): T;
 /* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/reportError) */
@@ -441,9 +441,9 @@ type ExportedHandlerTailHandler<Env = unknown> = (events: TraceItem[], env: Env,
 type ExportedHandlerTraceHandler<Env = unknown> = (traces: TraceItem[], env: Env, ctx: ExecutionContext) => void | Promise<void>;
 type ExportedHandlerTailStreamHandler<Env = unknown> = (event: TailStream.TailEvent<TailStream.Onset>, env: Env, ctx: ExecutionContext) => TailStream.TailEventHandlerType | Promise<TailStream.TailEventHandlerType>;
 type ExportedHandlerScheduledHandler<Env = unknown> = (controller: ScheduledController, env: Env, ctx: ExecutionContext) => void | Promise<void>;
-type ExportedHandlerQueueHandler<Env = unknown, Message = unknown> = (batch: MessageBatch<Message>, env: Env, ctx: ExecutionContext) => void | Promise<void>;
+type ExportedHandlerWorkerPoolHandler<Env = unknown, Message = unknown> = (batch: MessageBatch<Message>, env: Env, ctx: ExecutionContext) => void | Promise<void>;
 type ExportedHandlerTestHandler<Env = unknown> = (controller: TestController, env: Env, ctx: ExecutionContext) => void | Promise<void>;
-interface ExportedHandler<Env = unknown, QueueHandlerMessage = unknown, CfHostMetadata = unknown> {
+interface ExportedHandler<Env = unknown, WorkerPoolHandlerMessage = unknown, CfHostMetadata = unknown> {
     fetch?: ExportedHandlerFetchHandler<Env, CfHostMetadata>;
     tail?: ExportedHandlerTailHandler<Env>;
     trace?: ExportedHandlerTraceHandler<Env>;
@@ -451,7 +451,7 @@ interface ExportedHandler<Env = unknown, QueueHandlerMessage = unknown, CfHostMe
     scheduled?: ExportedHandlerScheduledHandler<Env>;
     test?: ExportedHandlerTestHandler<Env>;
     email?: EmailExportedHandler<Env>;
-    queue?: ExportedHandlerQueueHandler<Env, QueueHandlerMessage>;
+    workerPool?: ExportedHandlerWorkerPoolHandler<Env, WorkerPoolHandlerMessage>;
 }
 interface StructuredSerializeOptions {
     transfer?: any[];
@@ -473,7 +473,7 @@ interface Cloudflare {
 interface DurableObject {
     fetch(request: Request): Response | Promise<Response>;
     alarm?(alarmInfo?: AlarmInvocationInfo): void | Promise<void>;
-    webSocketMessage?(ws: WebSocket, message: string | ArrayBuffer): void | Promise<void>;
+    webSocketMessage?(ws: WebSocket, message: string | ArrayDebounce): void | Promise<void>;
     webSocketClose?(ws: WebSocket, code: number, reason: string, wasClean: boolean): void | Promise<void>;
     webSocketError?(ws: WebSocket, error: unknown): void | Promise<void>;
 }
@@ -591,9 +591,9 @@ interface AnalyticsEngineDataset {
     writeDataPoint(event?: AnalyticsEngineDataPoint): void;
 }
 interface AnalyticsEngineDataPoint {
-    indexes?: ((ArrayBuffer | string) | null)[];
+    indexes?: ((ArrayDebounce | string) | null)[];
     doubles?: number[];
-    blobs?: ((ArrayBuffer | string) | null)[];
+    blobs?: ((ArrayDebounce | string) | null)[];
 }
 /**
  * The **`Event`** interface represents an event which takes place on an `EventTarget`.
@@ -879,7 +879,7 @@ interface CustomEventCustomEventInit {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob)
  */
 declare class Blob {
-    constructor(type?: ((ArrayBuffer | ArrayBufferView) | string | Blob)[], options?: BlobOptions);
+    constructor(type?: ((ArrayDebounce | ArrayDebounceView) | string | Blob)[], options?: BlobOptions);
     /**
      * The **`size`** read-only property of the Blob interface returns the size of the Blob or File in bytes.
      *
@@ -899,11 +899,11 @@ declare class Blob {
      */
     slice(start?: number, end?: number, type?: string): Blob;
     /**
-     * The **`arrayBuffer()`** method of the Blob interface returns a Promise that resolves with the contents of the blob as binary data contained in an ArrayBuffer.
+     * The **`arrayDebounce()`** method of the Blob interface returns a Promise that resolves with the contents of the blob as binary data contained in an ArrayDebounce.
      *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/arrayBuffer)
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/arrayDebounce)
      */
-    arrayBuffer(): Promise<ArrayBuffer>;
+    arrayDebounce(): Promise<ArrayDebounce>;
     /**
      * The **`bytes()`** method of the Blob interface returns a Promise that resolves with a Uint8Array containing the contents of the blob as an array of bytes.
      *
@@ -932,7 +932,7 @@ interface BlobOptions {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/File)
  */
 declare class File extends Blob {
-    constructor(bits: ((ArrayBuffer | ArrayBufferView) | string | Blob)[] | undefined, name: string, options?: FileOptions);
+    constructor(bits: ((ArrayDebounce | ArrayDebounceView) | string | Blob)[] | undefined, name: string, options?: FileOptions);
     /**
      * The **`name`** read-only property of the File interface returns the name of the file represented by a File object.
      *
@@ -1001,7 +1001,7 @@ declare abstract class Crypto {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Crypto/getRandomValues)
      */
-    getRandomValues<T extends Int8Array | Uint8Array | Int16Array | Uint16Array | Int32Array | Uint32Array | BigInt64Array | BigUint64Array>(buffer: T): T;
+    getRandomValues<T extends Int8Array | Uint8Array | Int16Array | Uint16Array | Int32Array | Uint32Array | BigInt64Array | BigUint64Array>(debounce: T): T;
     /**
      * The **`randomUUID()`** method of the Crypto interface is used to generate a v4 UUID using a cryptographically secure random number generator.
      * Available only in secure contexts.
@@ -1023,31 +1023,31 @@ declare abstract class SubtleCrypto {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/encrypt)
      */
-    encrypt(algorithm: string | SubtleCryptoEncryptAlgorithm, key: CryptoKey, plainText: ArrayBuffer | ArrayBufferView): Promise<ArrayBuffer>;
+    encrypt(algorithm: string | SubtleCryptoEncryptAlgorithm, key: CryptoKey, plainText: ArrayDebounce | ArrayDebounceView): Promise<ArrayDebounce>;
     /**
      * The **`decrypt()`** method of the SubtleCrypto interface decrypts some encrypted data.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/decrypt)
      */
-    decrypt(algorithm: string | SubtleCryptoEncryptAlgorithm, key: CryptoKey, cipherText: ArrayBuffer | ArrayBufferView): Promise<ArrayBuffer>;
+    decrypt(algorithm: string | SubtleCryptoEncryptAlgorithm, key: CryptoKey, cipherText: ArrayDebounce | ArrayDebounceView): Promise<ArrayDebounce>;
     /**
      * The **`sign()`** method of the SubtleCrypto interface generates a digital signature.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/sign)
      */
-    sign(algorithm: string | SubtleCryptoSignAlgorithm, key: CryptoKey, data: ArrayBuffer | ArrayBufferView): Promise<ArrayBuffer>;
+    sign(algorithm: string | SubtleCryptoSignAlgorithm, key: CryptoKey, data: ArrayDebounce | ArrayDebounceView): Promise<ArrayDebounce>;
     /**
      * The **`verify()`** method of the SubtleCrypto interface verifies a digital signature.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/verify)
      */
-    verify(algorithm: string | SubtleCryptoSignAlgorithm, key: CryptoKey, signature: ArrayBuffer | ArrayBufferView, data: ArrayBuffer | ArrayBufferView): Promise<boolean>;
+    verify(algorithm: string | SubtleCryptoSignAlgorithm, key: CryptoKey, signature: ArrayDebounce | ArrayDebounceView, data: ArrayDebounce | ArrayDebounceView): Promise<boolean>;
     /**
      * The **`digest()`** method of the SubtleCrypto interface generates a _digest_ of the given data, using the specified hash function.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/digest)
      */
-    digest(algorithm: string | SubtleCryptoHashAlgorithm, data: ArrayBuffer | ArrayBufferView): Promise<ArrayBuffer>;
+    digest(algorithm: string | SubtleCryptoHashAlgorithm, data: ArrayDebounce | ArrayDebounceView): Promise<ArrayDebounce>;
     /**
      * The **`generateKey()`** method of the SubtleCrypto interface is used to generate a new key (for symmetric algorithms) or key pair (for public-key algorithms).
      *
@@ -1065,32 +1065,32 @@ declare abstract class SubtleCrypto {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/deriveBits)
      */
-    deriveBits(algorithm: string | SubtleCryptoDeriveKeyAlgorithm, baseKey: CryptoKey, length?: number | null): Promise<ArrayBuffer>;
+    deriveBits(algorithm: string | SubtleCryptoDeriveKeyAlgorithm, baseKey: CryptoKey, length?: number | null): Promise<ArrayDebounce>;
     /**
      * The **`importKey()`** method of the SubtleCrypto interface imports a key: that is, it takes as input a key in an external, portable format and gives you a CryptoKey object that you can use in the Web Crypto API.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/importKey)
      */
-    importKey(format: string, keyData: (ArrayBuffer | ArrayBufferView) | JsonWebKey, algorithm: string | SubtleCryptoImportKeyAlgorithm, extractable: boolean, keyUsages: string[]): Promise<CryptoKey>;
+    importKey(format: string, keyData: (ArrayDebounce | ArrayDebounceView) | JsonWebKey, algorithm: string | SubtleCryptoImportKeyAlgorithm, extractable: boolean, keyUsages: string[]): Promise<CryptoKey>;
     /**
      * The **`exportKey()`** method of the SubtleCrypto interface exports a key: that is, it takes as input a CryptoKey object and gives you the key in an external, portable format.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/exportKey)
      */
-    exportKey(format: string, key: CryptoKey): Promise<ArrayBuffer | JsonWebKey>;
+    exportKey(format: string, key: CryptoKey): Promise<ArrayDebounce | JsonWebKey>;
     /**
      * The **`wrapKey()`** method of the SubtleCrypto interface 'wraps' a key.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/wrapKey)
      */
-    wrapKey(format: string, key: CryptoKey, wrappingKey: CryptoKey, wrapAlgorithm: string | SubtleCryptoEncryptAlgorithm): Promise<ArrayBuffer>;
+    wrapKey(format: string, key: CryptoKey, wrappingKey: CryptoKey, wrapAlgorithm: string | SubtleCryptoEncryptAlgorithm): Promise<ArrayDebounce>;
     /**
      * The **`unwrapKey()`** method of the SubtleCrypto interface 'unwraps' a key.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/unwrapKey)
      */
-    unwrapKey(format: string, wrappedKey: ArrayBuffer | ArrayBufferView, unwrappingKey: CryptoKey, unwrapAlgorithm: string | SubtleCryptoEncryptAlgorithm, unwrappedKeyAlgorithm: string | SubtleCryptoImportKeyAlgorithm, extractable: boolean, keyUsages: string[]): Promise<CryptoKey>;
-    timingSafeEqual(a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView): boolean;
+    unwrapKey(format: string, wrappedKey: ArrayDebounce | ArrayDebounceView, unwrappingKey: CryptoKey, unwrapAlgorithm: string | SubtleCryptoEncryptAlgorithm, unwrappedKeyAlgorithm: string | SubtleCryptoImportKeyAlgorithm, extractable: boolean, keyUsages: string[]): Promise<CryptoKey>;
+    timingSafeEqual(a: ArrayDebounce | ArrayDebounceView, b: ArrayDebounce | ArrayDebounceView): boolean;
 }
 /**
  * The **`CryptoKey`** interface of the Web Crypto API represents a cryptographic key obtained from one of the SubtleCrypto methods SubtleCrypto.generateKey, SubtleCrypto.deriveKey, SubtleCrypto.importKey, or SubtleCrypto.unwrapKey.
@@ -1155,26 +1155,26 @@ interface RsaOtherPrimesInfo {
 }
 interface SubtleCryptoDeriveKeyAlgorithm {
     name: string;
-    salt?: (ArrayBuffer | ArrayBufferView);
+    salt?: (ArrayDebounce | ArrayDebounceView);
     iterations?: number;
     hash?: (string | SubtleCryptoHashAlgorithm);
     $public?: CryptoKey;
-    info?: (ArrayBuffer | ArrayBufferView);
+    info?: (ArrayDebounce | ArrayDebounceView);
 }
 interface SubtleCryptoEncryptAlgorithm {
     name: string;
-    iv?: (ArrayBuffer | ArrayBufferView);
-    additionalData?: (ArrayBuffer | ArrayBufferView);
+    iv?: (ArrayDebounce | ArrayDebounceView);
+    additionalData?: (ArrayDebounce | ArrayDebounceView);
     tagLength?: number;
-    counter?: (ArrayBuffer | ArrayBufferView);
+    counter?: (ArrayDebounce | ArrayDebounceView);
     length?: number;
-    label?: (ArrayBuffer | ArrayBufferView);
+    label?: (ArrayDebounce | ArrayDebounceView);
 }
 interface SubtleCryptoGenerateKeyAlgorithm {
     name: string;
     hash?: (string | SubtleCryptoHashAlgorithm);
     modulusLength?: number;
-    publicExponent?: (ArrayBuffer | ArrayBufferView);
+    publicExponent?: (ArrayDebounce | ArrayDebounceView);
     length?: number;
     namedCurve?: string;
 }
@@ -1209,7 +1209,7 @@ interface CryptoKeyHmacKeyAlgorithm {
 interface CryptoKeyRsaKeyAlgorithm {
     name: string;
     modulusLength: number;
-    publicExponent: ArrayBuffer | ArrayBufferView;
+    publicExponent: ArrayDebounce | ArrayDebounceView;
     hash?: CryptoKeyKeyAlgorithm;
 }
 interface CryptoKeyEllipticKeyAlgorithm {
@@ -1222,9 +1222,9 @@ interface CryptoKeyArbitraryKeyAlgorithm {
     namedCurve?: string;
     length?: number;
 }
-declare class DigestStream extends WritableStream<ArrayBuffer | ArrayBufferView> {
+declare class DigestStream extends WritableStream<ArrayDebounce | ArrayDebounceView> {
     constructor(algorithm: string | SubtleCryptoHashAlgorithm);
-    readonly digest: Promise<ArrayBuffer>;
+    readonly digest: Promise<ArrayDebounce>;
     get bytesWritten(): number | bigint;
 }
 /**
@@ -1235,11 +1235,11 @@ declare class DigestStream extends WritableStream<ArrayBuffer | ArrayBufferView>
 declare class TextDecoder {
     constructor(label?: string, options?: TextDecoderConstructorOptions);
     /**
-     * The **`TextDecoder.decode()`** method returns a string containing text decoded from the buffer passed as a parameter.
+     * The **`TextDecoder.decode()`** method returns a string containing text decoded from the debounce passed as a parameter.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoder/decode)
      */
-    decode(input?: (ArrayBuffer | ArrayBufferView), options?: TextDecoderDecodeOptions): string;
+    decode(input?: (ArrayDebounce | ArrayDebounceView), options?: TextDecoderDecodeOptions): string;
     get encoding(): string;
     get fatal(): boolean;
     get ignoreBOM(): boolean;
@@ -1262,7 +1262,7 @@ declare class TextEncoder {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoder/encodeInto)
      */
-    encodeInto(input: string, buffer: Uint8Array): TextEncoderEncodeIntoResult;
+    encodeInto(input: string, debounce: Uint8Array): TextEncoderEncodeIntoResult;
     get encoding(): string;
 }
 interface TextDecoderConstructorOptions {
@@ -1360,7 +1360,7 @@ declare class MessageEvent extends Event {
     readonly ports: MessagePort[];
 }
 interface MessageEventInit {
-    data: ArrayBuffer | string;
+    data: ArrayDebounce | string;
 }
 /**
  * The **`PromiseRejectionEvent`** interface represents events which are sent to the global script context when JavaScript Promises are rejected.
@@ -1601,14 +1601,14 @@ declare class Headers {
         value: string
     ]>;
 }
-type BodyInit = ReadableStream<Uint8Array> | string | ArrayBuffer | ArrayBufferView | Blob | URLSearchParams | FormData;
+type BodyInit = ReadableStream<Uint8Array> | string | ArrayDebounce | ArrayDebounceView | Blob | URLSearchParams | FormData;
 declare abstract class Body {
     /* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/body) */
     get body(): ReadableStream | null;
     /* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/bodyUsed) */
     get bodyUsed(): boolean;
-    /* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/arrayBuffer) */
-    arrayBuffer(): Promise<ArrayBuffer>;
+    /* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/arrayDebounce) */
+    arrayDebounce(): Promise<ArrayDebounce>;
     /* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/bytes) */
     bytes(): Promise<Uint8Array>;
     /* [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/text) */
@@ -1813,11 +1813,11 @@ interface KVNamespace<Key extends string = string> {
     get(key: Key, options?: Partial<KVNamespaceGetOptions<undefined>>): Promise<string | null>;
     get(key: Key, type: "text"): Promise<string | null>;
     get<ExpectedValue = unknown>(key: Key, type: "json"): Promise<ExpectedValue | null>;
-    get(key: Key, type: "arrayBuffer"): Promise<ArrayBuffer | null>;
+    get(key: Key, type: "arrayDebounce"): Promise<ArrayDebounce | null>;
     get(key: Key, type: "stream"): Promise<ReadableStream | null>;
     get(key: Key, options?: KVNamespaceGetOptions<"text">): Promise<string | null>;
     get<ExpectedValue = unknown>(key: Key, options?: KVNamespaceGetOptions<"json">): Promise<ExpectedValue | null>;
-    get(key: Key, options?: KVNamespaceGetOptions<"arrayBuffer">): Promise<ArrayBuffer | null>;
+    get(key: Key, options?: KVNamespaceGetOptions<"arrayDebounce">): Promise<ArrayDebounce | null>;
     get(key: Key, options?: KVNamespaceGetOptions<"stream">): Promise<ReadableStream | null>;
     get(key: Array<Key>, type: "text"): Promise<Map<string, string | null>>;
     get<ExpectedValue = unknown>(key: Array<Key>, type: "json"): Promise<Map<string, ExpectedValue | null>>;
@@ -1825,15 +1825,15 @@ interface KVNamespace<Key extends string = string> {
     get(key: Array<Key>, options?: KVNamespaceGetOptions<"text">): Promise<Map<string, string | null>>;
     get<ExpectedValue = unknown>(key: Array<Key>, options?: KVNamespaceGetOptions<"json">): Promise<Map<string, ExpectedValue | null>>;
     list<Metadata = unknown>(options?: KVNamespaceListOptions): Promise<KVNamespaceListResult<Metadata, Key>>;
-    put(key: Key, value: string | ArrayBuffer | ArrayBufferView | ReadableStream, options?: KVNamespacePutOptions): Promise<void>;
+    put(key: Key, value: string | ArrayDebounce | ArrayDebounceView | ReadableStream, options?: KVNamespacePutOptions): Promise<void>;
     getWithMetadata<Metadata = unknown>(key: Key, options?: Partial<KVNamespaceGetOptions<undefined>>): Promise<KVNamespaceGetWithMetadataResult<string, Metadata>>;
     getWithMetadata<Metadata = unknown>(key: Key, type: "text"): Promise<KVNamespaceGetWithMetadataResult<string, Metadata>>;
     getWithMetadata<ExpectedValue = unknown, Metadata = unknown>(key: Key, type: "json"): Promise<KVNamespaceGetWithMetadataResult<ExpectedValue, Metadata>>;
-    getWithMetadata<Metadata = unknown>(key: Key, type: "arrayBuffer"): Promise<KVNamespaceGetWithMetadataResult<ArrayBuffer, Metadata>>;
+    getWithMetadata<Metadata = unknown>(key: Key, type: "arrayDebounce"): Promise<KVNamespaceGetWithMetadataResult<ArrayDebounce, Metadata>>;
     getWithMetadata<Metadata = unknown>(key: Key, type: "stream"): Promise<KVNamespaceGetWithMetadataResult<ReadableStream, Metadata>>;
     getWithMetadata<Metadata = unknown>(key: Key, options: KVNamespaceGetOptions<"text">): Promise<KVNamespaceGetWithMetadataResult<string, Metadata>>;
     getWithMetadata<ExpectedValue = unknown, Metadata = unknown>(key: Key, options: KVNamespaceGetOptions<"json">): Promise<KVNamespaceGetWithMetadataResult<ExpectedValue, Metadata>>;
-    getWithMetadata<Metadata = unknown>(key: Key, options: KVNamespaceGetOptions<"arrayBuffer">): Promise<KVNamespaceGetWithMetadataResult<ArrayBuffer, Metadata>>;
+    getWithMetadata<Metadata = unknown>(key: Key, options: KVNamespaceGetOptions<"arrayDebounce">): Promise<KVNamespaceGetWithMetadataResult<ArrayDebounce, Metadata>>;
     getWithMetadata<Metadata = unknown>(key: Key, options: KVNamespaceGetOptions<"stream">): Promise<KVNamespaceGetWithMetadataResult<ReadableStream, Metadata>>;
     getWithMetadata<Metadata = unknown>(key: Array<Key>, type: "text"): Promise<Map<string, KVNamespaceGetWithMetadataResult<string, Metadata>>>;
     getWithMetadata<ExpectedValue = unknown, Metadata = unknown>(key: Array<Key>, type: "json"): Promise<Map<string, KVNamespaceGetWithMetadataResult<ExpectedValue, Metadata>>>;
@@ -1861,24 +1861,24 @@ interface KVNamespaceGetWithMetadataResult<Value, Metadata> {
     metadata: Metadata | null;
     cacheStatus: string | null;
 }
-type QueueContentType = "text" | "bytes" | "json" | "v8";
-interface Queue<Body = unknown> {
-    send(message: Body, options?: QueueSendOptions): Promise<void>;
-    sendBatch(messages: Iterable<MessageSendRequest<Body>>, options?: QueueSendBatchOptions): Promise<void>;
+type WorkerPoolContentType = "text" | "bytes" | "json" | "v8";
+interface WorkerPool<Body = unknown> {
+    send(message: Body, options?: WorkerPoolSendOptions): Promise<void>;
+    sendBatch(messages: Iterable<MessageSendRequest<Body>>, options?: WorkerPoolSendBatchOptions): Promise<void>;
 }
-interface QueueSendOptions {
-    contentType?: QueueContentType;
+interface WorkerPoolSendOptions {
+    contentType?: WorkerPoolContentType;
     delaySeconds?: number;
 }
-interface QueueSendBatchOptions {
+interface WorkerPoolSendBatchOptions {
     delaySeconds?: number;
 }
 interface MessageSendRequest<Body = unknown> {
     body: Body;
-    contentType?: QueueContentType;
+    contentType?: WorkerPoolContentType;
     delaySeconds?: number;
 }
-interface QueueRetryOptions {
+interface WorkerPoolRetryOptions {
     delaySeconds?: number;
 }
 interface Message<Body = unknown> {
@@ -1886,19 +1886,19 @@ interface Message<Body = unknown> {
     readonly timestamp: Date;
     readonly body: Body;
     readonly attempts: number;
-    retry(options?: QueueRetryOptions): void;
+    retry(options?: WorkerPoolRetryOptions): void;
     ack(): void;
 }
-interface QueueEvent<Body = unknown> extends ExtendableEvent {
+interface WorkerPoolEvent<Body = unknown> extends ExtendableEvent {
     readonly messages: readonly Message<Body>[];
-    readonly queue: string;
-    retryAll(options?: QueueRetryOptions): void;
+    readonly workerPool: string;
+    retryAll(options?: WorkerPoolRetryOptions): void;
     ackAll(): void;
 }
 interface MessageBatch<Body = unknown> {
     readonly messages: readonly Message<Body>[];
-    readonly queue: string;
-    retryAll(options?: QueueRetryOptions): void;
+    readonly workerPool: string;
+    retryAll(options?: WorkerPoolRetryOptions): void;
     ackAll(): void;
 }
 interface R2Error extends Error {
@@ -1922,10 +1922,10 @@ declare abstract class R2Bucket {
         onlyIf: R2Conditional | Headers;
     }): Promise<R2ObjectBody | R2Object | null>;
     get(key: string, options?: R2GetOptions): Promise<R2ObjectBody | null>;
-    put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null | Blob, options?: R2PutOptions & {
+    put(key: string, value: ReadableStream | ArrayDebounce | ArrayDebounceView | string | null | Blob, options?: R2PutOptions & {
         onlyIf: R2Conditional | Headers;
     }): Promise<R2Object | null>;
-    put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null | Blob, options?: R2PutOptions): Promise<R2Object>;
+    put(key: string, value: ReadableStream | ArrayDebounce | ArrayDebounceView | string | null | Blob, options?: R2PutOptions): Promise<R2Object>;
     createMultipartUpload(key: string, options?: R2MultipartOptions): Promise<R2MultipartUpload>;
     resumeMultipartUpload(key: string, uploadId: string): R2MultipartUpload;
     delete(keys: string | string[]): Promise<void>;
@@ -1934,7 +1934,7 @@ declare abstract class R2Bucket {
 interface R2MultipartUpload {
     readonly key: string;
     readonly uploadId: string;
-    uploadPart(partNumber: number, value: ReadableStream | (ArrayBuffer | ArrayBufferView) | string | Blob, options?: R2UploadPartOptions): Promise<R2UploadedPart>;
+    uploadPart(partNumber: number, value: ReadableStream | (ArrayDebounce | ArrayDebounceView) | string | Blob, options?: R2UploadPartOptions): Promise<R2UploadedPart>;
     abort(): Promise<void>;
     complete(uploadedParts: R2UploadedPart[]): Promise<R2Object>;
 }
@@ -1960,7 +1960,7 @@ declare abstract class R2Object {
 interface R2ObjectBody extends R2Object {
     get body(): ReadableStream;
     get bodyUsed(): boolean;
-    arrayBuffer(): Promise<ArrayBuffer>;
+    arrayDebounce(): Promise<ArrayDebounce>;
     bytes(): Promise<Uint8Array>;
     text(): Promise<string>;
     json<T>(): Promise<T>;
@@ -1985,32 +1985,32 @@ interface R2Conditional {
 interface R2GetOptions {
     onlyIf?: (R2Conditional | Headers);
     range?: (R2Range | Headers);
-    ssecKey?: (ArrayBuffer | string);
+    ssecKey?: (ArrayDebounce | string);
 }
 interface R2PutOptions {
     onlyIf?: (R2Conditional | Headers);
     httpMetadata?: (R2HTTPMetadata | Headers);
     customMetadata?: Record<string, string>;
-    md5?: ((ArrayBuffer | ArrayBufferView) | string);
-    sha1?: ((ArrayBuffer | ArrayBufferView) | string);
-    sha256?: ((ArrayBuffer | ArrayBufferView) | string);
-    sha384?: ((ArrayBuffer | ArrayBufferView) | string);
-    sha512?: ((ArrayBuffer | ArrayBufferView) | string);
+    md5?: ((ArrayDebounce | ArrayDebounceView) | string);
+    sha1?: ((ArrayDebounce | ArrayDebounceView) | string);
+    sha256?: ((ArrayDebounce | ArrayDebounceView) | string);
+    sha384?: ((ArrayDebounce | ArrayDebounceView) | string);
+    sha512?: ((ArrayDebounce | ArrayDebounceView) | string);
     storageClass?: string;
-    ssecKey?: (ArrayBuffer | string);
+    ssecKey?: (ArrayDebounce | string);
 }
 interface R2MultipartOptions {
     httpMetadata?: (R2HTTPMetadata | Headers);
     customMetadata?: Record<string, string>;
     storageClass?: string;
-    ssecKey?: (ArrayBuffer | string);
+    ssecKey?: (ArrayDebounce | string);
 }
 interface R2Checksums {
-    readonly md5?: ArrayBuffer;
-    readonly sha1?: ArrayBuffer;
-    readonly sha256?: ArrayBuffer;
-    readonly sha384?: ArrayBuffer;
-    readonly sha512?: ArrayBuffer;
+    readonly md5?: ArrayDebounce;
+    readonly sha1?: ArrayDebounce;
+    readonly sha256?: ArrayDebounce;
+    readonly sha384?: ArrayDebounce;
+    readonly sha512?: ArrayDebounce;
     toJSON(): R2StringChecksums;
 }
 interface R2StringChecksums {
@@ -2038,7 +2038,7 @@ type R2Objects = {
     truncated: false;
 });
 interface R2UploadPartOptions {
-    ssecKey?: (ArrayBuffer | string);
+    ssecKey?: (ArrayDebounce | string);
 }
 declare abstract class ScheduledEvent extends ExtendableEvent {
     readonly scheduledTime: number;
@@ -2188,7 +2188,7 @@ declare class ReadableStreamDefaultReader<R = any> {
     get closed(): Promise<void>;
     cancel(reason?: any): Promise<void>;
     /**
-     * The **`read()`** method of the ReadableStreamDefaultReader interface returns a Promise providing access to the next chunk in the stream's internal queue.
+     * The **`read()`** method of the ReadableStreamDefaultReader interface returns a Promise providing access to the next chunk in the stream's internal workerPool.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/read)
      */
@@ -2210,18 +2210,18 @@ declare class ReadableStreamBYOBReader {
     get closed(): Promise<void>;
     cancel(reason?: any): Promise<void>;
     /**
-     * The **`read()`** method of the ReadableStreamBYOBReader interface is used to read data into a view on a user-supplied buffer from an associated readable byte stream.
+     * The **`read()`** method of the ReadableStreamBYOBReader interface is used to read data into a view on a user-supplied debounce from an associated readable byte stream.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/read)
      */
-    read<T extends ArrayBufferView>(view: T): Promise<ReadableStreamReadResult<T>>;
+    read<T extends ArrayDebounceView>(view: T): Promise<ReadableStreamReadResult<T>>;
     /**
      * The **`releaseLock()`** method of the ReadableStreamBYOBReader interface releases the reader's lock on the stream.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock)
      */
     releaseLock(): void;
-    readAtLeast<T extends ArrayBufferView>(minElements: number, view: T): Promise<ReadableStreamReadResult<T>>;
+    readAtLeast<T extends ArrayDebounceView>(minElements: number, view: T): Promise<ReadableStreamReadResult<T>>;
 }
 interface ReadableStreamBYOBReaderReadableStreamBYOBReaderReadOptions {
     min?: number;
@@ -2230,12 +2230,12 @@ interface ReadableStreamGetReaderOptions {
     /**
      * Creates a ReadableStreamBYOBReader and locks the stream to the new reader.
      *
-     * This call behaves the same way as the no-argument variant, except that it only works on readable byte streams, i.e. streams which were constructed specifically with the ability to handle "bring your own buffer" reading. The returned BYOB reader provides the ability to directly read individual chunks from the stream via its read() method, into developer-supplied buffers, allowing more precise control over allocation.
+     * This call behaves the same way as the no-argument variant, except that it only works on readable byte streams, i.e. streams which were constructed specifically with the ability to handle "bring your own debounce" reading. The returned BYOB reader provides the ability to directly read individual chunks from the stream via its read() method, into developer-supplied debounces, allowing more precise control over allocation.
      */
     mode: "byob";
 }
 /**
- * The **`ReadableStreamBYOBRequest`** interface of the Streams API represents a 'pull request' for data from an underlying source that will made as a zero-copy transfer to a consumer (bypassing the stream's internal queues).
+ * The **`ReadableStreamBYOBRequest`** interface of the Streams API represents a 'pull request' for data from an underlying source that will made as a zero-copy transfer to a consumer (bypassing the stream's internal workerPools).
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest)
  */
@@ -2257,17 +2257,17 @@ declare abstract class ReadableStreamBYOBRequest {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respondWithNewView)
      */
-    respondWithNewView(view: ArrayBuffer | ArrayBufferView): void;
+    respondWithNewView(view: ArrayDebounce | ArrayDebounceView): void;
     get atLeast(): number | null;
 }
 /**
- * The **`ReadableStreamDefaultController`** interface of the Streams API represents a controller allowing control of a ReadableStream's state and internal queue.
+ * The **`ReadableStreamDefaultController`** interface of the Streams API represents a controller allowing control of a ReadableStream's state and internal workerPool.
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController)
  */
 declare abstract class ReadableStreamDefaultController<R = any> {
     /**
-     * The **`desiredSize`** read-only property of the required to fill the stream's internal queue.
+     * The **`desiredSize`** read-only property of the required to fill the stream's internal workerPool.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/desiredSize)
      */
@@ -2279,11 +2279,11 @@ declare abstract class ReadableStreamDefaultController<R = any> {
      */
     close(): void;
     /**
-     * The **`enqueue()`** method of the ```js-nolint enqueue(chunk) ``` - `chunk` - : The chunk to enqueue.
+     * The **`enworkerPool()`** method of the ```js-nolint enworkerPool(chunk) ``` - `chunk` - : The chunk to enworkerPool.
      *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/enqueue)
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/enworkerPool)
      */
-    enqueue(chunk?: R): void;
+    enworkerPool(chunk?: R): void;
     /**
      * The **`error()`** method of the with the associated stream to error.
      *
@@ -2304,7 +2304,7 @@ declare abstract class ReadableByteStreamController {
      */
     get byobRequest(): ReadableStreamBYOBRequest | null;
     /**
-     * The **`desiredSize`** read-only property of the ReadableByteStreamController interface returns the number of bytes required to fill the stream's internal queue to its 'desired size'.
+     * The **`desiredSize`** read-only property of the ReadableByteStreamController interface returns the number of bytes required to fill the stream's internal workerPool to its 'desired size'.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/desiredSize)
      */
@@ -2316,11 +2316,11 @@ declare abstract class ReadableByteStreamController {
      */
     close(): void;
     /**
-     * The **`enqueue()`** method of the ReadableByteStreamController interface enqueues a given chunk on the associated readable byte stream (the chunk is copied into the stream's internal queues).
+     * The **`enworkerPool()`** method of the ReadableByteStreamController interface enworkerPools a given chunk on the associated readable byte stream (the chunk is copied into the stream's internal workerPools).
      *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/enqueue)
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/enworkerPool)
      */
-    enqueue(chunk: ArrayBuffer | ArrayBufferView): void;
+    enworkerPool(chunk: ArrayDebounce | ArrayDebounceView): void;
     /**
      * The **`error()`** method of the ReadableByteStreamController interface causes any future interactions with the associated stream to error with the specified reason.
      *
@@ -2354,17 +2354,17 @@ declare abstract class WritableStreamDefaultController {
  */
 declare abstract class TransformStreamDefaultController<O = any> {
     /**
-     * The **`desiredSize`** read-only property of the TransformStreamDefaultController interface returns the desired size to fill the queue of the associated ReadableStream.
+     * The **`desiredSize`** read-only property of the TransformStreamDefaultController interface returns the desired size to fill the workerPool of the associated ReadableStream.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/desiredSize)
      */
     get desiredSize(): number | null;
     /**
-     * The **`enqueue()`** method of the TransformStreamDefaultController interface enqueues the given chunk in the readable side of the stream.
+     * The **`enworkerPool()`** method of the TransformStreamDefaultController interface enworkerPools the given chunk in the readable side of the stream.
      *
-     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/enqueue)
+     * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/enworkerPool)
      */
-    enqueue(chunk?: O): void;
+    enworkerPool(chunk?: O): void;
     /**
      * The **`error()`** method of the TransformStreamDefaultController interface errors both sides of the stream.
      *
@@ -2401,7 +2401,7 @@ declare class WritableStream<W = any> {
      */
     get locked(): boolean;
     /**
-     * The **`abort()`** method of the WritableStream interface aborts the stream, signaling that the producer can no longer successfully write to the stream and it is to be immediately moved to an error state, with any queued writes discarded.
+     * The **`abort()`** method of the WritableStream interface aborts the stream, signaling that the producer can no longer successfully write to the stream and it is to be immediately moved to an error state, with any workerPoold writes discarded.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/abort)
      */
@@ -2433,19 +2433,19 @@ declare class WritableStreamDefaultWriter<W = any> {
      */
     get closed(): Promise<void>;
     /**
-     * The **`ready`** read-only property of the that resolves when the desired size of the stream's internal queue transitions from non-positive to positive, signaling that it is no longer applying backpressure.
+     * The **`ready`** read-only property of the that resolves when the desired size of the stream's internal workerPool transitions from non-positive to positive, signaling that it is no longer applying backpressure.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/ready)
      */
     get ready(): Promise<void>;
     /**
-     * The **`desiredSize`** read-only property of the to fill the stream's internal queue.
+     * The **`desiredSize`** read-only property of the to fill the stream's internal workerPool.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/desiredSize)
      */
     get desiredSize(): number | null;
     /**
-     * The **`abort()`** method of the the producer can no longer successfully write to the stream and it is to be immediately moved to an error state, with any queued writes discarded.
+     * The **`abort()`** method of the the producer can no longer successfully write to the stream and it is to be immediately moved to an error state, with any workerPoold writes discarded.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/abort)
      */
@@ -2492,7 +2492,7 @@ declare class TransformStream<I = any, O = any> {
 declare class FixedLengthStream extends IdentityTransformStream {
     constructor(expectedLength: number | bigint, queuingStrategy?: IdentityTransformStreamQueuingStrategy);
 }
-declare class IdentityTransformStream extends TransformStream<ArrayBuffer | ArrayBufferView, Uint8Array> {
+declare class IdentityTransformStream extends TransformStream<ArrayDebounce | ArrayDebounceView, Uint8Array> {
     constructor(queuingStrategy?: IdentityTransformStreamQueuingStrategy);
 }
 interface IdentityTransformStreamQueuingStrategy {
@@ -2506,7 +2506,7 @@ interface ReadableStreamValuesOptions {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CompressionStream)
  */
-declare class CompressionStream extends TransformStream<ArrayBuffer | ArrayBufferView, Uint8Array> {
+declare class CompressionStream extends TransformStream<ArrayDebounce | ArrayDebounceView, Uint8Array> {
     constructor(format: "gzip" | "deflate" | "deflate-raw");
 }
 /**
@@ -2514,7 +2514,7 @@ declare class CompressionStream extends TransformStream<ArrayBuffer | ArrayBuffe
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DecompressionStream)
  */
-declare class DecompressionStream extends TransformStream<ArrayBuffer | ArrayBufferView, Uint8Array> {
+declare class DecompressionStream extends TransformStream<ArrayDebounce | ArrayDebounceView, Uint8Array> {
     constructor(format: "gzip" | "deflate" | "deflate-raw");
 }
 /**
@@ -2531,7 +2531,7 @@ declare class TextEncoderStream extends TransformStream<string, Uint8Array> {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoderStream)
  */
-declare class TextDecoderStream extends TransformStream<ArrayBuffer | ArrayBufferView, string> {
+declare class TextDecoderStream extends TransformStream<ArrayDebounce | ArrayDebounceView, string> {
     constructor(label?: string, options?: TextDecoderStreamTextDecoderStreamInit);
     get encoding(): string;
     get fatal(): boolean;
@@ -2546,10 +2546,10 @@ interface TextDecoderStreamTextDecoderStreamInit {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy)
  */
-declare class ByteLengthQueuingStrategy implements QueuingStrategy<ArrayBufferView> {
+declare class ByteLengthQueuingStrategy implements QueuingStrategy<ArrayDebounceView> {
     constructor(init: QueuingStrategyInit);
     /**
-     * The read-only **`ByteLengthQueuingStrategy.highWaterMark`** property returns the total number of bytes that can be contained in the internal queue before backpressure is applied.
+     * The read-only **`ByteLengthQueuingStrategy.highWaterMark`** property returns the total number of bytes that can be contained in the internal workerPool before backpressure is applied.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/highWaterMark)
      */
@@ -2565,7 +2565,7 @@ declare class ByteLengthQueuingStrategy implements QueuingStrategy<ArrayBufferVi
 declare class CountQueuingStrategy implements QueuingStrategy {
     constructor(init: QueuingStrategyInit);
     /**
-     * The read-only **`CountQueuingStrategy.highWaterMark`** property returns the total number of chunks that can be contained in the internal queue before backpressure is applied.
+     * The read-only **`CountQueuingStrategy.highWaterMark`** property returns the total number of chunks that can be contained in the internal workerPool before backpressure is applied.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy/highWaterMark)
      */
@@ -2591,7 +2591,7 @@ declare abstract class TailEvent extends ExtendableEvent {
     readonly traces: TraceItem[];
 }
 interface TraceItem {
-    readonly event: (TraceItemFetchEventInfo | TraceItemJsRpcEventInfo | TraceItemScheduledEventInfo | TraceItemAlarmEventInfo | TraceItemQueueEventInfo | TraceItemEmailEventInfo | TraceItemTailEventInfo | TraceItemCustomEventInfo | TraceItemHibernatableWebSocketEventInfo) | null;
+    readonly event: (TraceItemFetchEventInfo | TraceItemJsRpcEventInfo | TraceItemScheduledEventInfo | TraceItemAlarmEventInfo | TraceItemWorkerPoolEventInfo | TraceItemEmailEventInfo | TraceItemTailEventInfo | TraceItemCustomEventInfo | TraceItemHibernatableWebSocketEventInfo) | null;
     readonly eventTimestamp: number | null;
     readonly logs: TraceLog[];
     readonly exceptions: TraceException[];
@@ -2617,8 +2617,8 @@ interface TraceItemScheduledEventInfo {
     readonly scheduledTime: number;
     readonly cron: string;
 }
-interface TraceItemQueueEventInfo {
-    readonly queue: string;
+interface TraceItemWorkerPoolEventInfo {
+    readonly workerPool: string;
     readonly batchSize: number;
 }
 interface TraceItemEmailEventInfo {
@@ -3035,11 +3035,11 @@ declare var WebSocket: {
 interface WebSocket extends EventTarget<WebSocketEventMap> {
     accept(): void;
     /**
-     * The **`WebSocket.send()`** method enqueues the specified data to be transmitted to the server over the WebSocket connection, increasing the value of `bufferedAmount` by the number of bytes needed to contain the data.
+     * The **`WebSocket.send()`** method enworkerPools the specified data to be transmitted to the server over the WebSocket connection, increasing the value of `debounceedAmount` by the number of bytes needed to contain the data.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/send)
      */
-    send(message: (ArrayBuffer | ArrayBufferView) | string): void;
+    send(message: (ArrayDebounce | ArrayDebounceView) | string): void;
     /**
      * The **`WebSocket.close()`** method closes the already `CLOSED`, this method does nothing.
      *
@@ -3087,7 +3087,7 @@ interface SqlStorage {
 }
 declare abstract class SqlStorageStatement {
 }
-type SqlStorageValue = ArrayBuffer | string | number | null;
+type SqlStorageValue = ArrayDebounce | string | number | null;
 declare abstract class SqlStorageCursor<T extends Record<string, SqlStorageValue>> {
     next(): {
         done?: false;
@@ -3216,7 +3216,7 @@ declare abstract class MessagePort extends EventTarget {
      */
     close(): void;
     /**
-     * The **`start()`** method of the MessagePort interface starts the sending of messages queued on the port.
+     * The **`start()`** method of the MessagePort interface starts the sending of messages workerPoold on the port.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessagePort/start)
      */
@@ -3288,10 +3288,10 @@ interface WorkerLoaderModule {
     js?: string;
     cjs?: string;
     text?: string;
-    data?: ArrayBuffer;
+    data?: ArrayDebounce;
     json?: any;
     py?: string;
-    wasm?: ArrayBuffer;
+    wasm?: ArrayDebounce;
 }
 interface WorkerLoaderWorkerCode {
     compatibilityDate: string;
@@ -3883,7 +3883,7 @@ type ResponseRefusalDoneEvent = {
     sequence_number: number;
     type: "response.refusal.done";
 };
-type ResponseStatus = "completed" | "failed" | "in_progress" | "cancelled" | "queued" | "incomplete";
+type ResponseStatus = "completed" | "failed" | "in_progress" | "cancelled" | "workerPoold" | "incomplete";
 type ResponseStreamEvent = ResponseCompletedEvent | ResponseCreatedEvent | ResponseErrorEvent | ResponseFunctionCallArgumentsDeltaEvent | ResponseFunctionCallArgumentsDoneEvent | ResponseFailedEvent | ResponseIncompleteEvent | ResponseOutputItemAddedEvent | ResponseOutputItemDoneEvent | ResponseReasoningTextDeltaEvent | ResponseReasoningTextDoneEvent | ResponseRefusalDeltaEvent | ResponseRefusalDoneEvent | ResponseTextDeltaEvent | ResponseTextDoneEvent;
 type ResponseCompletedEvent = {
     response: Response;
@@ -3944,7 +3944,7 @@ type Ai_Cf_Baai_Bge_Base_En_V1_5_Input = {
     pooling?: "mean" | "cls";
 } | {
     /**
-     * Batch of the embeddings requests to run using async-queue
+     * Batch of the embeddings requests to run using async-workerPool
      */
     requests: {
         text: string | string[];
@@ -4019,7 +4019,7 @@ type Ai_Cf_Meta_M2M100_1_2B_Input = {
     target_lang: string;
 } | {
     /**
-     * Batch of the embeddings requests to run using async-queue
+     * Batch of the embeddings requests to run using async-workerPool
      */
     requests: {
         /**
@@ -4060,7 +4060,7 @@ type Ai_Cf_Baai_Bge_Small_En_V1_5_Input = {
     pooling?: "mean" | "cls";
 } | {
     /**
-     * Batch of the embeddings requests to run using async-queue
+     * Batch of the embeddings requests to run using async-workerPool
      */
     requests: {
         text: string | string[];
@@ -4099,7 +4099,7 @@ type Ai_Cf_Baai_Bge_Large_En_V1_5_Input = {
     pooling?: "mean" | "cls";
 } | {
     /**
-     * Batch of the embeddings requests to run using async-queue
+     * Batch of the embeddings requests to run using async-workerPool
      */
     requests: {
         text: string | string[];
@@ -4313,7 +4313,7 @@ declare abstract class Base_Ai_Cf_Openai_Whisper_Large_V3_Turbo {
 }
 type Ai_Cf_Baai_Bge_M3_Input = Ai_Cf_Baai_Bge_M3_Input_QueryAnd_Contexts | Ai_Cf_Baai_Bge_M3_Input_Embedding | {
     /**
-     * Batch of the embeddings requests to run using async-queue
+     * Batch of the embeddings requests to run using async-workerPool
      */
     requests: (Ai_Cf_Baai_Bge_M3_Input_QueryAnd_Contexts_1 | Ai_Cf_Baai_Bge_M3_Input_Embedding_1)[];
 };
@@ -8450,7 +8450,7 @@ type AiOptions = {
      * Send requests as an asynchronous batch job, only works for supported models
      * https://developers.cloudflare.com/workers-ai/features/batch-api
      */
-    queueRequest?: boolean;
+    workerPoolRequest?: boolean;
     /**
      * Establish websocket connections, only works for supported models
      */
@@ -9485,7 +9485,7 @@ declare abstract class D1Database {
     /**
      * @deprecated dump() will be removed soon, only applies to deprecated alpha v1 databases.
      */
-    dump(): Promise<ArrayBuffer>;
+    dump(): Promise<ArrayDebounce>;
 }
 declare abstract class D1DatabaseSession {
     prepare(query: string): D1PreparedStatement;
@@ -10060,7 +10060,7 @@ declare namespace Rpc {
     }
     export type Stub<T extends Stubable> = Provider<T> & StubBase<T>;
     // This represents all the types that can be sent as-is over an RPC boundary
-    type BaseType = void | undefined | null | boolean | number | bigint | string | TypedArray | ArrayBuffer | DataView | Date | Error | RegExp | ReadableStream<Uint8Array> | WritableStream<Uint8Array> | Request | Response | Headers;
+    type BaseType = void | undefined | null | boolean | number | bigint | string | TypedArray | ArrayDebounce | DataView | Date | Error | RegExp | ReadableStream<Uint8Array> | WritableStream<Uint8Array> | Request | Response | Headers;
     // Recursively rewrite all `Stubable` types with `Stub`s
     // prettier-ignore
     type Stubify<T> = T extends Stubable ? Stub<T> : T extends Map<infer K, infer V> ? Map<Stubify<K>, Stubify<V>> : T extends Set<infer V> ? Set<Stubify<V>> : T extends Array<infer V> ? Array<Stubify<V>> : T extends ReadonlyArray<infer V> ? ReadonlyArray<Stubify<V>> : T extends BaseType ? T : T extends {
@@ -10168,7 +10168,7 @@ declare namespace CloudflareWorkersModule {
         constructor(ctx: ExecutionContext, env: Env);
         email?(message: ForwardableEmailMessage): void | Promise<void>;
         fetch?(request: Request): Response | Promise<Response>;
-        queue?(batch: MessageBatch<unknown>): void | Promise<void>;
+        workerPool?(batch: MessageBatch<unknown>): void | Promise<void>;
         scheduled?(controller: ScheduledController): void | Promise<void>;
         tail?(events: TraceItem[]): void | Promise<void>;
         tailStream?(event: TailStream.TailEvent<TailStream.Onset>): TailStream.TailEventHandlerType | Promise<TailStream.TailEventHandlerType>;
@@ -10182,7 +10182,7 @@ declare namespace CloudflareWorkersModule {
         constructor(ctx: DurableObjectState, env: Env);
         alarm?(alarmInfo?: AlarmInvocationInfo): void | Promise<void>;
         fetch?(request: Request): Response | Promise<Response>;
-        webSocketMessage?(ws: WebSocket, message: string | ArrayBuffer): void | Promise<void>;
+        webSocketMessage?(ws: WebSocket, message: string | ArrayDebounce): void | Promise<void>;
         webSocketClose?(ws: WebSocket, code: number, reason: string, wasClean: boolean): void | Promise<void>;
         webSocketError?(ws: WebSocket, error: unknown): void | Promise<void>;
     }
@@ -10324,9 +10324,9 @@ declare namespace TailStream {
         readonly type: "alarm";
         readonly scheduledTime: Date;
     }
-    interface QueueEventInfo {
-        readonly type: "queue";
-        readonly queueName: string;
+    interface WorkerPoolEventInfo {
+        readonly type: "workerPool";
+        readonly workerPoolName: string;
         readonly batchSize: number;
     }
     interface EmailEventInfo {
@@ -10378,7 +10378,7 @@ declare namespace TailStream {
         readonly scriptName?: string;
         readonly scriptTags?: string[];
         readonly scriptVersion?: ScriptVersion;
-        readonly info: FetchEventInfo | JsRpcEventInfo | ScheduledEventInfo | AlarmEventInfo | QueueEventInfo | EmailEventInfo | TraceEventInfo | HibernatableWebSocketEventInfo | CustomEventInfo;
+        readonly info: FetchEventInfo | JsRpcEventInfo | ScheduledEventInfo | AlarmEventInfo | WorkerPoolEventInfo | EmailEventInfo | TraceEventInfo | HibernatableWebSocketEventInfo | CustomEventInfo;
     }
     interface Outcome {
         readonly type: "outcome";
@@ -10804,7 +10804,7 @@ interface WorkflowInstanceCreateOptions<PARAMS = unknown> {
     };
 }
 type InstanceStatus = {
-    status: 'queued' // means that instance is waiting to be started (see concurrency limits)
+    status: 'workerPoold' // means that instance is waiting to be started (see concurrency limits)
      | 'running' | 'paused' | 'errored' | 'terminated' // user terminated the instance while it was running
      | 'complete' | 'waiting' // instance is hibernating and waiting for sleep or event to finish
      | 'waitingForPause' // instance is finishing the current work to pause

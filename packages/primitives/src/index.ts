@@ -1,21 +1,21 @@
-// packages/primitives/src/index.ts
+// packages/jobs/src/index.ts
 
 /**
- * @durable-effect/primitives
+ * @durable-effect/jobs
  *
- * Durable primitives for Effect on Cloudflare Workers.
+ * Durable jobs for Effect on Cloudflare Workers.
  *
  * Phase 1: Runtime Foundation
  * - Services (MetadataService, AlarmService, IdempotencyService, EntityStateService)
- * - Runtime types (PrimitiveRequest, PrimitiveResponse)
+ * - Runtime types (JobRequest, JobResponse)
  * - Dispatcher (shell implementation)
- * - Runtime factory (createPrimitivesRuntime)
+ * - Runtime factory (createJobsRuntime)
  *
  * Phase 2: DO Shell & Client Foundation
- * - Registry (primitive definitions and type-safe lookup)
+ * - Registry (job definitions and type-safe lookup)
  * - Engine (thin DO shell)
- * - Client (typed client for calling primitives)
- * - Factory (createDurablePrimitives)
+ * - Client (typed client for calling jobs)
+ * - Factory (createDurableJobs)
  */
 
 // =============================================================================
@@ -23,8 +23,8 @@
 // =============================================================================
 
 export {
-  createDurablePrimitives,
-  type CreateDurablePrimitivesResult,
+  createDurableJobs,
+  type CreateDurableJobsResult,
   type InferRegistryFromDefinitions,
 } from "./factory";
 
@@ -36,18 +36,18 @@ export {
   // Re-exported from core
   StorageError,
   SchedulerError,
-  // Primitive-specific errors
-  PrimitiveNotFoundError,
+  // Job-specific errors
+  JobNotFoundError,
   InstanceNotFoundError,
   InvalidStateError,
   ValidationError,
   ExecutionError,
   RetryExhaustedError,
-  UnknownPrimitiveTypeError,
+  UnknownJobTypeError,
   DuplicateEventError,
   // Terminate signal (for advanced use cases)
   TerminateSignal,
-  type PrimitiveError,
+  type JobError,
 } from "./errors";
 
 // =============================================================================
@@ -65,9 +65,9 @@ export {
   MetadataService,
   MetadataServiceLayer,
   type MetadataServiceI,
-  type PrimitiveMetadata,
-  type PrimitiveType,
-  type PrimitiveStatus,
+  type JobMetadata,
+  type JobType,
+  type JobStatus,
   // Entity State
   createEntityStateService,
   type EntityStateServiceI,
@@ -89,37 +89,37 @@ export {
 
 export {
   // Types
-  type PrimitiveRequest,
-  type PrimitiveResponse,
+  type JobRequest,
+  type JobResponse,
   type ContinuousRequest,
-  type BufferRequest,
-  type QueueRequest,
+  type DebounceRequest,
+  type WorkerPoolRequest,
   // Response types
   type ContinuousStartResponse,
   type ContinuousStopResponse,
   type ContinuousTriggerResponse,
   type ContinuousStatusResponse,
   type ContinuousGetStateResponse,
-  type BufferAddResponse,
-  type BufferFlushResponse,
-  type BufferClearResponse,
-  type BufferStatusResponse,
-  type BufferGetStateResponse,
-  type QueueEnqueueResponse,
-  type QueuePauseResponse,
-  type QueueResumeResponse,
-  type QueueCancelResponse,
-  type QueueStatusResponse,
-  type QueueDrainResponse,
+  type DebounceAddResponse,
+  type DebounceFlushResponse,
+  type DebounceClearResponse,
+  type DebounceStatusResponse,
+  type DebounceGetStateResponse,
+  type WorkerPoolEnqueueResponse,
+  type WorkerPoolPauseResponse,
+  type WorkerPoolResumeResponse,
+  type WorkerPoolCancelResponse,
+  type WorkerPoolStatusResponse,
+  type WorkerPoolDrainResponse,
   // Dispatcher
   Dispatcher,
   DispatcherLayer,
   type DispatcherServiceI,
   // Runtime
-  createPrimitivesRuntime,
-  createPrimitivesRuntimeFromLayer,
-  type PrimitivesRuntime,
-  type PrimitivesRuntimeConfig,
+  createJobsRuntime,
+  createJobsRuntimeFromLayer,
+  type JobsRuntime,
+  type JobsRuntimeConfig,
 } from "./runtime";
 
 // =============================================================================
@@ -127,34 +127,34 @@ export {
 // =============================================================================
 
 export {
-  createPrimitiveRegistry,
+  createJobRegistry,
   getContinuousDefinition,
-  getBufferDefinition,
-  getQueueDefinition,
-  getPrimitiveDefinition,
-  getAllPrimitiveNames,
+  getDebounceDefinition,
+  getWorkerPoolDefinition,
+  getJobDefinition,
+  getAllJobNames,
   // Types - Unregistered (what users create)
   type UnregisteredContinuousDefinition,
-  type UnregisteredBufferDefinition,
-  type UnregisteredQueueDefinition,
+  type UnregisteredDebounceDefinition,
+  type UnregisteredWorkerPoolDefinition,
   type AnyUnregisteredDefinition,
   // Types - Registered (with name)
   type ContinuousSchedule,
   type ContinuousDefinition,
-  type BufferDefinition,
-  type QueueDefinition,
-  type QueueRetryConfig,
-  type AnyPrimitiveDefinition,
+  type DebounceDefinition,
+  type WorkerPoolDefinition,
+  type WorkerPoolRetryConfig,
+  type AnyJobDefinition,
   // Types - Context
   type ContinuousContext,
   type TerminateOptions,
-  type BufferExecuteContext,
-  type BufferEventContext,
-  type QueueExecuteContext,
-  type QueueDeadLetterContext,
-  type QueueEmptyContext,
+  type DebounceExecuteContext,
+  type DebounceEventContext,
+  type WorkerPoolExecuteContext,
+  type WorkerPoolDeadLetterContext,
+  type WorkerPoolEmptyContext,
   // Types - Registry
-  type PrimitiveRegistry,
+  type JobRegistry,
   type InferRegistry,
 } from "./registry";
 
@@ -163,10 +163,10 @@ export {
 // =============================================================================
 
 export {
-  DurablePrimitivesEngine,
-  type DurablePrimitivesEngineInterface,
-  type PrimitivesEngineConfig,
-  type PrimitivesEnv,
+  DurableJobsEngine,
+  type DurableJobsEngineInterface,
+  type JobsEngineConfig,
+  type JobsEnv,
 } from "./engine";
 
 // =============================================================================
@@ -174,25 +174,25 @@ export {
 // =============================================================================
 
 export {
-  createPrimitivesClient,
+  createJobsClient,
   narrowResponseEffect,
-  primitiveCallError,
+  jobCallError,
   UnexpectedResponseError,
   type ContinuousClient,
-  type BufferClient,
-  type QueueClient,
-  type QueueAggregatedStatus,
-  type PrimitivesClient,
-  type PrimitivesClientFactory,
+  type DebounceClient,
+  type WorkerPoolClient,
+  type WorkerPoolAggregatedStatus,
+  type JobsClient,
+  type JobsClientFactory,
   type ContinuousKeys,
-  type BufferKeys,
-  type QueueKeys,
+  type DebounceKeys,
+  type WorkerPoolKeys,
   type ContinuousStateType,
-  type BufferEventType,
-  type BufferStateType,
-  type QueueEventType,
+  type DebounceEventType,
+  type DebounceStateType,
+  type WorkerPoolEventType,
   type ClientError,
-  type PrimitiveCallError,
+  type JobCallError,
 } from "./client";
 
 // =============================================================================
@@ -216,5 +216,5 @@ export {
   type ContinuousHandlerI,
   type ContinuousResponse,
   type StateHolder,
-  PrimitiveHandlersLayer,
+  JobHandlersLayer,
 } from "./handlers";

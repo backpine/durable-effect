@@ -1,8 +1,8 @@
-# Forbid Workflow Primitives Inside Steps
+# Forbid Workflow Jobs Inside Steps
 
 ## Problem
 
-Currently, workflow primitives (`Workflow.step`, `Workflow.sleep`, `Workflow.retry`) can be accidentally nested inside a step's effect:
+Currently, workflow jobs (`Workflow.step`, `Workflow.sleep`, `Workflow.retry`) can be accidentally nested inside a step's effect:
 
 ```typescript
 const fetchOrder = (orderId: string) =>
@@ -18,13 +18,13 @@ yield* Workflow.step("Fetch order", fetchOrder(orderId));
 ```
 
 This is problematic because:
-1. Workflow primitives have special semantics (pause points, durability)
+1. Workflow jobs have special semantics (pause points, durability)
 2. Nesting breaks the execution model (steps should be atomic units)
 3. It leads to confusing behavior and potential bugs
 
 ## Goal
 
-Make TypeScript reject workflow primitives inside step effects at compile time.
+Make TypeScript reject workflow jobs inside step effects at compile time.
 
 ## Design Options
 
@@ -33,7 +33,7 @@ Make TypeScript reject workflow primitives inside step effects at compile time.
 Use Effect's context system to create a compile-time guard.
 
 **Concept:**
-1. Create a `WorkflowScope` context tag that workflow primitives require
+1. Create a `WorkflowScope` context tag that workflow jobs require
 2. Inside a step, the effect type explicitly excludes `WorkflowScope`
 3. If the inner effect requires `WorkflowScope`, TypeScript errors
 
@@ -45,7 +45,7 @@ Use Effect's context system to create a compile-time guard.
 import { Context } from "effect";
 
 /**
- * WorkflowScope is required by workflow primitives (step, sleep, retry).
+ * WorkflowScope is required by workflow jobs (step, sleep, retry).
  * This scope is NOT available inside a step's effect, preventing nesting.
  */
 export class WorkflowScope extends Context.Tag("@durable-effect/WorkflowScope")<
@@ -63,7 +63,7 @@ export type ForbidWorkflowScope<R> =
   R;
 ```
 
-**Update workflow primitives:**
+**Update workflow jobs:**
 
 ```typescript
 // packages/workflow/src/sleep.ts
@@ -105,7 +105,7 @@ Workflow.step("bad", badEffect);
 // is not assignable to parameter of type 'Effect<..., never>'
 // Type 'WorkflowScope' is not assignable to type 'never'.
 
-// Good effect (no workflow primitives)
+// Good effect (no workflow jobs)
 const goodEffect = Effect.gen(function* () {
   yield* Effect.sleep("100 millis");  // Regular Effect.sleep is fine
   yield* Effect.log("Fetching...");
@@ -138,7 +138,7 @@ const execution = workflowDef
 Create a distinct type for workflow-level effects.
 
 ```typescript
-// A branded type that can only be created by workflow primitives
+// A branded type that can only be created by workflow jobs
 declare const WorkflowEffectBrand: unique symbol;
 
 type WorkflowEffect<A, E, R> = Effect.Effect<A, E, R> & {
@@ -166,7 +166,7 @@ Split context into "workflow phase" and "step phase":
 class WorkflowPhase extends Context.Tag("WorkflowPhase")<WorkflowPhase, void>() {}
 class StepPhase extends Context.Tag("StepPhase")<StepPhase, void>() {}
 
-// Workflow primitives require WorkflowPhase
+// Workflow jobs require WorkflowPhase
 export const sleep = (...): Effect<..., WorkflowPhase> => ...
 
 // Step provides StepPhase and removes WorkflowPhase
@@ -215,7 +215,7 @@ export type ForbidWorkflowScope<R> =
   R;
 ```
 
-### 2. Update Primitives
+### 2. Update Jobs
 
 Add `WorkflowScope` to the context requirements:
 
@@ -266,14 +266,14 @@ const badStep = Workflow.step("bad", Effect.gen(function* () {
   //     ^^^^^^^^^^^^^^^^^^^^^^^^
   // Error: Type 'WorkflowScope' is not assignable to type 'never'.
   //
-  // The inner effect of a step cannot use workflow primitives.
+  // The inner effect of a step cannot use workflow jobs.
   // Move Workflow.sleep() outside the step.
 }));
 ```
 
 ## Migration
 
-Existing code using workflow primitives inside steps will get compile errors. The fix is straightforward:
+Existing code using workflow jobs inside steps will get compile errors. The fix is straightforward:
 
 ```typescript
 // Before (wrong)
@@ -291,4 +291,4 @@ yield* Workflow.step("process", Effect.gen(function* () {
 
 ## Summary
 
-Using `WorkflowScope` as a forbidden context tag provides compile-time enforcement that workflow primitives can only be used at the workflow level, not inside steps. This aligns with the semantic model where steps are atomic units and workflow primitives (sleep, nested steps) are coordination points between steps.
+Using `WorkflowScope` as a forbidden context tag provides compile-time enforcement that workflow jobs can only be used at the workflow level, not inside steps. This aligns with the semantic model where steps are atomic units and workflow jobs (sleep, nested steps) are coordination points between steps.

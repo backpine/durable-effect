@@ -2,7 +2,7 @@
 
 ## Overview
 
-This plan implements compile-time protection to ensure workflow primitives are only used at the workflow level, not inside steps:
+This plan implements compile-time protection to ensure workflow jobs are only used at the workflow level, not inside steps:
 
 - **Compile-time:** `WorkflowScope` forbidden context tag prevents `Workflow.step` and `Workflow.sleep` inside steps
 
@@ -18,7 +18,7 @@ This plan implements compile-time protection to ensure workflow primitives are o
 import { Context } from "effect";
 
 /**
- * WorkflowScope is required by workflow primitives (step, sleep).
+ * WorkflowScope is required by workflow jobs (step, sleep).
  * This scope is NOT available inside a step's effect, preventing nesting.
  *
  * @internal This is a compile-time guard, not a runtime service.
@@ -415,7 +415,7 @@ describe("Step forbidden operations", () => {
 | `Effect.sleep` | Inside step | Allowed | Allowed |
 | `Workflow.retry` | Inside step | Allowed | Allowed (requires StepContext) |
 | `Workflow.timeout` | Inside step | Allowed | Allowed (requires StepContext) |
-| All primitives | Workflow level | Allowed | Allowed |
+| All jobs | Workflow level | Allowed | Allowed |
 
 **Note on Effect.sleep:** We intentionally allow `Effect.sleep` inside steps because `Effect.timeoutFail` (used by `Workflow.timeout`) uses it internally for timeout racing. Blocking all sleep operations would break the timeout functionality.
 

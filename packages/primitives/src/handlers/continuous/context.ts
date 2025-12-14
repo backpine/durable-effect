@@ -1,4 +1,4 @@
-// packages/primitives/src/handlers/continuous/context.ts
+// packages/jobs/src/handlers/continuous/context.ts
 
 import { Effect } from "effect";
 import type { ContinuousContext, TerminateOptions } from "../../registry/types";
@@ -26,16 +26,16 @@ export interface StateHolder<S> {
  * - state: Current state (read-only reference)
  * - setState: Replace entire state
  * - updateState: Update state via function
- * - terminate: Terminate this primitive instance
+ * - terminate: Terminate this job instance
  * - instanceId: DO instance identifier
  * - runCount: Number of times execute has been called
- * - primitiveName: Name of the primitive
+ * - jobName: Name of the job
  */
 export function createContinuousContext<S>(
   stateHolder: StateHolder<S>,
   instanceId: string,
   runCount: number,
-  primitiveName: string
+  jobName: string
 ): ContinuousContext<S> {
   return {
     get state() {
@@ -54,7 +54,7 @@ export function createContinuousContext<S>(
 
     instanceId,
     runCount,
-    primitiveName,
+    jobName,
 
     terminate: (options?: TerminateOptions) =>
       Effect.fail(

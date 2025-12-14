@@ -1,44 +1,44 @@
-// packages/primitives/src/runtime/runtime.ts
+// packages/jobs/src/runtime/runtime.ts
 
 import { Effect, Layer } from "effect";
 import { createDurableObjectRuntime, flushEvents, type RuntimeLayer } from "@durable-effect/core";
 import { RuntimeServicesLayer, RegistryServiceLayer } from "../services";
-import { PrimitiveHandlersLayer } from "../handlers";
+import { JobHandlersLayer } from "../handlers";
 import { Dispatcher, DispatcherLayer } from "./dispatcher";
-import type { PrimitiveRequest, PrimitiveResponse } from "./types";
-import type { PrimitiveRegistry } from "../registry/types";
+import type { JobRequest, JobResponse } from "./types";
+import type { JobRegistry } from "../registry/types";
 
 // =============================================================================
 // Types
 // =============================================================================
 
 /**
- * Configuration for creating a primitives runtime.
+ * Configuration for creating a jobs runtime.
  */
-export interface PrimitivesRuntimeConfig {
+export interface JobsRuntimeConfig {
   /**
    * Durable Object state (provides storage + alarm).
    */
   readonly doState: DurableObjectState;
 
   /**
-   * Registry of primitive definitions.
+   * Registry of job definitions.
    * Required for handlers to look up definitions.
    */
-  readonly registry: PrimitiveRegistry;
+  readonly registry: JobRegistry;
 }
 
 /**
- * The primitives runtime interface.
+ * The jobs runtime interface.
  *
  * This is what the DO shell delegates to. It's a simple interface
  * that hides all the Effect complexity from the DO class.
  */
-export interface PrimitivesRuntime {
+export interface JobsRuntime {
   /**
-   * Handle a primitive request.
+   * Handle a job request.
    */
-  readonly handle: (request: PrimitiveRequest) => Promise<PrimitiveResponse>;
+  readonly handle: (request: JobRequest) => Promise<JobResponse>;
 
   /**
    * Handle an alarm.
@@ -60,11 +60,11 @@ export interface PrimitivesRuntime {
  * Create the full dispatcher layer from a core layer and registry.
  *
  * This is the shared layer composition logic used by both
- * createPrimitivesRuntime and createPrimitivesRuntimeFromLayer.
+ * createJobsRuntime and createJobsRuntimeFromLayer.
  */
 function createDispatcherLayer(
   coreLayer: RuntimeLayer,
-  registry: PrimitiveRegistry
+  registry: JobRegistry
 ): Layer.Layer<Dispatcher> {
   // Registry layer
   const registryLayer = RegistryServiceLayer(registry);
@@ -73,7 +73,7 @@ function createDispatcherLayer(
   const servicesLayer = RuntimeServicesLayer.pipe(Layer.provideMerge(coreLayer));
 
   // Handlers layer (ContinuousHandler, etc.)
-  const handlersLayer = PrimitiveHandlersLayer.pipe(
+  const handlersLayer = JobHandlersLayer.pipe(
     Layer.provideMerge(registryLayer),
     Layer.provideMerge(servicesLayer)
   );
@@ -87,7 +87,7 @@ function createDispatcherLayer(
  */
 function createRuntimeFromDispatcherLayer(
   dispatcherLayer: Layer.Layer<Dispatcher>
-): PrimitivesRuntime {
+): JobsRuntime {
   // Helper to run effects with full layer stack
   const runEffect = <A, E>(
     effect: Effect.Effect<A, E, Dispatcher>
@@ -95,7 +95,7 @@ function createRuntimeFromDispatcherLayer(
     Effect.runPromise(effect.pipe(Effect.provide(dispatcherLayer)));
 
   return {
-    handle: (request: PrimitiveRequest) =>
+    handle: (request: JobRequest) =>
       runEffect(
         Effect.gen(function* () {
           const dispatcher = yield* Dispatcher;
@@ -120,25 +120,25 @@ function createRuntimeFromDispatcherLayer(
 // =============================================================================
 
 /**
- * Creates a primitives runtime from DO state.
+ * Creates a jobs runtime from DO state.
  *
  * This is the main entry point for the runtime layer. The DO class
  * creates this once in its constructor and delegates all operations to it.
  *
  * @example
  * ```ts
- * class DurablePrimitivesEngine extends DurableObject {
- *   #runtime: PrimitivesRuntime;
+ * class DurableJobsEngine extends DurableObject {
+ *   #runtime: JobsRuntime;
  *
  *   constructor(state: DurableObjectState, env: Env) {
  *     super(state, env);
- *     this.#runtime = createPrimitivesRuntime({
+ *     this.#runtime = createJobsRuntime({
  *       doState: state,
- *       registry: env.__PRIMITIVE_REGISTRY__,
+ *       registry: env.__JOB_REGISTRY__,
  *     });
  *   }
  *
- *   async call(request: PrimitiveRequest): Promise<PrimitiveResponse> {
+ *   async call(request: JobRequest): Promise<JobResponse> {
  *     const result = await this.#runtime.handle(request);
  *     this.ctx.waitUntil(this.#runtime.flush());
  *     return result;
@@ -151,11 +151,11 @@ function createRuntimeFromDispatcherLayer(
  * }
  * ```
  */
-export function createPrimitivesRuntime(
-  config: PrimitivesRuntimeConfig
-): PrimitivesRuntime {
+export function createJobsRuntime(
+  config: JobsRuntimeConfig
+): JobsRuntime {
   if (!config.registry) {
-    throw new Error("createPrimitivesRuntime requires a registry");
+    throw new Error("createJobsRuntime requires a registry");
   }
 
   const coreLayer = createDurableObjectRuntime(config.doState);
@@ -169,24 +169,24 @@ export function createPrimitivesRuntime(
 // =============================================================================
 
 /**
- * Creates a primitives runtime from a provided layer with a registry.
+ * Creates a jobs runtime from a provided layer with a registry.
  *
  * Used for testing with in-memory adapters.
  *
  * @example
  * ```ts
  * const { layer, handles } = createTestRuntime("test-instance", 1000000);
- * const runtime = createPrimitivesRuntimeFromLayer(layer, registry);
+ * const runtime = createJobsRuntimeFromLayer(layer, registry);
  *
  * await runtime.handle({ type: "continuous", action: "start", ... });
  * handles.scheduler.fire();
  * await runtime.handleAlarm();
  * ```
  */
-export function createPrimitivesRuntimeFromLayer(
+export function createJobsRuntimeFromLayer(
   coreLayer: RuntimeLayer,
-  registry: PrimitiveRegistry
-): PrimitivesRuntime {
+  registry: JobRegistry
+): JobsRuntime {
   const dispatcherLayer = createDispatcherLayer(coreLayer, registry);
 
   return createRuntimeFromDispatcherLayer(dispatcherLayer);

@@ -1,13 +1,13 @@
-# Durable Primitives: Continuous & Buffer Deep Dive
+# Durable Jobs: Continuous & Buffer Deep Dive
 
 ## Executive Summary
 
-This report explores two fundamental durable primitives:
+This report explores two fundamental durable jobs:
 
 1. **Continuous** - Long-running processes that execute on a schedule, maintain state, and run until a termination condition
 2. **Buffer** - Event accumulators that collect items over time, aggregate them, and flush based on triggers
 
-Both primitives share common concerns around durability, state management, error handling, and developer experience, but have distinct lifecycle and execution models.
+Both jobs share common concerns around durability, state management, error handling, and developer experience, but have distinct lifecycle and execution models.
 
 ---
 
@@ -941,7 +941,7 @@ Buffer.make({
 
 #### Time Control
 ```ts
-import { TestClock } from "@durable-effect/primitives/testing"
+import { TestClock } from "@durable-effect/jobs/testing"
 
 test("buffer flushes after maxWait", async () => {
   const clock = TestClock.make()
@@ -1292,9 +1292,9 @@ type ReducerErrorAction =
 
 ### Cross-Cutting
 
-1. **DO Limits**: Durable Objects have limits (128MB, execution time). How do these primitives surface/handle these?
+1. **DO Limits**: Durable Objects have limits (128MB, execution time). How do these jobs surface/handle these?
 
-2. **Multi-Region**: How do these primitives behave with DO's single-region primary nature?
+2. **Multi-Region**: How do these jobs behave with DO's single-region primary nature?
 
 3. **Cost Model**: How to help users understand/optimize DO cost implications?
 
@@ -1302,7 +1302,7 @@ type ReducerErrorAction =
 
 ## Conclusion
 
-Continuous and Buffer are complementary primitives that address different temporal patterns:
+Continuous and Buffer are complementary jobs that address different temporal patterns:
 
 | Aspect | Continuous | Buffer |
 |--------|------------|--------|

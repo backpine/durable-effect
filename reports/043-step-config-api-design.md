@@ -801,7 +801,7 @@ yield* Workflow.step("Process", {
 - `WorkflowLevel` guard wouldn't work inside generator
 - Creates confusion about what's being retried
 
-**Resolution:** Generator syntax only for Effect composition, not workflow primitives.
+**Resolution:** Generator syntax only for Effect composition, not workflow jobs.
 
 ### 9.2 Automatic Schema Derivation
 

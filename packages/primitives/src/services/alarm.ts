@@ -1,4 +1,4 @@
-// packages/primitives/src/services/alarm.ts
+// packages/jobs/src/services/alarm.ts
 
 import { Context, Effect, Layer, Duration } from "effect";
 import {
@@ -50,7 +50,7 @@ export interface AlarmServiceI {
 // =============================================================================
 
 export class AlarmService extends Context.Tag(
-  "@durable-effect/primitives/AlarmService"
+  "@durable-effect/jobs/AlarmService"
 )<AlarmService, AlarmServiceI>() {}
 
 // =============================================================================

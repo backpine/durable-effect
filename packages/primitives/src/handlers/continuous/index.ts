@@ -1,4 +1,4 @@
-// packages/primitives/src/handlers/continuous/index.ts
+// packages/jobs/src/handlers/continuous/index.ts
 
 export { ContinuousHandler, ContinuousHandlerLayer } from "./handler";
 export { createContinuousContext, type StateHolder } from "./context";

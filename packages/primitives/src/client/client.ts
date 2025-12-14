@@ -1,14 +1,14 @@
-// packages/primitives/src/client/client.ts
+// packages/jobs/src/client/client.ts
 
 import { Effect } from "effect";
-import type { PrimitiveRegistry } from "../registry/types";
-import type { DurablePrimitivesEngineInterface } from "../engine/types";
+import type { JobRegistry } from "../registry/types";
+import type { DurableJobsEngineInterface } from "../engine/types";
 import type {
-  PrimitivesClient,
+  JobsClient,
   ContinuousClient,
-  BufferClient,
-  QueueClient,
-  QueueAggregatedStatus,
+  DebounceClient,
+  WorkerPoolClient,
+  WorkerPoolAggregatedStatus,
   ClientError,
 } from "./types";
 import { narrowResponseEffect } from "./response";
@@ -18,12 +18,12 @@ import { narrowResponseEffect } from "./response";
 // =============================================================================
 
 /**
- * Create instance ID for a primitive.
+ * Create instance ID for a job.
  *
- * Format: {primitiveType}:{primitiveName}:{userProvidedId}
+ * Format: {jobType}:{jobName}:{userProvidedId}
  */
 function createInstanceId(
-  type: "continuous" | "buffer" | "queue",
+  type: "continuous" | "debounce" | "workerPool",
   name: string,
   id: string | number
 ): string {
@@ -57,10 +57,10 @@ function consistentHash(key: string, buckets: number): number {
 function getStub(
   binding: DurableObjectNamespace,
   instanceId: string
-): DurablePrimitivesEngineInterface {
+): DurableJobsEngineInterface {
   const id = binding.idFromName(instanceId);
   // The DO stub implements our interface; we validate responses at runtime
-  return binding.get(id) as unknown as DurablePrimitivesEngineInterface;
+  return binding.get(id) as unknown as DurableJobsEngineInterface;
 }
 
 // =============================================================================
@@ -68,38 +68,38 @@ function getStub(
 // =============================================================================
 
 /**
- * Create a primitives client from a Durable Object binding.
+ * Create a jobs client from a Durable Object binding.
  *
- * The client provides typed access to all registered primitives and
+ * The client provides typed access to all registered jobs and
  * handles instance ID resolution and routing.
  *
  * @example
  * ```ts
- * const client = createPrimitivesClient(env.PRIMITIVES, registry);
+ * const client = createJobsClient(env.JOBS, registry);
  *
- * // Access continuous primitive
+ * // Access continuous job
  * await client.continuous("tokenRefresher").start({
  *   id: "user-123",
  *   input: { refreshToken: "rt_abc" },
  * });
  *
- * // Access buffer primitive
- * await client.buffer("webhookBuffer").add({
+ * // Access debounce job
+ * await client.debounce("webhookDebounce").add({
  *   id: "contact-456",
  *   event: { type: "contact.updated", data: {...} },
  * });
  *
- * // Access queue primitive (auto-routes to instance)
- * await client.queue("emailQueue").enqueue({
+ * // Access workerPool job (auto-routes to instance)
+ * await client.workerPool("emailWorkerPool").enqueue({
  *   id: "email-789",
  *   event: { to: "user@example.com", template: "welcome" },
  * });
  * ```
  */
-export function createPrimitivesClient<R extends PrimitiveRegistry>(
+export function createJobsClient<R extends JobRegistry>(
   binding: DurableObjectNamespace,
   registry: R
-): PrimitivesClient<R> {
+): JobsClient<R> {
   return {
     // -------------------------------------------------------------------------
     // Continuous Client
@@ -183,79 +183,79 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
     },
 
     // -------------------------------------------------------------------------
-    // Buffer Client
+    // Debounce Client
     // -------------------------------------------------------------------------
-    buffer: (name: string) => {
-      const client: BufferClient<unknown, unknown> = {
+    debounce: (name: string) => {
+      const client: DebounceClient<unknown, unknown> = {
         add: ({ id, event, eventId }) => {
-          const instanceId = createInstanceId("buffer", name, id);
+          const instanceId = createInstanceId("debounce", name, id);
           const stub = getStub(binding, instanceId);
           return narrowResponseEffect(
             stub.call({
-              type: "buffer",
+              type: "debounce",
               action: "add",
               name,
               id,
               event,
               eventId,
             }),
-            "buffer.add"
+            "debounce.add"
           );
         },
 
         flush: (id) => {
-          const instanceId = createInstanceId("buffer", name, id);
+          const instanceId = createInstanceId("debounce", name, id);
           const stub = getStub(binding, instanceId);
           return narrowResponseEffect(
             stub.call({
-              type: "buffer",
+              type: "debounce",
               action: "flush",
               name,
               id,
             }),
-            "buffer.flush"
+            "debounce.flush"
           );
         },
 
         clear: (id) => {
-          const instanceId = createInstanceId("buffer", name, id);
+          const instanceId = createInstanceId("debounce", name, id);
           const stub = getStub(binding, instanceId);
           return narrowResponseEffect(
             stub.call({
-              type: "buffer",
+              type: "debounce",
               action: "clear",
               name,
               id,
             }),
-            "buffer.clear"
+            "debounce.clear"
           );
         },
 
         status: (id) => {
-          const instanceId = createInstanceId("buffer", name, id);
+          const instanceId = createInstanceId("debounce", name, id);
           const stub = getStub(binding, instanceId);
           return narrowResponseEffect(
             stub.call({
-              type: "buffer",
+              type: "debounce",
               action: "status",
               name,
               id,
             }),
-            "buffer.status"
+            "debounce.status"
           );
         },
 
         getState: (id) => {
-          const instanceId = createInstanceId("buffer", name, id);
+          const instanceId = createInstanceId("debounce", name, id);
           const stub = getStub(binding, instanceId);
           return narrowResponseEffect(
             stub.call({
-              type: "buffer",
+              type: "debounce",
               action: "getState",
               name,
               id,
             }),
-            "buffer.getState"
+            "debounce.getState"
           );
         },
       };
@@ -264,27 +264,27 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
     },
 
     // -------------------------------------------------------------------------
-    // Queue Client
+    // WorkerPool Client
     // -------------------------------------------------------------------------
-    queue: (name: string) => {
-      const def = registry.queue.get(name);
+    workerPool: (name: string) => {
+      const def = registry.workerPool.get(name);
       const concurrency = def?.concurrency ?? 1;
 
       // Round-robin counter for load distribution
       let roundRobinCounter = 0;
 
-      const client: QueueClient<unknown> = {
+      const client: WorkerPoolClient<unknown> = {
         enqueue: ({ id, event, partitionKey, priority }) => {
           // Route to specific instance based on partitionKey or round-robin
           const instanceIndex = partitionKey
             ? consistentHash(partitionKey, concurrency)
             : roundRobinCounter++ % concurrency;
 
-          const instanceId = createInstanceId("queue", name, instanceIndex);
+          const instanceId = createInstanceId("workerPool", name, instanceIndex);
           const stub = getStub(binding, instanceId);
           return narrowResponseEffect(
             stub.call({
-              type: "queue",
+              type: "workerPool",
               action: "enqueue",
               name,
               instanceIndex,
@@ -293,22 +293,22 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
               partitionKey,
               priority,
             }),
-            "queue.enqueue"
+            "workerPool.enqueue"
           );
         },
 
         pause: (instanceIndex) => {
           if (instanceIndex !== undefined) {
-            const instanceId = createInstanceId("queue", name, instanceIndex);
+            const instanceId = createInstanceId("workerPool", name, instanceIndex);
             const stub = getStub(binding, instanceId);
             return narrowResponseEffect(
               stub.call({
-                type: "queue",
+                type: "workerPool",
                 action: "pause",
                 name,
                 instanceIndex,
               }),
-              "queue.pause"
+              "workerPool.pause"
             );
           }
 
@@ -316,23 +316,23 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
           return Effect.gen(function* () {
             const results = yield* Effect.all(
               Array.from({ length: concurrency }, (_, i) => {
-                const instanceId = createInstanceId("queue", name, i);
+                const instanceId = createInstanceId("workerPool", name, i);
                 const stub = getStub(binding, instanceId);
                 return narrowResponseEffect(
                   stub.call({
-                    type: "queue",
+                    type: "workerPool",
                     action: "pause",
                     name,
                     instanceIndex: i,
                   }),
-                  "queue.pause"
+                  "workerPool.pause"
                 );
               }),
               { concurrency: "unbounded" }
             );
 
             return {
-              _type: "queue.pause" as const,
+              _type: "workerPool.pause" as const,
               paused: results.every((r) => r.paused),
             };
           });
@@ -340,16 +340,16 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
 
         resume: (instanceIndex) => {
           if (instanceIndex !== undefined) {
-            const instanceId = createInstanceId("queue", name, instanceIndex);
+            const instanceId = createInstanceId("workerPool", name, instanceIndex);
             const stub = getStub(binding, instanceId);
             return narrowResponseEffect(
               stub.call({
-                type: "queue",
+                type: "workerPool",
                 action: "resume",
                 name,
                 instanceIndex,
               }),
-              "queue.resume"
+              "workerPool.resume"
             );
           }
 
@@ -357,23 +357,23 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
           return Effect.gen(function* () {
             const results = yield* Effect.all(
               Array.from({ length: concurrency }, (_, i) => {
-                const instanceId = createInstanceId("queue", name, i);
+                const instanceId = createInstanceId("workerPool", name, i);
                 const stub = getStub(binding, instanceId);
                 return narrowResponseEffect(
                   stub.call({
-                    type: "queue",
+                    type: "workerPool",
                     action: "resume",
                     name,
                     instanceIndex: i,
                   }),
-                  "queue.resume"
+                  "workerPool.resume"
                 );
               }),
               { concurrency: "unbounded" }
             );
 
             return {
-              _type: "queue.resume" as const,
+              _type: "workerPool.resume" as const,
               resumed: results.every((r) => r.resumed),
             };
           });
@@ -385,17 +385,17 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
           return Effect.gen(function* () {
             const results = yield* Effect.all(
               Array.from({ length: concurrency }, (_, i) => {
-                const instanceId = createInstanceId("queue", name, i);
+                const instanceId = createInstanceId("workerPool", name, i);
                 const stub = getStub(binding, instanceId);
                 return narrowResponseEffect(
                   stub.call({
-                    type: "queue",
+                    type: "workerPool",
                     action: "cancel",
                     name,
                     instanceIndex: i,
                     eventId,
                   }),
-                  "queue.cancel"
+                  "workerPool.cancel"
                 );
               }),
               { concurrency: "unbounded" }
@@ -412,22 +412,22 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
           return Effect.gen(function* () {
             const instances = yield* Effect.all(
               Array.from({ length: concurrency }, (_, i) => {
-                const instanceId = createInstanceId("queue", name, i);
+                const instanceId = createInstanceId("workerPool", name, i);
                 const stub = getStub(binding, instanceId);
                 return narrowResponseEffect(
                   stub.call({
-                    type: "queue",
+                    type: "workerPool",
                     action: "status",
                     name,
                     instanceIndex: i,
                   }),
-                  "queue.status"
+                  "workerPool.status"
                 );
               }),
               { concurrency: "unbounded" }
             );
 
-            const aggregated: QueueAggregatedStatus = {
+            const aggregated: WorkerPoolAggregatedStatus = {
               instances,
               totalPending: instances.reduce(
                 (sum, i) => sum + (i.pendingCount ?? 0),
@@ -449,31 +449,31 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
         },
 
         instanceStatus: (instanceIndex) => {
-          const instanceId = createInstanceId("queue", name, instanceIndex);
+          const instanceId = createInstanceId("workerPool", name, instanceIndex);
           const stub = getStub(binding, instanceId);
           return narrowResponseEffect(
             stub.call({
-              type: "queue",
+              type: "workerPool",
               action: "status",
               name,
               instanceIndex,
             }),
-            "queue.status"
+            "workerPool.status"
           );
         },
 
         drain: (instanceIndex) => {
           if (instanceIndex !== undefined) {
-            const instanceId = createInstanceId("queue", name, instanceIndex);
+            const instanceId = createInstanceId("workerPool", name, instanceIndex);
             const stub = getStub(binding, instanceId);
             return narrowResponseEffect(
               stub.call({
-                type: "queue",
+                type: "workerPool",
                 action: "drain",
                 name,
                 instanceIndex,
               }),
-              "queue.drain"
+              "workerPool.drain"
             );
           }
 
@@ -481,23 +481,23 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
           return Effect.gen(function* () {
             const results = yield* Effect.all(
               Array.from({ length: concurrency }, (_, i) => {
-                const instanceId = createInstanceId("queue", name, i);
+                const instanceId = createInstanceId("workerPool", name, i);
                 const stub = getStub(binding, instanceId);
                 return narrowResponseEffect(
                   stub.call({
-                    type: "queue",
+                    type: "workerPool",
                     action: "drain",
                     name,
                     instanceIndex: i,
                   }),
-                  "queue.drain"
+                  "workerPool.drain"
                 );
               }),
               { concurrency: "unbounded" }
             );
 
             return {
-              _type: "queue.drain" as const,
+              _type: "workerPool.drain" as const,
               drained: results.every((r) => r.drained),
             };
           });
@@ -506,5 +506,5 @@ export function createPrimitivesClient<R extends PrimitiveRegistry>(
 
       return client;
     },
-  } as PrimitivesClient<R>;
+  } as JobsClient<R>;
 }

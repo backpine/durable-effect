@@ -1,15 +1,15 @@
-# @durable-effect/primitives
+# @durable-effect/jobs
 
-Durable primitives for Cloudflare Workers built on Effect. This package provides high-level abstractions for common durable patterns:
+Durable jobs for Cloudflare Workers built on Effect. This package provides high-level abstractions for common durable patterns:
 
 - **Continuous** - Execute functions on a schedule (this guide)
-- **Buffer** - Accumulate events and flush on schedule/threshold (coming soon)
-- **Queue** - Process events one at a time with retries (coming soon)
+- **Debounce** - Accumulate events and flush on schedule/threshold (coming soon)
+- **WorkerPool** - Process events one at a time with retries (coming soon)
 
 ## Installation
 
 ```bash
-npm install @durable-effect/primitives effect
+npm install @durable-effect/jobs effect
 ```
 
 ## Continuous Primitive
@@ -26,7 +26,7 @@ The Continuous primitive executes a function on a recurring schedule. Perfect fo
 
 ```ts
 import { Effect, Schema } from "effect";
-import { Continuous, createDurablePrimitives } from "@durable-effect/primitives";
+import { Continuous, createDurableJobs } from "@durable-effect/jobs";
 
 // 1. Define your primitive (name comes from the object key in step 2)
 const tokenRefresher = Continuous.make({
@@ -61,17 +61,17 @@ const tokenRefresher = Continuous.make({
 });
 
 // 2. Create the Durable Object and Client - keys become primitive names
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
+const { Jobs, JobsClient } = createDurableJobs({
   tokenRefresher,
 });
 
 // 3. Export the Durable Object class
-export { Primitives };
+export { Jobs };
 
 // 4. Use in your worker
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+    const client = JobsClient.fromBinding(env.PRIMITIVES);
 
     // Start a token refresher for a user (name matches the key from step 2)
     await client.continuous("tokenRefresher").start({
@@ -93,11 +93,11 @@ export default {
 ```toml
 [[durable_objects.bindings]]
 name = "PRIMITIVES"
-class_name = "Primitives"
+class_name = "Jobs"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["Primitives"]
+new_classes = ["Jobs"]
 ```
 
 ## API Reference
@@ -105,7 +105,7 @@ new_classes = ["Primitives"]
 ### `Continuous.make(config)`
 
 Creates a continuous primitive definition. The name is assigned when you register
-the primitive via `createDurablePrimitives()` - the object key becomes the name.
+the primitive via `createDurableJobs()` - the object key becomes the name.
 
 ```ts
 const myPrimitive = Continuous.make({
@@ -115,7 +115,7 @@ const myPrimitive = Continuous.make({
 });
 
 // Name "myPrimitive" comes from the key
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
+const { Jobs, JobsClient } = createDurableJobs({
   myPrimitive,
 });
 ```
@@ -325,7 +325,7 @@ Use the test runtime for unit testing:
 import { describe, it, expect } from "vitest";
 import { Effect, Schema } from "effect";
 import { createTestRuntime, NoopTrackerLayer } from "@durable-effect/core";
-import { createPrimitivesRuntimeFromLayer } from "@durable-effect/primitives";
+import { createJobsRuntimeFromLayer } from "@durable-effect/jobs";
 
 describe("tokenRefresher", () => {
   it("refreshes token on schedule", async () => {
@@ -335,12 +335,12 @@ describe("tokenRefresher", () => {
     // Create registry (manually add name for test registry)
     const registry = {
       continuous: new Map([["tokenRefresher", { ...tokenRefresher, name: "tokenRefresher" }]]),
-      buffer: new Map(),
-      queue: new Map(),
+      debounce: new Map(),
+      workerPool: new Map(),
     };
 
     // Create runtime from test layer
-    const runtime = createPrimitivesRuntimeFromLayer(layer, registry);
+    const runtime = createJobsRuntimeFromLayer(layer, registry);
 
     // Start the primitive
     await runtime.handle({
@@ -465,13 +465,13 @@ The Continuous primitive is built on a thin Durable Object shell that delegates 
 │              Durable Object (Thin Shell)                     │
 │                                                              │
 │  • Receives RPC calls                                        │
-│  • Delegates to PrimitivesRuntime                           │
+│  • Delegates to JobsRuntime                           │
 │  • Handles alarms                                            │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   Primitives Runtime                         │
+│                   Jobs Runtime                         │
 │                                                              │
 │  • Routes requests to handlers                               │
 │  • Manages state via StorageAdapter                         │

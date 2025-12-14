@@ -1,6 +1,6 @@
-// packages/primitives/src/client/index.ts
+// packages/jobs/src/client/index.ts
 
-export { createPrimitivesClient } from "./client";
+export { createJobsClient } from "./client";
 
 export {
   narrowResponse,
@@ -8,8 +8,8 @@ export {
   narrowResponseEffect,
   isResponseType,
   UnexpectedResponseError,
-  primitiveCallError,
-  type PrimitiveCallError,
+  jobCallError,
+  type JobCallError,
   type ClientError,
   type ResponseTypeMap,
   type ResponseType,
@@ -18,18 +18,18 @@ export {
 export type {
   // Client instance types
   ContinuousClient,
-  BufferClient,
-  QueueClient,
-  QueueAggregatedStatus,
+  DebounceClient,
+  WorkerPoolClient,
+  WorkerPoolAggregatedStatus,
   // Client factory types
-  PrimitivesClient,
-  PrimitivesClientFactory,
+  JobsClient,
+  JobsClientFactory,
   // Type helpers
   ContinuousKeys,
-  BufferKeys,
-  QueueKeys,
+  DebounceKeys,
+  WorkerPoolKeys,
   ContinuousStateType,
-  BufferEventType,
-  BufferStateType,
-  QueueEventType,
+  DebounceEventType,
+  DebounceStateType,
+  WorkerPoolEventType,
 } from "./types";

@@ -2,35 +2,35 @@
 
 ## Overview
 
-This document describes the event data model for tracking primitives (Continuous, Buffer, Queue). Unlike workflow tracking which captures fine-grained step-level events, primitive tracking is designed for higher volume, lower granularity observability.
+This document describes the event data model for tracking jobs (Continuous, Debounce, WorkerPool). Unlike workflow tracking which captures fine-grained step-level events, primitive tracking is designed for higher volume, lower granularity observability.
 
 ## Design Principles
 
 ### 1. Volume Awareness
-Primitives execute at much higher frequencies than workflows:
+Jobs execute at much higher frequencies than workflows:
 - **Continuous**: Can run every 10 seconds
-- **Buffer**: Receives events continuously, flushes periodically
-- **Queue**: Processes potentially thousands of events per second
+- **Debounce**: Receives events continuously, flushes periodically
+- **WorkerPool**: Processes potentially thousands of events per second
 
 We must be selective about what we track to avoid overwhelming the tracking service.
 
 ### 2. Segmentation via "Grain"
-To allow the tracking service to distinguish workflows from primitives, we introduce a **`grain`** field:
+To allow the tracking service to distinguish workflows from jobs, we introduce a **`grain`** field:
 
 ```typescript
 type Grain = "workflow" | "primitive";
 ```
 
 This enables:
-- Separate dashboards/views for workflows vs primitives
+- Separate dashboards/views for workflows vs jobs
 - Different retention policies
 - Optimized queries per grain type
 
 ### 3. Primitive Type Discrimination
-Within primitives, events are further discriminated by **`primitiveType`**:
+Within jobs, events are further discriminated by **`primitiveType`**:
 
 ```typescript
-type PrimitiveType = "continuous" | "buffer" | "queue";
+type PrimitiveType = "continuous" | "debounce" | "workerPool";
 ```
 
 ---
@@ -60,7 +60,7 @@ interface PrimitiveBaseEvent {
   eventId: string;        // UUIDv7 for time-ordering
   timestamp: string;      // ISO 8601
   grain: "primitive";     // Discriminator from workflows
-  primitiveType: "continuous" | "buffer" | "queue";
+  primitiveType: "continuous" | "debounce" | "workerPool";
   primitiveId: string;    // Durable Object ID
   primitiveName: string;  // Definition name (e.g., "tokenRefresher")
   instanceId: string;     // User-provided instance ID
@@ -74,7 +74,7 @@ interface PrimitiveBaseEvent {
 | Field | Workflow | Primitive | Reason |
 |-------|----------|-----------|--------|
 | `grain` | (not present) | `"primitive"` | Segment at ingestion |
-| `primitiveType` | (not present) | `"continuous" \| "buffer" \| "queue"` | Type discrimination |
+| `primitiveType` | (not present) | `"continuous" \| "debounce" \| "workerPool"` | Type discrimination |
 | `workflowId` | DO ID | - | Renamed for clarity |
 | `primitiveId` | - | DO ID | Renamed for clarity |
 | `instanceId` | - | User ID | What user passes to `start()` |
@@ -159,21 +159,21 @@ interface ContinuousStoppedEvent extends PrimitiveBaseEvent {
 
 ---
 
-### Buffer Primitive Events
+### Debounce Primitive Events
 
 Per the tracking rules, we track:
 1. First event received (with config info)
 2. Successful flush (with event count, trigger reason)
 3. Failed flush (with error info)
 
-#### `buffer.initialized`
+#### `debounce.initialized`
 
-Emitted when first event is added to buffer (not on every add).
+Emitted when first event is added to debounce (not on every add).
 
 ```typescript
-interface BufferInitializedEvent extends PrimitiveBaseEvent {
-  type: "buffer.initialized";
-  primitiveType: "buffer";
+interface DebounceInitializedEvent extends PrimitiveBaseEvent {
+  type: "debounce.initialized";
+  primitiveType: "debounce";
   config: {
     flushAfter: string;     // Duration string
     maxEvents?: number;
@@ -181,29 +181,29 @@ interface BufferInitializedEvent extends PrimitiveBaseEvent {
 }
 ```
 
-#### `buffer.flushed`
+#### `debounce.flushed`
 
 Emitted after successful flush.
 
 ```typescript
-interface BufferFlushedEvent extends PrimitiveBaseEvent {
-  type: "buffer.flushed";
-  primitiveType: "buffer";
-  eventCount: number;       // How many events were in buffer
+interface DebounceFlushedEvent extends PrimitiveBaseEvent {
+  type: "debounce.flushed";
+  primitiveType: "debounce";
+  eventCount: number;       // How many events were in debounce
   trigger: "schedule" | "maxEvents" | "manual";
   durationMs: number;       // Flush execution time
   totalEventsProcessed: number; // Cumulative count
 }
 ```
 
-#### `buffer.failed`
+#### `debounce.failed`
 
 Emitted when flush fails.
 
 ```typescript
-interface BufferFailedEvent extends PrimitiveBaseEvent {
-  type: "buffer.failed";
-  primitiveType: "buffer";
+interface DebounceFailedEvent extends PrimitiveBaseEvent {
+  type: "debounce.failed";
+  primitiveType: "debounce";
   eventCount: number;
   trigger: "schedule" | "maxEvents" | "manual";
   error: {
@@ -216,22 +216,22 @@ interface BufferFailedEvent extends PrimitiveBaseEvent {
 
 ---
 
-### Queue Primitive Events
+### WorkerPool Primitive Events
 
-Queues are high-volume, so we need aggregated events rather than per-message tracking.
+WorkerPools are high-volume, so we need aggregated events rather than per-message tracking.
 
 #### Proposed Approach: Periodic Snapshots
 
-Instead of tracking every enqueue/dequeue, emit periodic snapshots:
+Instead of tracking every enworkerPool/deworkerPool, emit periodic snapshots:
 
-#### `queue.snapshot`
+#### `workerPool.snapshot`
 
 Emitted periodically (e.g., every 30 seconds, or after N events processed).
 
 ```typescript
-interface QueueSnapshotEvent extends PrimitiveBaseEvent {
-  type: "queue.snapshot";
-  primitiveType: "queue";
+interface WorkerPoolSnapshotEvent extends PrimitiveBaseEvent {
+  type: "workerPool.snapshot";
+  primitiveType: "workerPool";
   metrics: {
     pendingCount: number;     // Events waiting
     processingCount: number;  // Events being processed
@@ -250,14 +250,14 @@ interface QueueSnapshotEvent extends PrimitiveBaseEvent {
 }
 ```
 
-#### `queue.initialized`
+#### `workerPool.initialized`
 
-Emitted when queue first receives an event.
+Emitted when workerPool first receives an event.
 
 ```typescript
-interface QueueInitializedEvent extends PrimitiveBaseEvent {
-  type: "queue.initialized";
-  primitiveType: "queue";
+interface WorkerPoolInitializedEvent extends PrimitiveBaseEvent {
+  type: "workerPool.initialized";
+  primitiveType: "workerPool";
   config: {
     concurrency: number;
     retry?: {
@@ -270,14 +270,14 @@ interface QueueInitializedEvent extends PrimitiveBaseEvent {
 }
 ```
 
-#### `queue.deadLetter`
+#### `workerPool.deadLetter`
 
 Emitted when an event exhausts retries.
 
 ```typescript
-interface QueueDeadLetterEvent extends PrimitiveBaseEvent {
-  type: "queue.deadLetter";
-  primitiveType: "queue";
+interface WorkerPoolDeadLetterEvent extends PrimitiveBaseEvent {
+  type: "workerPool.deadLetter";
+  primitiveType: "workerPool";
   eventId: string;          // The failed event's ID
   attempts: number;
   error: {
@@ -287,14 +287,14 @@ interface QueueDeadLetterEvent extends PrimitiveBaseEvent {
 }
 ```
 
-#### `queue.drained`
+#### `workerPool.drained`
 
-Emitted when queue becomes empty after processing.
+Emitted when workerPool becomes empty after processing.
 
 ```typescript
-interface QueueDrainedEvent extends PrimitiveBaseEvent {
-  type: "queue.drained";
-  primitiveType: "queue";
+interface WorkerPoolDrainedEvent extends PrimitiveBaseEvent {
+  type: "workerPool.drained";
+  primitiveType: "workerPool";
   totalProcessed: number;
   totalFailed: number;
   totalDeadLettered: number;
@@ -315,15 +315,15 @@ type InternalPrimitiveEvent =
   | ContinuousExecutedEvent
   | ContinuousFailedEvent
   | ContinuousStoppedEvent
-  // Buffer
-  | BufferInitializedEvent
-  | BufferFlushedEvent
-  | BufferFailedEvent
-  // Queue
-  | QueueInitializedEvent
-  | QueueSnapshotEvent
-  | QueueDeadLetterEvent
-  | QueueDrainedEvent;
+  // Debounce
+  | DebounceInitializedEvent
+  | DebounceFlushedEvent
+  | DebounceFailedEvent
+  // WorkerPool
+  | WorkerPoolInitializedEvent
+  | WorkerPoolSnapshotEvent
+  | WorkerPoolDeadLetterEvent
+  | WorkerPoolDrainedEvent;
 ```
 
 ### Combined with Workflows
@@ -356,32 +356,32 @@ const BaseEventFields = {
 
 Or alternatively, keep separate schemas and discriminate at the tracking service level via the `type` prefix:
 - `workflow.*` events
-- `continuous.*`, `buffer.*`, `queue.*` events
+- `continuous.*`, `debounce.*`, `workerPool.*` events
 
 **Recommendation**: Use the `type` prefix approach initially (simpler), add explicit `grain` field later if needed for query optimization.
 
 ### Phase 2: Implement Continuous Events
 
-1. Add event schemas to `@durable-effect/primitives`
+1. Add event schemas to `@durable-effect/jobs`
 2. Emit `continuous.started` in start handler
 3. Emit `continuous.executed` after successful execute
 4. Emit `continuous.failed` after failed execute
 5. Emit `continuous.stopped` on stop/terminate
 
-### Phase 3: Implement Buffer Events
+### Phase 3: Implement Debounce Events
 
 1. Add event schemas
-2. Track first event to emit `buffer.initialized`
-3. Emit `buffer.flushed` after successful flush
-4. Emit `buffer.failed` after failed flush
+2. Track first event to emit `debounce.initialized`
+3. Emit `debounce.flushed` after successful flush
+4. Emit `debounce.failed` after failed flush
 
-### Phase 4: Implement Queue Events
+### Phase 4: Implement WorkerPool Events
 
 1. Add event schemas
 2. Implement snapshot timer/counter
-3. Emit `queue.snapshot` periodically
-4. Emit `queue.deadLetter` on DLQ
-5. Emit `queue.drained` when empty
+3. Emit `workerPool.snapshot` periodically
+4. Emit `workerPool.deadLetter` on DLQ
+5. Emit `workerPool.drained` when empty
 
 ---
 
@@ -394,20 +394,20 @@ Or alternatively, keep separate schemas and discriminate at the tracking service
 
 Example: 100 instances × 1 execution/30min = **200 events/hour**
 
-### Buffer (Medium Volume)
-- 1 `initialized` per buffer lifetime
+### Debounce (Medium Volume)
+- 1 `initialized` per debounce lifetime
 - 1 `flushed` or `failed` per flush cycle
 - Flushes happen on schedule OR max events
 
-Example: 50 buffers × 12 flushes/hour = **600 events/hour**
+Example: 50 debounces × 12 flushes/hour = **600 events/hour**
 
-### Queue (Controlled Volume)
-- 1 `initialized` per queue lifetime
-- 1 `snapshot` per 30 seconds = 120/hour per queue
+### WorkerPool (Controlled Volume)
+- 1 `initialized` per workerPool lifetime
+- 1 `snapshot` per 30 seconds = 120/hour per workerPool
 - 1 `deadLetter` per failed event (hopefully rare)
 - 1 `drained` per empty event (variable)
 
-Example: 10 queues × 120 snapshots/hour = **1,200 events/hour**
+Example: 10 workerPools × 120 snapshots/hour = **1,200 events/hour**
 
 **Total**: ~2,000 events/hour for a moderate deployment (vs potentially millions of per-message events).
 
@@ -416,7 +416,7 @@ Example: 10 queues × 120 snapshots/hour = **1,200 events/hour**
 ## Schema Definitions (Effect Schema)
 
 ```typescript
-// packages/primitives/src/events.ts
+// packages/jobs/src/events.ts
 
 import { Schema } from "effect";
 
@@ -424,7 +424,7 @@ import { Schema } from "effect";
 const PrimitiveBaseFields = {
   eventId: Schema.String,
   timestamp: Schema.String,
-  primitiveType: Schema.Literal("continuous", "buffer", "queue"),
+  primitiveType: Schema.Literal("continuous", "debounce", "workerPool"),
   primitiveId: Schema.String,
   primitiveName: Schema.String,
   instanceId: Schema.String,
@@ -463,9 +463,9 @@ export const ContinuousStartedEventSchema = Schema.Struct({
    - Explicit: Easier to query, more bytes per event
    - Inferred: Smaller events, query logic in tracking service
 
-2. **Queue snapshot frequency?**
+2. **WorkerPool snapshot frequency?**
    - Time-based (every 30s) vs count-based (every 100 events)?
-   - Configurable per queue?
+   - Configurable per workerPool?
 
 3. **Should we track `continuous.terminated` separately from `stopped`?**
    - Currently using `stoppedBy: "terminate"` field

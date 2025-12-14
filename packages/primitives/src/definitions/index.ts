@@ -1,4 +1,4 @@
-// packages/primitives/src/definitions/index.ts
+// packages/jobs/src/definitions/index.ts
 
 export {
   Continuous,

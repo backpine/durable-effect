@@ -23,7 +23,7 @@ The step function is the most critical piece - it handles:
 step/cache-hit
 ├── returns cached result when step already completed
 ├── does NOT re-execute effect when cached
-└── works with different value types (primitives, objects, arrays)
+└── works with different value types (jobs, objects, arrays)
 
 step/first-execution
 ├── executes effect when step not completed
@@ -537,6 +537,6 @@ The workflow package requires thorough testing at multiple levels:
 2. **Integration tests** for the engine (run, alarm, executeWorkflow)
 3. **Scenario tests** for complete workflow lifecycles
 
-The key challenge is properly mocking Cloudflare's Durable Object primitives while testing Effect-based code. The recommended approach uses custom mock implementations that track storage operations for verification.
+The key challenge is properly mocking Cloudflare's Durable Object jobs while testing Effect-based code. The recommended approach uses custom mock implementations that track storage operations for verification.
 
 Priority should be given to testing the critical path: step caching, retry pause/resume cycles, and workflow resumption - as these are the core durability guarantees the library provides.

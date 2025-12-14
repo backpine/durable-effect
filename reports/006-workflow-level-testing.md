@@ -575,4 +575,4 @@ The workflow-level testing strategy focuses on:
 4. **Integration tests** - Steps + sleeps working together
 5. **Edge cases** - Zero duration, long duration, index persistence
 
-This testing infrastructure will be reusable for future primitives like `wait` and `retry` workflow-level behavior.
+This testing infrastructure will be reusable for future jobs like `wait` and `retry` workflow-level behavior.

@@ -1,4 +1,4 @@
-// packages/primitives/test/services/metadata.test.ts
+// packages/jobs/test/services/metadata.test.ts
 
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
@@ -55,7 +55,7 @@ describe("MetadataService", () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const metadata = yield* MetadataService;
-        yield* metadata.initialize("buffer", "webhookBuffer");
+        yield* metadata.initialize("debounce", "webhookDebounce");
 
         // Advance time
         time.advance(5000);
@@ -66,8 +66,8 @@ describe("MetadataService", () => {
     );
 
     expect(result).toEqual({
-      type: "buffer",
-      name: "webhookBuffer",
+      type: "debounce",
+      name: "webhookDebounce",
       status: "running",
       createdAt: 1000000,
       updatedAt: 1005000,
@@ -94,7 +94,7 @@ describe("MetadataService", () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const metadata = yield* MetadataService;
-        yield* metadata.initialize("queue", "emailQueue");
+        yield* metadata.initialize("workerPool", "emailWorkerPool");
 
         const before = yield* metadata.get();
         yield* metadata.delete();
@@ -109,7 +109,7 @@ describe("MetadataService", () => {
   });
 
   it("supports all primitive types", async () => {
-    const types = ["continuous", "buffer", "queue"] as const;
+    const types = ["continuous", "debounce", "workerPool"] as const;
 
     for (const type of types) {
       const { layer } = createTestLayer();

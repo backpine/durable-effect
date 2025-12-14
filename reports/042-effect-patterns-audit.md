@@ -18,7 +18,7 @@ The workflow package demonstrates **strong Effect fundamentals** with proper use
 
 ### 1. CRITICAL: Unsafe `as any` Type Witnesses
 
-**File**: `src/primitives/make.ts` (Lines 93-95)
+**File**: `src/jobs/make.ts` (Lines 93-95)
 
 ```typescript
 return {
@@ -332,7 +332,7 @@ export const validateRecoveryConfig = (config: unknown) =>
 
 ### 7. LOW: Mutable Variables in Pure Functions
 
-**File 1**: `src/primitives/retry.ts` (Line 283-286)
+**File 1**: `src/jobs/retry.ts` (Line 283-286)
 
 ```typescript
 let delayMs = getDelay(delay, attempt);
@@ -341,7 +341,7 @@ if (jitter) {
 }
 ```
 
-**File 2**: `src/primitives/timeout.ts` (Line 91-95)
+**File 2**: `src/jobs/timeout.ts` (Line 91-95)
 
 ```typescript
 let startedAt = yield* stepCtx.startedAt;
@@ -422,7 +422,7 @@ The codebase demonstrates excellent Effect patterns in several areas:
 
 | # | Severity | Issue | File | Recommended Fix |
 |---|----------|-------|------|-----------------|
-| 1 | CRITICAL | `as any` type witnesses | `primitives/make.ts:93-95` | Use `as never` or `Types.Covariant` |
+| 1 | CRITICAL | `as any` type witnesses | `jobs/make.ts:93-95` | Use `as never` or `Types.Covariant` |
 | 2 | CRITICAL | No input validation | `executor/executor.ts:104` | Add Schema validation |
 | 3 | HIGH | Plain unions not Data | `state/types.ts` | Convert to `Data.TaggedClass` |
 | 4 | MEDIUM | Redundant type casts | Multiple | Remove redundant `as T` |

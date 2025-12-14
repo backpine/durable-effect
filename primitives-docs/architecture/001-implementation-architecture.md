@@ -1,6 +1,6 @@
-# Primitives Implementation Architecture
+# Jobs Implementation Architecture
 
-This document provides a focused, implementation-oriented architecture for `@durable-effect/primitives`. It defines the exact layers, components, and phased implementation plan.
+This document provides a focused, implementation-oriented architecture for `@durable-effect/jobs`. It defines the exact layers, components, and phased implementation plan.
 
 ---
 
@@ -10,9 +10,9 @@ This document provides a focused, implementation-oriented architecture for `@dur
 |----------|-------------|
 | **RPC-based Engine** | DO class exposes typed RPC methods (like workflow's `run`, `alarm`, `cancel`) not fetch |
 | **Shared Core** | All adapters, errors, and testing utilities come from `@durable-effect/core` |
-| **Single DO Class** | One `DurablePrimitivesEngine` handles all primitive types |
+| **Single DO Class** | One `DurableJobsEngine` handles all primitive types |
 | **Client Routing** | Client resolves instance IDs before calling DO |
-| **Phased Implementation** | Build core infrastructure first, then primitives one by one |
+| **Phased Implementation** | Build core infrastructure first, then jobs one by one |
 
 ---
 
@@ -21,20 +21,20 @@ This document provides a focused, implementation-oriented architecture for `@dur
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              USER CODE                                       │
-│  const { Primitives, PrimitivesClient } = createDurablePrimitives({...})    │
+│  const { Jobs, JobsClient } = createDurableJobs({...})    │
 └─────────────────────────────────────┬───────────────────────────────────────┘
                                       │
 ┌─────────────────────────────────────▼───────────────────────────────────────┐
 │                          CLIENT LAYER                                        │
 │                                                                              │
-│  PrimitivesClient.fromBinding(env.PRIMITIVES)                               │
+│  JobsClient.fromBinding(env.PRIMITIVES)                               │
 │    ├── continuous(name) → ContinuousClient { start, stop, trigger, ... }    │
-│    ├── buffer(name) → BufferClient { add, flush, clear, ... }               │
-│    └── queue(name) → QueueClient { enqueue, pause, resume, ... }            │
+│    ├── debounce(name) → DebounceClient { add, flush, clear, ... }               │
+│    └── workerPool(name) → WorkerPoolClient { enworkerPool, pause, resume, ... }            │
 │                                                                              │
 │  Responsibilities:                                                           │
 │    • Resolve instance ID: `{type}:{name}:{id}`                              │
-│    • Route Queue events across N instances (round-robin / partition)        │
+│    • Route WorkerPool events across N instances (round-robin / partition)        │
 │    • Call DO RPC methods                                                     │
 └─────────────────────────────────────┬───────────────────────────────────────┘
                                       │ RPC calls to DO
@@ -42,7 +42,7 @@ This document provides a focused, implementation-oriented architecture for `@dur
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          ENGINE LAYER                                        │
 │                                                                              │
-│  class DurablePrimitivesEngine extends DurableObject {                      │
+│  class DurableJobsEngine extends DurableObject {                      │
 │    // RPC Methods (like workflow's run, runAsync, alarm, cancel)            │
 │    continuousStart(call) → Promise<StartResult>                             │
 │    continuousStop(id, opts) → Promise<StopResult>                           │
@@ -50,17 +50,17 @@ This document provides a focused, implementation-oriented architecture for `@dur
 │    continuousStatus(id) → Promise<Status>                                   │
 │    continuousGetState(id) → Promise<State>                                  │
 │                                                                              │
-│    bufferAdd(call) → Promise<AddResult>                                     │
-│    bufferFlush(id) → Promise<FlushResult>                                   │
-│    bufferClear(id) → Promise<ClearResult>                                   │
-│    bufferStatus(id) → Promise<Status>                                       │
-│    bufferGetState(id) → Promise<State>                                      │
+│    debounceAdd(call) → Promise<AddResult>                                     │
+│    debounceFlush(id) → Promise<FlushResult>                                   │
+│    debounceClear(id) → Promise<ClearResult>                                   │
+│    debounceStatus(id) → Promise<Status>                                       │
+│    debounceGetState(id) → Promise<State>                                      │
 │                                                                              │
-│    queueEnqueue(call) → Promise<EnqueueResult>                              │
-│    queuePause(idx?) → Promise<void>                                         │
-│    queueResume(idx?) → Promise<void>                                        │
-│    queueCancel(eventId) → Promise<CancelResult>                             │
-│    queueStatus() → Promise<Status>                                          │
+│    workerPoolEnworkerPool(call) → Promise<EnworkerPoolResult>                              │
+│    workerPoolPause(idx?) → Promise<void>                                         │
+│    workerPoolResume(idx?) → Promise<void>                                        │
+│    workerPoolCancel(eventId) → Promise<CancelResult>                             │
+│    workerPoolStatus() → Promise<Status>                                          │
 │                                                                              │
 │    alarm() → Promise<void>  // Routes to correct primitive type             │
 │  }                                                                           │
@@ -86,10 +86,10 @@ This document provides a focused, implementation-oriented architecture for `@dur
 │           ┌──────────────────────────┼──────────────────────────┐           │
 │           ▼                          ▼                          ▼           │
 │  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐     │
-│  │   Continuous    │      │     Buffer      │      │      Queue      │     │
+│  │   Continuous    │      │     Debounce      │      │      WorkerPool      │     │
 │  │  Orchestrator   │      │  Orchestrator   │      │  Orchestrator   │     │
 │  │                 │      │                 │      │                 │     │
-│  │  handleStart()  │      │  handleAdd()    │      │  handleEnqueue()│     │
+│  │  handleStart()  │      │  handleAdd()    │      │  handleEnworkerPool()│     │
 │  │  handleStop()   │      │  handleFlush()  │      │  handlePause()  │     │
 │  │  handleTrigger()│      │  handleClear()  │      │  handleResume() │     │
 │  │  handleAlarm()  │      │  handleAlarm()  │      │  handleAlarm()  │     │
@@ -102,7 +102,7 @@ This document provides a focused, implementation-oriented architecture for `@dur
 │                         EXECUTOR LAYER                                       │
 │                                                                              │
 │  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐     │
-│  │   Continuous    │      │     Buffer      │      │      Queue      │     │
+│  │   Continuous    │      │     Debounce      │      │      WorkerPool      │     │
 │  │    Executor     │      │    Executor     │      │    Executor     │     │
 │  │                 │      │                 │      │                 │     │
 │  │ • run execute() │      │ • run onEvent() │      │ • run execute() │     │
@@ -120,7 +120,7 @@ This document provides a focused, implementation-oriented architecture for `@dur
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      SHARED SERVICES LAYER                                   │
-│                    (Primitives-specific services)                            │
+│                    (Jobs-specific services)                            │
 │                                                                              │
 │  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                 │
 │  │   Metadata     │  │     State      │  │   Schedule     │                 │
@@ -184,27 +184,27 @@ This document provides a focused, implementation-oriented architecture for `@dur
 | `NoopTrackerLayer` | Disabled tracking layer |
 | `createTestRuntime` | In-memory runtime for testing |
 
-### 3.2 Primitives Core (To Build)
+### 3.2 Jobs Core (To Build)
 
 | Component | Purpose | Phase |
 |-----------|---------|-------|
 | `MetadataManager` | Track primitive type, name, status | 1 |
 | `StateManager` | Schema-validated state get/set | 1 |
 | `ScheduleManager` | Higher-level scheduling (Duration support) | 1 |
-| `IdempotencyManager` | Event deduplication (Buffer, Queue) | 1 |
+| `IdempotencyManager` | Event deduplication (Debounce, WorkerPool) | 1 |
 | `PurgeManager` | Data cleanup after completion | 1 |
-| `PrimitiveError` types | Primitives-specific errors | 1 |
-| `PrimitiveEvent` types | Primitives-specific tracking events | 1 |
+| `PrimitiveError` types | Jobs-specific errors | 1 |
+| `PrimitiveEvent` types | Jobs-specific tracking events | 1 |
 
 ### 3.3 Engine & Client (To Build)
 
 | Component | Purpose | Phase |
 |-----------|---------|-------|
-| `DurablePrimitivesEngine` | DO class with RPC methods | 2 |
+| `DurableJobsEngine` | DO class with RPC methods | 2 |
 | `PrimitiveOrchestrator` | Routes requests to type orchestrators | 2 |
-| `PrimitivesClient` | Client factory with typed accessors | 2 |
+| `JobsClient` | Client factory with typed accessors | 2 |
 | `PrimitiveRegistry` | Holds primitive definitions | 2 |
-| `createDurablePrimitives` | Main factory function | 2 |
+| `createDurableJobs` | Main factory function | 2 |
 
 ### 3.4 Continuous Primitive (To Build)
 
@@ -216,40 +216,40 @@ This document provides a focused, implementation-oriented architecture for `@dur
 | `ContinuousContext` | Context provided to execute() | 3 |
 | `ContinuousClient` | Typed client for continuous | 3 |
 
-### 3.5 Buffer Primitive (To Build)
+### 3.5 Debounce Primitive (To Build)
 
 | Component | Purpose | Phase |
 |-----------|---------|-------|
-| `Buffer.make` | Definition factory | 4 |
-| `BufferOrchestrator` | Handles buffer operations | 4 |
-| `BufferExecutor` | Executes onEvent/execute, manages flush | 4 |
-| `BufferEventContext` | Context for onEvent() | 4 |
-| `BufferExecuteContext` | Context for execute() | 4 |
-| `BufferClient` | Typed client for buffer | 4 |
+| `Debounce.make` | Definition factory | 4 |
+| `DebounceOrchestrator` | Handles debounce operations | 4 |
+| `DebounceExecutor` | Executes onEvent/execute, manages flush | 4 |
+| `DebounceEventContext` | Context for onEvent() | 4 |
+| `DebounceExecuteContext` | Context for execute() | 4 |
+| `DebounceClient` | Typed client for debounce | 4 |
 
-### 3.6 Queue Primitive (To Build)
+### 3.6 WorkerPool Primitive (To Build)
 
 | Component | Purpose | Phase |
 |-----------|---------|-------|
-| `Queue.make` | Definition factory | 5 |
-| `QueueOrchestrator` | Handles queue operations | 5 |
-| `QueueExecutor` | Processes events, handles retries | 5 |
-| `QueueExecuteContext` | Context for execute() | 5 |
-| `QueueClient` | Typed client with routing logic | 5 |
+| `WorkerPool.make` | Definition factory | 5 |
+| `WorkerPoolOrchestrator` | Handles workerPool operations | 5 |
+| `WorkerPoolExecutor` | Processes events, handles retries | 5 |
+| `WorkerPoolExecuteContext` | Context for execute() | 5 |
+| `WorkerPoolClient` | Typed client with routing logic | 5 |
 | `Backoff` utilities | Exponential/linear backoff | 5 |
 
 ---
 
 ## 4. Implementation Phases
 
-### Phase 1: Primitives Core Infrastructure
+### Phase 1: Jobs Core Infrastructure
 
-**Goal:** Build shared services that all primitives need.
+**Goal:** Build shared services that all jobs need.
 
 **Files to create:**
 
 ```
-packages/primitives/src/
+packages/jobs/src/
 ├── errors/
 │   └── index.ts                    # PrimitiveError types
 ├── events/
@@ -270,7 +270,7 @@ packages/primitives/src/
 // MetadataManager - tracks what primitive this instance is
 interface MetadataManagerService {
   readonly initialize: (
-    type: "continuous" | "buffer" | "queue",
+    type: "continuous" | "debounce" | "workerPool",
     name: string,
   ) => Effect.Effect<void, StorageError>;
   readonly get: () => Effect.Effect<PrimitiveMetadata | undefined, StorageError>;
@@ -304,7 +304,7 @@ interface ScheduleManagerService {
 **Files to create:**
 
 ```
-packages/primitives/src/
+packages/jobs/src/
 ├── registry/
 │   ├── index.ts                    # Exports
 │   ├── types.ts                    # Definition types
@@ -316,18 +316,18 @@ packages/primitives/src/
 ├── engine/
 │   ├── index.ts                    # Exports
 │   ├── types.ts                    # Engine interfaces
-│   └── engine.ts                   # DurablePrimitivesEngine
+│   └── engine.ts                   # DurableJobsEngine
 ├── client/
 │   ├── index.ts                    # Exports
 │   ├── types.ts                    # Client types
-│   └── client.ts                   # PrimitivesClient factory
-└── factory.ts                      # createDurablePrimitives
+│   └── client.ts                   # JobsClient factory
+└── factory.ts                      # createDurableJobs
 ```
 
 **Engine RPC pattern (like workflow):**
 
 ```ts
-class DurablePrimitivesEngine extends DurableObject {
+class DurableJobsEngine extends DurableObject {
   #orchestratorLayer: Layer.Layer<...>;
 
   constructor(state: DurableObjectState, env: unknown) {
@@ -364,11 +364,11 @@ class DurablePrimitivesEngine extends DurableObject {
     );
   }
 
-  // Buffer RPC methods
-  async bufferAdd(call: BufferAddCall): Promise<BufferAddResult> { ... }
+  // Debounce RPC methods
+  async debounceAdd(call: DebounceAddCall): Promise<DebounceAddResult> { ... }
 
-  // Queue RPC methods
-  async queueEnqueue(call: QueueEnqueueCall): Promise<QueueEnqueueResult> { ... }
+  // WorkerPool RPC methods
+  async workerPoolEnworkerPool(call: WorkerPoolEnworkerPoolCall): Promise<WorkerPoolEnworkerPoolResult> { ... }
 
   // Alarm handler - routes based on stored metadata
   async alarm(): Promise<void> {
@@ -385,7 +385,7 @@ class DurablePrimitivesEngine extends DurableObject {
 **Client routing:**
 
 ```ts
-const PrimitivesClient = {
+const JobsClient = {
   fromBinding: (binding: DurableObjectNamespace, registry: PrimitiveRegistry) => ({
     continuous: (name: string) => ({
       start: ({ id, input }) => {
@@ -396,21 +396,21 @@ const PrimitivesClient = {
       // ...
     }),
 
-    buffer: (name: string) => ({ ... }),
+    debounce: (name: string) => ({ ... }),
 
-    queue: (name: string) => {
-      const def = registry.queue.get(name);
+    workerPool: (name: string) => {
+      const def = registry.workerPool.get(name);
       const concurrency = def?.concurrency ?? 1;
 
       return {
-        enqueue: ({ id, event, partitionKey }) => {
+        enworkerPool: ({ id, event, partitionKey }) => {
           // Route to specific instance
           const instanceIndex = partitionKey
             ? consistentHash(partitionKey, concurrency)
             : roundRobin(name, concurrency);
-          const instanceId = `queue:${name}:${instanceIndex}`;
+          const instanceId = `workerPool:${name}:${instanceIndex}`;
           const stub = binding.get(binding.idFromName(instanceId));
-          return stub.queueEnqueue({ name, eventId: id, event });
+          return stub.workerPoolEnworkerPool({ name, eventId: id, event });
         },
         // ...
       };
@@ -430,8 +430,8 @@ const PrimitivesClient = {
 **Files to create:**
 
 ```
-packages/primitives/src/
-├── primitives/
+packages/jobs/src/
+├── jobs/
 │   └── continuous/
 │       ├── index.ts                # Exports
 │       ├── definition.ts           # ContinuousConfig, Continuous.make
@@ -484,22 +484,22 @@ const tokenRefresher = Continuous.make({
 
 ---
 
-### Phase 4: Buffer Primitive
+### Phase 4: Debounce Primitive
 
 **Goal:** Add event accumulation and flush pattern.
 
 **Files to create:**
 
 ```
-packages/primitives/src/
-├── primitives/
-│   └── buffer/
+packages/jobs/src/
+├── jobs/
+│   └── debounce/
 │       ├── index.ts                # Exports
-│       ├── definition.ts           # BufferConfig, Buffer.make
-│       ├── context.ts              # BufferEventContext, BufferExecuteContext
-│       ├── executor.ts             # BufferExecutor
-│       ├── orchestrator.ts         # BufferOrchestrator
-│       └── client.ts               # BufferClient type
+│       ├── definition.ts           # DebounceConfig, Debounce.make
+│       ├── context.ts              # DebounceEventContext, DebounceExecuteContext
+│       ├── executor.ts             # DebounceExecutor
+│       ├── orchestrator.ts         # DebounceOrchestrator
+│       └── client.ts               # DebounceClient type
 ```
 
 **Execution flow:**
@@ -508,7 +508,7 @@ packages/primitives/src/
 add(event)
   → IdempotencyManager.hasProcessed(eventId)? return duplicate
   → if first event:
-      MetadataManager.initialize("buffer", name)
+      MetadataManager.initialize("debounce", name)
       ScheduleManager.schedule(flushAfter)
   → Executor.handleEvent(event)
     → run user's onEvent(ctx) OR default (keep latest)
@@ -517,20 +517,20 @@ add(event)
   → if eventCount >= maxEvents: flush()
   → return { eventCount, willFlushAt }
 
-alarm() [when primitiveType === "buffer"]
+alarm() [when primitiveType === "debounce"]
   → Executor.flush()
     → load state
     → run user's execute(ctx)
     → StateManager.delete()
     → ScheduleManager.cancel()
     → MetadataManager.updateStatus("idle")
-  → EventTracker.emit("buffer.flushed")
+  → EventTracker.emit("debounce.flushed")
 ```
 
 **API (from design doc):**
 
 ```ts
-const webhookBuffer = Buffer.make({
+const webhookDebounce = Debounce.make({
   eventSchema: WebhookEvent,
   flushAfter: "5 minutes",
   maxEvents: 20,
@@ -550,37 +550,37 @@ const webhookBuffer = Buffer.make({
 
 ---
 
-### Phase 5: Queue Primitive
+### Phase 5: WorkerPool Primitive
 
 **Goal:** Add FIFO processing with retries and concurrency.
 
 **Files to create:**
 
 ```
-packages/primitives/src/
-├── primitives/
-│   └── queue/
+packages/jobs/src/
+├── jobs/
+│   └── workerPool/
 │       ├── index.ts                # Exports
-│       ├── definition.ts           # QueueConfig, Queue.make
-│       ├── context.ts              # QueueExecuteContext, QueueDeadLetterContext
-│       ├── executor.ts             # QueueExecutor
-│       ├── orchestrator.ts         # QueueOrchestrator
-│       ├── client.ts               # QueueClient type (with routing)
+│       ├── definition.ts           # WorkerPoolConfig, WorkerPool.make
+│       ├── context.ts              # WorkerPoolExecuteContext, WorkerPoolDeadLetterContext
+│       ├── executor.ts             # WorkerPoolExecutor
+│       ├── orchestrator.ts         # WorkerPoolOrchestrator
+│       ├── client.ts               # WorkerPoolClient type (with routing)
 │       └── backoff.ts              # Backoff utilities
 ```
 
 **Execution flow:**
 
 ```
-enqueue(event) [routed to instance by client]
+enworkerPool(event) [routed to instance by client]
   → IdempotencyManager.hasProcessed(eventId)? return duplicate
-  → if first event: MetadataManager.initialize("queue", name)
-  → store event in queue: `queue:events:{eventId}`
-  → add to pending list: `queue:pending`
+  → if first event: MetadataManager.initialize("workerPool", name)
+  → store event in workerPool: `workerPool:events:{eventId}`
+  → add to pending list: `workerPool:pending`
   → if idle: ScheduleManager.schedule(now)
   → return { position, instanceIndex }
 
-alarm() [when primitiveType === "queue"]
+alarm() [when primitiveType === "workerPool"]
   → if paused: return
   → pop next event from pending
   → Executor.execute(event)
@@ -601,7 +601,7 @@ alarm() [when primitiveType === "queue"]
 **API (from design doc):**
 
 ```ts
-const webhookProcessor = Queue.make({
+const webhookProcessor = WorkerPool.make({
   eventSchema: WebhookEvent,
   concurrency: 5,
   retry: {
@@ -624,7 +624,7 @@ const webhookProcessor = Queue.make({
 
 ---
 
-## 5. Pattern for Adding New Primitives
+## 5. Pattern for Adding New Jobs
 
 When adding a new primitive type (e.g., "Timer", "Saga"):
 
@@ -638,7 +638,7 @@ Create `primatives/api/00X-{name}-primitive-api-design.md`:
 ### Step 2: Create Primitive Files
 
 ```
-packages/primitives/src/primitives/{name}/
+packages/jobs/src/jobs/{name}/
 ├── index.ts              # Exports
 ├── definition.ts         # Config type, make factory
 ├── context.ts            # Context type(s)
@@ -716,8 +716,8 @@ async alarm() {
   const meta = await this.#getMeta();
   switch (meta.primitiveType) {
     case "continuous": ...
-    case "buffer": ...
-    case "queue": ...
+    case "debounce": ...
+    case "workerPool": ...
     case "{name}":
       return this.#runEffect(orchestrator.{name}HandleAlarm());
   }
@@ -745,9 +745,9 @@ async alarm() {
 ```ts
 // storage-keys.ts
 export const STORAGE_KEYS = {
-  // Metadata (all primitives)
+  // Metadata (all jobs)
   meta: {
-    type: "meta:type",           // "continuous" | "buffer" | "queue"
+    type: "meta:type",           // "continuous" | "debounce" | "workerPool"
     name: "meta:name",           // primitive name
     createdAt: "meta:createdAt",
     updatedAt: "meta:updatedAt",
@@ -764,15 +764,15 @@ export const STORAGE_KEYS = {
     lastExecutedAt: "cont:lastAt",
   },
 
-  // Buffer
-  buffer: {
+  // Debounce
+  debounce: {
     eventCount: "buf:eventCount",
     startedAt: "buf:startedAt",
     flushAt: "buf:flushAt",
   },
 
-  // Queue
-  queue: {
+  // WorkerPool
+  workerPool: {
     events: "q:events:",         // prefix: q:events:{eventId}
     pending: "q:pending",        // array of pending event IDs
     processedCount: "q:processed",
@@ -842,12 +842,12 @@ export class RetryExhaustedError extends Data.TaggedError("RetryExhaustedError")
 ## 8. File Structure Summary
 
 ```
-packages/primitives/
+packages/jobs/
 ├── package.json
 ├── tsconfig.json
 └── src/
     ├── index.ts                      # Public exports
-    ├── factory.ts                    # createDurablePrimitives
+    ├── factory.ts                    # createDurableJobs
     ├── storage-keys.ts               # Centralized storage keys
     │
     ├── errors/
@@ -877,14 +877,14 @@ packages/primitives/
     ├── engine/
     │   ├── index.ts
     │   ├── types.ts
-    │   └── engine.ts                 # DurablePrimitivesEngine
+    │   └── engine.ts                 # DurableJobsEngine
     │
     ├── client/
     │   ├── index.ts
     │   ├── types.ts
-    │   └── client.ts                 # PrimitivesClient factory
+    │   └── client.ts                 # JobsClient factory
     │
-    ├── primitives/
+    ├── jobs/
     │   ├── continuous/
     │   │   ├── index.ts
     │   │   ├── definition.ts         # Continuous.make
@@ -893,17 +893,17 @@ packages/primitives/
     │   │   ├── orchestrator.ts
     │   │   └── client.ts
     │   │
-    │   ├── buffer/
+    │   ├── debounce/
     │   │   ├── index.ts
-    │   │   ├── definition.ts         # Buffer.make
+    │   │   ├── definition.ts         # Debounce.make
     │   │   ├── context.ts
     │   │   ├── executor.ts
     │   │   ├── orchestrator.ts
     │   │   └── client.ts
     │   │
-    │   └── queue/
+    │   └── workerPool/
     │       ├── index.ts
-    │       ├── definition.ts         # Queue.make
+    │       ├── definition.ts         # WorkerPool.make
     │       ├── context.ts
     │       ├── executor.ts
     │       ├── orchestrator.ts
@@ -912,17 +912,17 @@ packages/primitives/
     │
     └── testing/
         ├── index.ts
-        └── harness.ts                # createTestPrimitives
+        └── harness.ts                # createTestJobs
 
 test/
 ├── services/
 │   ├── metadata.test.ts
 │   ├── state.test.ts
 │   └── ...
-├── primitives/
+├── jobs/
 │   ├── continuous.test.ts
-│   ├── buffer.test.ts
-│   └── queue.test.ts
+│   ├── debounce.test.ts
+│   └── workerPool.test.ts
 └── integration/
     └── engine.test.ts
 ```
@@ -931,8 +931,8 @@ test/
 
 ## 9. Implementation Checklist
 
-### Phase 1: Primitives Core Infrastructure
-- [ ] Create package structure (`packages/primitives/`)
+### Phase 1: Jobs Core Infrastructure
+- [ ] Create package structure (`packages/jobs/`)
 - [ ] Set up `package.json` with dependency on `@durable-effect/core`
 - [ ] Implement `errors/index.ts`
 - [ ] Implement `events/index.ts`
@@ -956,32 +956,32 @@ test/
 - [ ] Implement `index.ts` (public exports)
 
 ### Phase 3: Continuous Primitive
-- [ ] Implement `primitives/continuous/definition.ts`
-- [ ] Implement `primitives/continuous/context.ts`
-- [ ] Implement `primitives/continuous/executor.ts`
-- [ ] Implement `primitives/continuous/orchestrator.ts`
-- [ ] Implement `primitives/continuous/client.ts`
+- [ ] Implement `jobs/continuous/definition.ts`
+- [ ] Implement `jobs/continuous/context.ts`
+- [ ] Implement `jobs/continuous/executor.ts`
+- [ ] Implement `jobs/continuous/orchestrator.ts`
+- [ ] Implement `jobs/continuous/client.ts`
 - [ ] Add continuous methods to engine
 - [ ] Full lifecycle tests
 
-### Phase 4: Buffer Primitive
-- [ ] Implement `primitives/buffer/definition.ts`
-- [ ] Implement `primitives/buffer/context.ts`
-- [ ] Implement `primitives/buffer/executor.ts`
-- [ ] Implement `primitives/buffer/orchestrator.ts`
-- [ ] Implement `primitives/buffer/client.ts`
-- [ ] Add buffer methods to engine
+### Phase 4: Debounce Primitive
+- [ ] Implement `jobs/debounce/definition.ts`
+- [ ] Implement `jobs/debounce/context.ts`
+- [ ] Implement `jobs/debounce/executor.ts`
+- [ ] Implement `jobs/debounce/orchestrator.ts`
+- [ ] Implement `jobs/debounce/client.ts`
+- [ ] Add debounce methods to engine
 - [ ] Event accumulation tests
 - [ ] Flush trigger tests
 
-### Phase 5: Queue Primitive
-- [ ] Implement `primitives/queue/definition.ts`
-- [ ] Implement `primitives/queue/context.ts`
-- [ ] Implement `primitives/queue/executor.ts`
-- [ ] Implement `primitives/queue/orchestrator.ts`
-- [ ] Implement `primitives/queue/client.ts`
-- [ ] Implement `primitives/queue/backoff.ts`
-- [ ] Add queue methods to engine
+### Phase 5: WorkerPool Primitive
+- [ ] Implement `jobs/workerPool/definition.ts`
+- [ ] Implement `jobs/workerPool/context.ts`
+- [ ] Implement `jobs/workerPool/executor.ts`
+- [ ] Implement `jobs/workerPool/orchestrator.ts`
+- [ ] Implement `jobs/workerPool/client.ts`
+- [ ] Implement `jobs/workerPool/backoff.ts`
+- [ ] Add workerPool methods to engine
 - [ ] Add routing logic to client
 - [ ] FIFO ordering tests
 - [ ] Retry/dead letter tests
@@ -996,6 +996,6 @@ This architecture provides:
 1. **Clear separation of concerns** - Each layer has a specific responsibility
 2. **RPC-based engine** - Matches workflow pattern for consistency
 3. **Leverages core package** - All shared infrastructure from `@durable-effect/core`
-4. **Phased implementation** - Build infrastructure first, then primitives
-5. **Pattern for new primitives** - Clear steps to add new primitive types
+4. **Phased implementation** - Build infrastructure first, then jobs
+5. **Pattern for new jobs** - Clear steps to add new primitive types
 6. **Comprehensive testing** - Unit tests for services, integration tests for engine

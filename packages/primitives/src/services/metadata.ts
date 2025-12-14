@@ -1,4 +1,4 @@
-// packages/primitives/src/services/metadata.ts
+// packages/jobs/src/services/metadata.ts
 
 import { Context, Effect, Layer } from "effect";
 import {
@@ -13,26 +13,26 @@ import { KEYS } from "../storage-keys";
 // =============================================================================
 
 /**
- * Primitive types supported by the runtime.
+ * Job types supported by the runtime.
  */
-export type PrimitiveType = "continuous" | "buffer" | "queue";
+export type JobType = "continuous" | "debounce" | "workerPool";
 
 /**
- * Status of a primitive instance.
+ * Status of a job instance.
  */
-export type PrimitiveStatus =
+export type JobStatus =
   | "initializing"
   | "running"
   | "stopped"
   | "terminated"; // State was purged via ctx.terminate()
 
 /**
- * Metadata stored for every primitive instance.
+ * Metadata stored for every job instance.
  */
-export interface PrimitiveMetadata {
-  readonly type: PrimitiveType;
+export interface JobMetadata {
+  readonly type: JobType;
   readonly name: string;
-  readonly status: PrimitiveStatus;
+  readonly status: JobStatus;
   readonly createdAt: number;
   readonly updatedAt: number;
   /** Reason for stopping/terminating (if applicable) */
@@ -44,20 +44,20 @@ export interface PrimitiveMetadata {
 // =============================================================================
 
 /**
- * MetadataService manages primitive instance metadata.
+ * MetadataService manages job instance metadata.
  *
- * Every primitive instance stores metadata that identifies:
- * - What type of primitive it is (continuous, buffer, queue)
- * - What named primitive definition it belongs to
+ * Every job instance stores metadata that identifies:
+ * - What type of job it is (continuous, debounce, workerPool)
+ * - What named job definition it belongs to
  * - Current status
  * - Timestamps
  */
 export interface MetadataServiceI {
   /**
-   * Initialize metadata for a new primitive instance.
+   * Initialize metadata for a new job instance.
    */
   readonly initialize: (
-    type: PrimitiveType,
+    type: JobType,
     name: string
   ) => Effect.Effect<void, StorageError>;
 
@@ -65,14 +65,14 @@ export interface MetadataServiceI {
    * Get metadata for this instance.
    * Returns undefined if instance was never initialized.
    */
-  readonly get: () => Effect.Effect<PrimitiveMetadata | undefined, StorageError>;
+  readonly get: () => Effect.Effect<JobMetadata | undefined, StorageError>;
 
   /**
    * Update the status of this instance.
    * No-op if instance doesn't exist.
    */
   readonly updateStatus: (
-    status: PrimitiveStatus
+    status: JobStatus
   ) => Effect.Effect<void, StorageError>;
 
   /**
@@ -96,7 +96,7 @@ export interface MetadataServiceI {
 // =============================================================================
 
 export class MetadataService extends Context.Tag(
-  "@durable-effect/primitives/MetadataService"
+  "@durable-effect/jobs/MetadataService"
 )<MetadataService, MetadataServiceI>() {}
 
 // =============================================================================
@@ -110,10 +110,10 @@ export const MetadataServiceLayer = Layer.effect(
     const runtime = yield* RuntimeAdapter;
 
     return {
-      initialize: (type: PrimitiveType, name: string) =>
+      initialize: (type: JobType, name: string) =>
         Effect.gen(function* () {
           const now = yield* runtime.now();
-          const metadata: PrimitiveMetadata = {
+          const metadata: JobMetadata = {
             type,
             name,
             status: "initializing",
@@ -123,15 +123,15 @@ export const MetadataServiceLayer = Layer.effect(
           yield* storage.put(KEYS.META, metadata);
         }),
 
-      get: () => storage.get<PrimitiveMetadata>(KEYS.META),
+      get: () => storage.get<JobMetadata>(KEYS.META),
 
-      updateStatus: (status: PrimitiveStatus) =>
+      updateStatus: (status: JobStatus) =>
         Effect.gen(function* () {
-          const current = yield* storage.get<PrimitiveMetadata>(KEYS.META);
+          const current = yield* storage.get<JobMetadata>(KEYS.META);
           if (!current) return;
 
           const now = yield* runtime.now();
-          const updated: PrimitiveMetadata = {
+          const updated: JobMetadata = {
             ...current,
             status,
             updatedAt: now,
@@ -143,11 +143,11 @@ export const MetadataServiceLayer = Layer.effect(
 
       setStopReason: (reason: string | undefined) =>
         Effect.gen(function* () {
-          const current = yield* storage.get<PrimitiveMetadata>(KEYS.META);
+          const current = yield* storage.get<JobMetadata>(KEYS.META);
           if (!current) return;
 
           const now = yield* runtime.now();
-          const updated: PrimitiveMetadata = {
+          const updated: JobMetadata = {
             ...current,
             stopReason: reason,
             updatedAt: now,

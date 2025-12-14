@@ -1,4 +1,4 @@
-// packages/primitives/src/definitions/continuous.ts
+// packages/jobs/src/definitions/continuous.ts
 
 import { Duration, type Effect, type Schema } from "effect";
 import type {
@@ -12,7 +12,7 @@ import type {
 // =============================================================================
 
 /**
- * Input config for creating a continuous primitive definition.
+ * Input config for creating a continuous job definition.
  */
 export interface ContinuousMakeConfig<S, E, R> {
   /**
@@ -45,11 +45,11 @@ export interface ContinuousMakeConfig<S, E, R> {
 }
 
 /**
- * Namespace for creating continuous primitive definitions.
+ * Namespace for creating continuous job definitions.
  *
  * @example
  * ```ts
- * import { Continuous } from "@durable-effect/primitives";
+ * import { Continuous } from "@durable-effect/jobs";
  * import { Schema } from "effect";
  *
  * const dailyReport = Continuous.make({
@@ -69,18 +69,18 @@ export interface ContinuousMakeConfig<S, E, R> {
  *     }),
  * });
  *
- * // Register with createDurablePrimitives - name comes from key
- * const { Primitives } = createDurablePrimitives({ dailyReport });
+ * // Register with createDurableJobs - name comes from key
+ * const { Jobs } = createDurableJobs({ dailyReport });
  * ```
  */
 export const Continuous = {
   /**
-   * Create a continuous primitive definition.
+   * Create a continuous job definition.
    *
    * The name is NOT provided here - it comes from the key when you
-   * register the primitive via createDurablePrimitives().
+   * register the job via createDurableJobs().
    *
-   * @param config - Configuration for the primitive
+   * @param config - Configuration for the job
    * @returns An UnregisteredContinuousDefinition that can be registered
    */
   make: <S, E = never, R = never>(

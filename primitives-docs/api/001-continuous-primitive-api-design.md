@@ -16,7 +16,7 @@ The Continuous primitive should feel native to Effect users and mirror the DX pa
 ### Definition
 
 ```ts
-import { Continuous } from "@durable-effect/primitives";
+import { Continuous } from "@durable-effect/jobs";
 import { Schema } from "effect";
 
 const tokenRefresher = Continuous.make({
@@ -55,22 +55,22 @@ const tokenRefresher = Continuous.make({
 ### Registration & Export
 
 ```ts
-import { createDurablePrimitives } from "@durable-effect/primitives";
+import { createDurableJobs } from "@durable-effect/jobs";
 
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
+const { Jobs, JobsClient } = createDurableJobs({
   tokenRefresher,
-  // ... other primitives
+  // ... other jobs
 });
 
 // Export DO class for Cloudflare
-export { Primitives };
+export { Jobs };
 ```
 
 ### Client Usage
 
 ```ts
 // In your worker/handler
-const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+const client = JobsClient.fromBinding(env.PRIMITIVES);
 
 // Start a continuous process (idempotent)
 yield* client.continuous("tokenRefresher").start({
@@ -306,7 +306,7 @@ const Continuous = {
 ### Getting a Continuous Client
 
 ```ts
-const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+const client = JobsClient.fromBinding(env.PRIMITIVES);
 const tokenClient = client.continuous("tokenRefresher");
 ```
 
@@ -401,7 +401,7 @@ yield* tokenClient.trigger("user-123");
 ### Example 1: Token Refresher
 
 ```ts
-import { Continuous } from "@durable-effect/primitives";
+import { Continuous } from "@durable-effect/jobs";
 import { Effect, Schema, Duration } from "effect";
 
 // Define state schema
@@ -481,7 +481,7 @@ const tokenRefresher = Continuous.make({
 ```ts
 export default {
   async fetch(request: Request, env: Env) {
-    const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+    const client = JobsClient.fromBinding(env.PRIMITIVES);
 
     // Start token refresh for a user (idempotent)
     const result = await Effect.runPromise(

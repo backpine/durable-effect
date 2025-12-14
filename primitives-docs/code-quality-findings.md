@@ -1,6 +1,6 @@
-# Primitives Package - Code Quality Findings
+# Jobs Package - Code Quality Findings
 
-This document catalogues code quality issues found in `@durable-effect/primitives`, ranked by severity.
+This document catalogues code quality issues found in `@durable-effect/jobs`, ranked by severity.
 
 ---
 
@@ -29,7 +29,7 @@ This pattern repeats ~30+ times. The `call()` method returns `Promise<PrimitiveR
 - Runtime type mismatch won't be caught
 - No way to know if the server returns wrong response type
 - Defeats TypeScript's purpose
-- Would be hidden bugs if server sends `QueueEnqueueResponse` but client expects `ContinuousStartResponse`
+- Would be hidden bugs if server sends `WorkerPoolEnworkerPoolResponse` but client expects `ContinuousStartResponse`
 
 **Fix:** Use discriminated union narrowing based on `_type` field, or use Effect's `Match` module.
 
@@ -188,13 +188,13 @@ flush: () =>
 **Location:** `src/factory.ts`
 
 ```typescript
-const enrichedEnv: PrimitivesEngineConfig = {
+const enrichedEnv: JobsEngineConfig = {
   ...(env as object),  // Cast env to object
   __PRIMITIVE_REGISTRY__: registry,
 };
 
 return {
-  Primitives: BoundPrimitivesEngine as typeof DurablePrimitivesEngine,  // Cast class type
+  Jobs: BoundJobsEngine as typeof DurableJobsEngine,  // Cast class type
 ```
 
 **Problems:**
@@ -228,9 +228,9 @@ export interface ContinuousGetStateResponse {
 **Location:** `src/client/client.ts`
 
 ```typescript
-const getStub = (instanceId: string): DurablePrimitivesEngineInterface => {
+const getStub = (instanceId: string): DurableJobsEngineInterface => {
   const id = binding.idFromName(instanceId);
-  return binding.get(id) as unknown as DurablePrimitivesEngineInterface;
+  return binding.get(id) as unknown as DurableJobsEngineInterface;
 };
 ```
 
@@ -283,9 +283,9 @@ yield* executeEffect.pipe(
 **Location:** `src/runtime/dispatcher.ts`
 
 ```typescript
-case "buffer":
+case "debounce":
   console.log(
-    `[Dispatcher] Alarm for buffer/${meta.name} (handler not implemented)`
+    `[Dispatcher] Alarm for debounce/${meta.name} (handler not implemented)`
   );
   break;
 
@@ -309,7 +309,7 @@ default:
 **Severity:** Medium
 **Location:** `src/runtime/runtime.ts`
 
-`createPrimitivesRuntime` and `createPrimitivesRuntimeFromLayer` share ~80% identical code:
+`createJobsRuntime` and `createJobsRuntimeFromLayer` share ~80% identical code:
 
 ```typescript
 // Both have:
@@ -391,9 +391,9 @@ Functions accept `def` but don't use it.
 - `runtime/runtime.ts:33` - `// TODO: Define TrackerConfig type`
 - `runtime/runtime.ts:110` - `// TODO: Support custom tracker`
 - `handler.ts:98` - `// TODO: Implement cron parsing`
-- `dispatcher.ts:69` - `// TODO: Route to BufferHandler in Phase 4`
-- `dispatcher.ts:77` - `// TODO: Route to QueueHandler in Phase 5`
-- `handlers/index.ts:30-31` - `// TODO: Add BufferHandlerLayer/QueueHandlerLayer`
+- `dispatcher.ts:69` - `// TODO: Route to DebounceHandler in Phase 4`
+- `dispatcher.ts:77` - `// TODO: Route to WorkerPoolHandler in Phase 5`
+- `handlers/index.ts:30-31` - `// TODO: Add DebounceHandlerLayer/WorkerPoolHandlerLayer`
 
 ---
 

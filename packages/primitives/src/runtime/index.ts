@@ -1,28 +1,28 @@
-// packages/primitives/src/runtime/index.ts
+// packages/jobs/src/runtime/index.ts
 
 // Types
 export type {
-  PrimitiveRequest,
-  PrimitiveResponse,
+  JobRequest,
+  JobResponse,
   ContinuousRequest,
-  BufferRequest,
-  QueueRequest,
+  DebounceRequest,
+  WorkerPoolRequest,
   ContinuousStartResponse,
   ContinuousStopResponse,
   ContinuousTriggerResponse,
   ContinuousStatusResponse,
   ContinuousGetStateResponse,
-  BufferAddResponse,
-  BufferFlushResponse,
-  BufferClearResponse,
-  BufferStatusResponse,
-  BufferGetStateResponse,
-  QueueEnqueueResponse,
-  QueuePauseResponse,
-  QueueResumeResponse,
-  QueueCancelResponse,
-  QueueStatusResponse,
-  QueueDrainResponse,
+  DebounceAddResponse,
+  DebounceFlushResponse,
+  DebounceClearResponse,
+  DebounceStatusResponse,
+  DebounceGetStateResponse,
+  WorkerPoolEnqueueResponse,
+  WorkerPoolPauseResponse,
+  WorkerPoolResumeResponse,
+  WorkerPoolCancelResponse,
+  WorkerPoolStatusResponse,
+  WorkerPoolDrainResponse,
 } from "./types";
 
 // Dispatcher
@@ -34,8 +34,8 @@ export {
 
 // Runtime
 export {
-  createPrimitivesRuntime,
-  createPrimitivesRuntimeFromLayer,
-  type PrimitivesRuntime,
-  type PrimitivesRuntimeConfig,
+  createJobsRuntime,
+  createJobsRuntimeFromLayer,
+  type JobsRuntime,
+  type JobsRuntimeConfig,
 } from "./runtime";

@@ -1,24 +1,24 @@
-// packages/primitives/src/client/response.ts
+// packages/jobs/src/client/response.ts
 
 import { Effect } from "effect";
 import type {
-  PrimitiveResponse,
+  JobResponse,
   ContinuousStartResponse,
   ContinuousStopResponse,
   ContinuousTriggerResponse,
   ContinuousStatusResponse,
   ContinuousGetStateResponse,
-  BufferAddResponse,
-  BufferFlushResponse,
-  BufferClearResponse,
-  BufferStatusResponse,
-  BufferGetStateResponse,
-  QueueEnqueueResponse,
-  QueuePauseResponse,
-  QueueResumeResponse,
-  QueueCancelResponse,
-  QueueStatusResponse,
-  QueueDrainResponse,
+  DebounceAddResponse,
+  DebounceFlushResponse,
+  DebounceClearResponse,
+  DebounceStatusResponse,
+  DebounceGetStateResponse,
+  WorkerPoolEnqueueResponse,
+  WorkerPoolPauseResponse,
+  WorkerPoolResumeResponse,
+  WorkerPoolCancelResponse,
+  WorkerPoolStatusResponse,
+  WorkerPoolDrainResponse,
 } from "../runtime/types";
 
 // =============================================================================
@@ -28,16 +28,16 @@ import type {
 /**
  * Error when DO call fails.
  */
-export interface PrimitiveCallError {
-  readonly _tag: "PrimitiveCallError";
+export interface JobCallError {
+  readonly _tag: "JobCallError";
   readonly cause: unknown;
 }
 
 /**
- * Create a PrimitiveCallError.
+ * Create a JobCallError.
  */
-export const primitiveCallError = (cause: unknown): PrimitiveCallError => ({
-  _tag: "PrimitiveCallError",
+export const jobCallError = (cause: unknown): JobCallError => ({
+  _tag: "JobCallError",
   cause,
 });
 
@@ -54,17 +54,17 @@ export interface ResponseTypeMap {
   "continuous.trigger": ContinuousTriggerResponse;
   "continuous.status": ContinuousStatusResponse;
   "continuous.getState": ContinuousGetStateResponse;
-  "buffer.add": BufferAddResponse;
-  "buffer.flush": BufferFlushResponse;
-  "buffer.clear": BufferClearResponse;
-  "buffer.status": BufferStatusResponse;
-  "buffer.getState": BufferGetStateResponse;
-  "queue.enqueue": QueueEnqueueResponse;
-  "queue.pause": QueuePauseResponse;
-  "queue.resume": QueueResumeResponse;
-  "queue.cancel": QueueCancelResponse;
-  "queue.status": QueueStatusResponse;
-  "queue.drain": QueueDrainResponse;
+  "debounce.add": DebounceAddResponse;
+  "debounce.flush": DebounceFlushResponse;
+  "debounce.clear": DebounceClearResponse;
+  "debounce.status": DebounceStatusResponse;
+  "debounce.getState": DebounceGetStateResponse;
+  "workerPool.enqueue": WorkerPoolEnqueueResponse;
+  "workerPool.pause": WorkerPoolPauseResponse;
+  "workerPool.resume": WorkerPoolResumeResponse;
+  "workerPool.cancel": WorkerPoolCancelResponse;
+  "workerPool.status": WorkerPoolStatusResponse;
+  "workerPool.drain": WorkerPoolDrainResponse;
 }
 
 /**
@@ -96,7 +96,7 @@ export class UnexpectedResponseError extends Error {
  * Type guard to check if a response has a specific _type.
  */
 export function isResponseType<T extends ResponseType>(
-  response: PrimitiveResponse,
+  response: JobResponse,
   expectedType: T
 ): response is ResponseTypeMap[T] {
   return response._type === expectedType;
@@ -111,7 +111,7 @@ export function isResponseType<T extends ResponseType>(
  * @throws UnexpectedResponseError if the response type doesn't match
  */
 export function narrowResponse<T extends ResponseType>(
-  response: PrimitiveResponse,
+  response: JobResponse,
   expectedType: T
 ): ResponseTypeMap[T] {
   if (isResponseType(response, expectedType)) {
@@ -121,7 +121,7 @@ export function narrowResponse<T extends ResponseType>(
 }
 
 /**
- * Narrow a Promise<PrimitiveResponse> to a specific type.
+ * Narrow a Promise<JobResponse> to a specific type.
  *
  * @example
  * ```ts
@@ -133,7 +133,7 @@ export function narrowResponse<T extends ResponseType>(
  * ```
  */
 export async function narrowResponseAsync<T extends ResponseType>(
-  promise: Promise<PrimitiveResponse>,
+  promise: Promise<JobResponse>,
   expectedType: T
 ): Promise<ResponseTypeMap[T]> {
   const response = await promise;
@@ -147,14 +147,14 @@ export async function narrowResponseAsync<T extends ResponseType>(
 /**
  * Combined error type for client operations.
  */
-export type ClientError = PrimitiveCallError | UnexpectedResponseError;
+export type ClientError = JobCallError | UnexpectedResponseError;
 
 // =============================================================================
 // Effect-based Response Narrowing
 // =============================================================================
 
 /**
- * Narrow a Promise<PrimitiveResponse> to a specific type, returning an Effect.
+ * Narrow a Promise<JobResponse> to a specific type, returning an Effect.
  *
  * This is the Effect-based version that properly handles errors and can be used
  * with Effect.gen and yield*.
@@ -169,12 +169,12 @@ export type ClientError = PrimitiveCallError | UnexpectedResponseError;
  * ```
  */
 export function narrowResponseEffect<T extends ResponseType>(
-  promise: Promise<PrimitiveResponse>,
+  promise: Promise<JobResponse>,
   expectedType: T
 ): Effect.Effect<ResponseTypeMap[T], ClientError> {
   return Effect.tryPromise({
     try: () => promise,
-    catch: (error) => primitiveCallError(error),
+    catch: (error) => jobCallError(error),
   }).pipe(
     Effect.flatMap((response) => {
       if (isResponseType(response, expectedType)) {

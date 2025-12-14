@@ -1,19 +1,19 @@
-// packages/primitives/test/registry.test.ts
+// packages/jobs/test/registry.test.ts
 
 import { describe, it, expect } from "vitest";
 import { Schema, Effect } from "effect";
 import {
   createPrimitiveRegistry,
   getContinuousDefinition,
-  getBufferDefinition,
-  getQueueDefinition,
+  getDebounceDefinition,
+  getWorkerPoolDefinition,
   getPrimitiveDefinition,
   getAllPrimitiveNames,
 } from "../src/registry";
 import type {
   UnregisteredContinuousDefinition,
-  UnregisteredBufferDefinition,
-  UnregisteredQueueDefinition,
+  UnregisteredDebounceDefinition,
+  UnregisteredWorkerPoolDefinition,
 } from "../src/registry/types";
 
 // =============================================================================
@@ -43,13 +43,13 @@ const WebhookEvent = Schema.Struct({
   data: Schema.Unknown,
 });
 
-const testBuffer: UnregisteredBufferDefinition<
+const testDebounce: UnregisteredDebounceDefinition<
   typeof WebhookEvent.Type,
   { events: Array<typeof WebhookEvent.Type> },
   never,
   never
 > = {
-  _tag: "BufferDefinition",
+  _tag: "DebounceDefinition",
   eventSchema: WebhookEvent,
   flushAfter: "5 minutes",
   maxEvents: 100,
@@ -61,8 +61,8 @@ const EmailEvent = Schema.Struct({
   template: Schema.String,
 });
 
-const testQueue: UnregisteredQueueDefinition<typeof EmailEvent.Type, Error, never> = {
-  _tag: "QueueDefinition",
+const testWorkerPool: UnregisteredWorkerPoolDefinition<typeof EmailEvent.Type, Error, never> = {
+  _tag: "WorkerPoolDefinition",
   eventSchema: EmailEvent,
   concurrency: 5,
   execute: () => Effect.void,
@@ -81,8 +81,8 @@ describe("createPrimitiveRegistry", () => {
     const registry = createPrimitiveRegistry({});
 
     expect(registry.continuous.size).toBe(0);
-    expect(registry.buffer.size).toBe(0);
-    expect(registry.queue.size).toBe(0);
+    expect(registry.debounce.size).toBe(0);
+    expect(registry.workerPool.size).toBe(0);
   });
 
   it("registers continuous definitions by key name", () => {
@@ -99,48 +99,48 @@ describe("createPrimitiveRegistry", () => {
     expect(def?.schedule._tag).toBe("Every");
   });
 
-  it("registers buffer definitions by key name", () => {
+  it("registers debounce definitions by key name", () => {
     const registry = createPrimitiveRegistry({
-      webhookBuffer: testBuffer,
+      webhookDebounce: testDebounce,
     });
 
-    expect(registry.buffer.size).toBe(1);
-    expect(registry.buffer.has("webhookBuffer")).toBe(true);
+    expect(registry.debounce.size).toBe(1);
+    expect(registry.debounce.has("webhookDebounce")).toBe(true);
 
-    const def = registry.buffer.get("webhookBuffer");
-    expect(def?._tag).toBe("BufferDefinition");
-    expect(def?.name).toBe("webhookBuffer");
+    const def = registry.debounce.get("webhookDebounce");
+    expect(def?._tag).toBe("DebounceDefinition");
+    expect(def?.name).toBe("webhookDebounce");
     expect(def?.maxEvents).toBe(100);
   });
 
-  it("registers queue definitions by key name", () => {
+  it("registers workerPool definitions by key name", () => {
     const registry = createPrimitiveRegistry({
-      emailQueue: testQueue,
+      emailWorkerPool: testWorkerPool,
     });
 
-    expect(registry.queue.size).toBe(1);
-    expect(registry.queue.has("emailQueue")).toBe(true);
+    expect(registry.workerPool.size).toBe(1);
+    expect(registry.workerPool.has("emailWorkerPool")).toBe(true);
 
-    const def = registry.queue.get("emailQueue");
-    expect(def?._tag).toBe("QueueDefinition");
-    expect(def?.name).toBe("emailQueue");
+    const def = registry.workerPool.get("emailWorkerPool");
+    expect(def?._tag).toBe("WorkerPoolDefinition");
+    expect(def?.name).toBe("emailWorkerPool");
     expect(def?.concurrency).toBe(5);
   });
 
   it("registers mixed primitive types correctly", () => {
     const registry = createPrimitiveRegistry({
       tokenRefresher: testContinuous,
-      webhookBuffer: testBuffer,
-      emailQueue: testQueue,
+      webhookDebounce: testDebounce,
+      emailWorkerPool: testWorkerPool,
     });
 
     expect(registry.continuous.size).toBe(1);
-    expect(registry.buffer.size).toBe(1);
-    expect(registry.queue.size).toBe(1);
+    expect(registry.debounce.size).toBe(1);
+    expect(registry.workerPool.size).toBe(1);
 
     expect(registry.continuous.has("tokenRefresher")).toBe(true);
-    expect(registry.buffer.has("webhookBuffer")).toBe(true);
-    expect(registry.queue.has("emailQueue")).toBe(true);
+    expect(registry.debounce.has("webhookDebounce")).toBe(true);
+    expect(registry.workerPool.has("emailWorkerPool")).toBe(true);
   });
 
   it("assigns name from key even if different from definition name", () => {
@@ -156,7 +156,7 @@ describe("createPrimitiveRegistry", () => {
 describe("getContinuousDefinition", () => {
   const registry = createPrimitiveRegistry({
     tokenRefresher: testContinuous,
-    webhookBuffer: testBuffer,
+    webhookDebounce: testDebounce,
   });
 
   it("returns definition when found", () => {
@@ -172,38 +172,38 @@ describe("getContinuousDefinition", () => {
   });
 });
 
-describe("getBufferDefinition", () => {
+describe("getDebounceDefinition", () => {
   const registry = createPrimitiveRegistry({
-    webhookBuffer: testBuffer,
+    webhookDebounce: testDebounce,
   });
 
   it("returns definition when found", () => {
-    const def = getBufferDefinition(registry, "webhookBuffer");
+    const def = getDebounceDefinition(registry, "webhookDebounce");
     expect(def).toBeDefined();
-    expect(def?._tag).toBe("BufferDefinition");
-    expect(def?.name).toBe("webhookBuffer");
+    expect(def?._tag).toBe("DebounceDefinition");
+    expect(def?.name).toBe("webhookDebounce");
   });
 
   it("returns undefined when not found", () => {
-    const def = getBufferDefinition(registry, "nonexistent");
+    const def = getDebounceDefinition(registry, "nonexistent");
     expect(def).toBeUndefined();
   });
 });
 
-describe("getQueueDefinition", () => {
+describe("getWorkerPoolDefinition", () => {
   const registry = createPrimitiveRegistry({
-    emailQueue: testQueue,
+    emailWorkerPool: testWorkerPool,
   });
 
   it("returns definition when found", () => {
-    const def = getQueueDefinition(registry, "emailQueue");
+    const def = getWorkerPoolDefinition(registry, "emailWorkerPool");
     expect(def).toBeDefined();
-    expect(def?._tag).toBe("QueueDefinition");
-    expect(def?.name).toBe("emailQueue");
+    expect(def?._tag).toBe("WorkerPoolDefinition");
+    expect(def?.name).toBe("emailWorkerPool");
   });
 
   it("returns undefined when not found", () => {
-    const def = getQueueDefinition(registry, "nonexistent");
+    const def = getWorkerPoolDefinition(registry, "nonexistent");
     expect(def).toBeUndefined();
   });
 });
@@ -211,8 +211,8 @@ describe("getQueueDefinition", () => {
 describe("getPrimitiveDefinition", () => {
   const registry = createPrimitiveRegistry({
     tokenRefresher: testContinuous,
-    webhookBuffer: testBuffer,
-    emailQueue: testQueue,
+    webhookDebounce: testDebounce,
+    emailWorkerPool: testWorkerPool,
   });
 
   it("returns continuous definition by type", () => {
@@ -220,18 +220,18 @@ describe("getPrimitiveDefinition", () => {
     expect(def?._tag).toBe("ContinuousDefinition");
   });
 
-  it("returns buffer definition by type", () => {
-    const def = getPrimitiveDefinition(registry, "buffer", "webhookBuffer");
-    expect(def?._tag).toBe("BufferDefinition");
+  it("returns debounce definition by type", () => {
+    const def = getPrimitiveDefinition(registry, "debounce", "webhookDebounce");
+    expect(def?._tag).toBe("DebounceDefinition");
   });
 
-  it("returns queue definition by type", () => {
-    const def = getPrimitiveDefinition(registry, "queue", "emailQueue");
-    expect(def?._tag).toBe("QueueDefinition");
+  it("returns workerPool definition by type", () => {
+    const def = getPrimitiveDefinition(registry, "workerPool", "emailWorkerPool");
+    expect(def?._tag).toBe("WorkerPoolDefinition");
   });
 
   it("returns undefined for wrong type", () => {
-    const def = getPrimitiveDefinition(registry, "buffer", "tokenRefresher");
+    const def = getPrimitiveDefinition(registry, "debounce", "tokenRefresher");
     expect(def).toBeUndefined();
   });
 });
@@ -240,15 +240,15 @@ describe("getAllPrimitiveNames", () => {
   it("returns all primitive names by type", () => {
     const registry = createPrimitiveRegistry({
       tokenRefresher: testContinuous,
-      webhookBuffer: testBuffer,
-      emailQueue: testQueue,
+      webhookDebounce: testDebounce,
+      emailWorkerPool: testWorkerPool,
     });
 
     const names = getAllPrimitiveNames(registry);
 
     expect(names.continuous).toEqual(["tokenRefresher"]);
-    expect(names.buffer).toEqual(["webhookBuffer"]);
-    expect(names.queue).toEqual(["emailQueue"]);
+    expect(names.debounce).toEqual(["webhookDebounce"]);
+    expect(names.workerPool).toEqual(["emailWorkerPool"]);
   });
 
   it("returns empty arrays for empty registry", () => {
@@ -256,8 +256,8 @@ describe("getAllPrimitiveNames", () => {
     const names = getAllPrimitiveNames(registry);
 
     expect(names.continuous).toEqual([]);
-    expect(names.buffer).toEqual([]);
-    expect(names.queue).toEqual([]);
+    expect(names.debounce).toEqual([]);
+    expect(names.workerPool).toEqual([]);
   });
 
   it("handles multiple definitions per type", () => {

@@ -164,7 +164,7 @@ if (stateHolder.terminated) {
 
 ### Step 1: Add TerminateSignal Error
 
-**File:** `packages/primitives/src/errors.ts`
+**File:** `packages/jobs/src/errors.ts`
 
 ```ts
 /**
@@ -183,7 +183,7 @@ export class TerminateSignal {
 
 ### Step 2: Update ContinuousContext Type
 
-**File:** `packages/primitives/src/registry/types.ts`
+**File:** `packages/jobs/src/registry/types.ts`
 
 ```ts
 import type { Effect } from "effect";
@@ -212,7 +212,7 @@ interface ContinuousContext<S> {
 
 ### Step 3: Update Context Factory
 
-**File:** `packages/primitives/src/handlers/continuous/context.ts`
+**File:** `packages/jobs/src/handlers/continuous/context.ts`
 
 ```ts
 import { Effect } from "effect";
@@ -262,7 +262,7 @@ export function createContinuousContext<S>(
 
 ### Step 4: Handle TerminateSignal in Handler
 
-**File:** `packages/primitives/src/handlers/continuous/handler.ts`
+**File:** `packages/jobs/src/handlers/continuous/handler.ts`
 
 ```ts
 import { TerminateSignal } from "../../errors";
@@ -392,7 +392,7 @@ return {
 
 ### Step 5: Add "terminated" Status
 
-**File:** `packages/primitives/src/services/metadata.ts`
+**File:** `packages/jobs/src/services/metadata.ts`
 
 ```ts
 export type PrimitiveStatus =
@@ -425,7 +425,7 @@ interface MetadataServiceI {
 When `purgeState: true`, delete these keys:
 
 ```ts
-// packages/primitives/src/storage-keys.ts
+// packages/jobs/src/storage-keys.ts
 export const KEYS = {
   CONTINUOUS: {
     STATE: "continuous:state",
@@ -443,7 +443,7 @@ export const KEYS = {
 Update response types to include new status:
 
 ```ts
-// packages/primitives/src/runtime/types.ts
+// packages/jobs/src/runtime/types.ts
 export interface ContinuousStatusResponse {
   readonly _type: "continuous.status";
   readonly status: "running" | "stopped" | "terminated" | "not_found";
@@ -496,7 +496,7 @@ export interface ContinuousStatusResponse {
 
 ## Migration / Backwards Compatibility
 
-- Existing primitives without `ctx.terminate()` calls continue to work
+- Existing jobs without `ctx.terminate()` calls continue to work
 - New `terminate` method is available on all ContinuousContext instances
 - No breaking changes to existing API
 

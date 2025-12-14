@@ -17,7 +17,7 @@ The core issue: **`sleep` is stateless**. Unlike `step`, which has a name and tr
 1. Track when a pause point (sleep, wait, etc.) has been "passed"
 2. On resume, skip the pause point that triggered the resume
 3. Support multiple pause points in a single workflow
-4. Support future primitives like `wait` (wait for external event)
+4. Support future jobs like `wait` (wait for external event)
 5. **No API changes** - keep `sleep(duration)` simple
 6. No user-provided names required
 
@@ -370,7 +370,7 @@ This is a standard requirement for durable workflow systems (Temporal, Durable F
 1. **No names required** - `sleep(duration)` API unchanged
 2. **Automatic tracking** - Pause points identified by execution order
 3. **Simple storage** - Just two keys: `completedPauseIndex` and `pendingResumeAt`
-4. **Extensible** - Same pattern works for `wait` and future primitives
+4. **Extensible** - Same pattern works for `wait` and future jobs
 5. **Standard constraint** - Requires deterministic workflows (same as all durable workflow systems)
 
 The key insight is that deterministic execution means pause points always occur in the same order, making explicit naming unnecessary.

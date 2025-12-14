@@ -10,12 +10,12 @@ import {
   getGenerateReport,
 } from "./routes/workflows";
 import { Workflows } from "./workflows";
-import { Primitives } from "./primitives";
+import { Jobs } from "./primitives";
 import { startRefreshTokens, stopRefreshTokens } from "./routes/primitives";
 
 // Export the Durable Object classes
 export { Workflows };
-export { Primitives };
+export { Jobs };
 
 // =============================================================================
 // Hono Application
@@ -42,9 +42,9 @@ app.get("/workflows/processOrder", effectHandler(getProcessOrder));
 app.get("/workflows/generateReport", effectHandler(getGenerateReport));
 app.get("/workflows/:id/status", effectHandler(getWorkflowStatus));
 
-// Primitive routes
-app.get("/primitives/tokenRefresher", effectHandler(startRefreshTokens));
-app.get("/primitives/contine/stop", effectHandler(stopRefreshTokens));
+// Job routes
+app.get("/jobs/tokenRefresher", effectHandler(startRefreshTokens));
+app.get("/jobs/contine/stop", effectHandler(stopRefreshTokens));
 
 // 404 handler
 app.notFound((c) => c.json({ error: "Not Found" }, 404));

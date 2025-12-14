@@ -1,5 +1,5 @@
 import { CloudflareEnv, HonoCtx, RouteEffect } from "@/adapter";
-import { PrimitivesClient } from "@/primitives";
+import { JobsClient } from "@/primitives";
 import { Effect } from "effect";
 
 export const startRefreshTokens: RouteEffect<Response> = Effect.gen(
@@ -8,7 +8,7 @@ export const startRefreshTokens: RouteEffect<Response> = Effect.gen(
     const env = yield* CloudflareEnv;
 
     const orderId = c.req.query("orderId") ?? `order-${Date.now()}`;
-    const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+    const client = JobsClient.fromBinding(env.JOBS);
 
     yield* Effect.log(`Starting workflow for order ${orderId}`);
 
@@ -42,7 +42,7 @@ export const stopRefreshTokens: RouteEffect<Response> = Effect.gen(
         error: "orderId is required",
       });
     }
-    const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+    const client = JobsClient.fromBinding(env.JOBS);
 
     yield* Effect.log(`Starting workflow for order ${id}`);
 

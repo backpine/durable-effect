@@ -53,7 +53,7 @@ const exit = yield* definition
 The `WorkflowDefinition` interface expects an `execute` method:
 
 ```typescript
-// packages/workflow/src/primitives/make.ts
+// packages/workflow/src/jobs/make.ts
 export interface WorkflowDefinition<Input, Output, Error, Requirements> {
   readonly _tag: "WorkflowDefinition";
   readonly execute: (input: Input) => Effect.Effect<...>;
@@ -141,7 +141,7 @@ The error message mentions "failed after 21 attempts" because:
 3. The retry logic doesn't recognize it as a non-retryable error
 4. It retries until `maxAttempts` is exhausted
 
-**Note:** After the fix in `packages/workflow/src/primitives/retry.ts`, `StepScopeError` is now treated as non-retryable. However, this particular `TypeError` (from API mismatch) would still be retried since it's not a `StepScopeError`.
+**Note:** After the fix in `packages/workflow/src/jobs/retry.ts`, `StepScopeError` is now treated as non-retryable. However, this particular `TypeError` (from API mismatch) would still be retried since it's not a `StepScopeError`.
 
 ## Recommendations
 

@@ -1,4 +1,4 @@
-// packages/primitives/src/handlers/continuous/handler.ts
+// packages/jobs/src/handlers/continuous/handler.ts
 
 import { Context, Effect, Layer } from "effect";
 import {
@@ -7,16 +7,16 @@ import {
   type StorageError,
   type SchedulerError,
 } from "@durable-effect/core";
-import { MetadataService, type PrimitiveStatus } from "../../services/metadata";
+import { MetadataService, type JobStatus } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
 import { createEntityStateService, type EntityStateServiceI } from "../../services/entity-state";
 import { RegistryService } from "../../services/registry";
 import { KEYS } from "../../storage-keys";
 import {
-  PrimitiveNotFoundError,
+  JobNotFoundError,
   ExecutionError,
   TerminateSignal,
-  type PrimitiveError,
+  type JobError,
 } from "../../errors";
 import type { ContinuousRequest } from "../../runtime/types";
 import type { ContinuousDefinition } from "../../registry/types";
@@ -28,14 +28,14 @@ import { createContinuousContext, type StateHolder } from "./context";
 // =============================================================================
 
 export class ContinuousHandler extends Context.Tag(
-  "@durable-effect/primitives/ContinuousHandler"
+  "@durable-effect/jobs/ContinuousHandler"
 )<ContinuousHandler, ContinuousHandlerI>() {}
 
 // =============================================================================
 // Error Types for Internal Use
 // =============================================================================
 
-type HandlerError = PrimitiveError | StorageError | SchedulerError;
+type HandlerError = JobError | StorageError | SchedulerError;
 
 // =============================================================================
 // Layer Implementation
@@ -57,10 +57,10 @@ export const ContinuousHandlerLayer = Layer.effect(
 
     const getDefinition = (
       name: string
-    ): Effect.Effect<ContinuousDefinition<unknown, unknown, never>, PrimitiveNotFoundError> => {
+    ): Effect.Effect<ContinuousDefinition<unknown, unknown, never>, JobNotFoundError> => {
       const def = registryService.registry.continuous.get(name);
       if (!def) {
-        return Effect.fail(new PrimitiveNotFoundError({ type: "continuous", name }));
+        return Effect.fail(new JobNotFoundError({ type: "continuous", name }));
       }
       // Cast is safe here - we know the definition exists and matches the schema
       return Effect.succeed(def as ContinuousDefinition<unknown, unknown, never>);
@@ -95,8 +95,8 @@ export const ContinuousHandlerLayer = Layer.effect(
         case "Cron":
           return Effect.fail(
             new ExecutionError({
-              primitiveType: "continuous",
-              primitiveName: def.name,
+              jobType: "continuous",
+              jobName: def.name,
               instanceId: runtime.instanceId,
               cause: new Error("Cron schedules are not supported yet"),
             })
@@ -109,7 +109,7 @@ export const ContinuousHandlerLayer = Layer.effect(
     // -------------------------------------------------------------------------
 
     /**
-     * Perform termination of the primitive.
+     * Perform termination of the job.
      * Called when ctx.terminate() is invoked from execute function.
      */
     const performTermination = (
@@ -148,14 +148,14 @@ export const ContinuousHandlerLayer = Layer.effect(
       def: ContinuousDefinition<S, unknown, never>,
       stateService: EntityStateServiceI<S>,
       runCount: number
-    ): Effect.Effect<void, PrimitiveError | TerminateSignal> =>
+    ): Effect.Effect<void, JobError | TerminateSignal> =>
       Effect.gen(function* () {
         // Get current state
         const currentState = yield* stateService.get().pipe(
           Effect.mapError((e) =>
             new ExecutionError({
-              primitiveType: "continuous",
-              primitiveName: def.name,
+              jobType: "continuous",
+              jobName: def.name,
               instanceId: runtime.instanceId,
               cause: e,
             })
@@ -184,8 +184,8 @@ export const ContinuousHandlerLayer = Layer.effect(
           e instanceof ExecutionError
             ? e
             : new ExecutionError({
-                primitiveType: "continuous",
-                primitiveName: def.name,
+                jobType: "continuous",
+                jobName: def.name,
                 instanceId: runtime.instanceId,
                 cause: e,
               });
@@ -232,8 +232,8 @@ export const ContinuousHandlerLayer = Layer.effect(
           yield* stateService.set(stateHolder.current).pipe(
             Effect.mapError((e) =>
               new ExecutionError({
-                primitiveType: "continuous",
-                primitiveName: def.name,
+                jobType: "continuous",
+                jobName: def.name,
                 instanceId: runtime.instanceId,
                 cause: e,
               })
@@ -298,7 +298,7 @@ export const ContinuousHandlerLayer = Layer.effect(
           _type: "continuous.start" as const,
           instanceId: runtime.instanceId,
           created: true,
-          status: "running" as PrimitiveStatus,
+          status: "running" as JobStatus,
         };
       });
 
@@ -410,7 +410,7 @@ export const ContinuousHandlerLayer = Layer.effect(
     // -------------------------------------------------------------------------
 
     return {
-      handle: (request: ContinuousRequest): Effect.Effect<ContinuousResponse, PrimitiveError> =>
+      handle: (request: ContinuousRequest): Effect.Effect<ContinuousResponse, JobError> =>
         Effect.gen(function* () {
           const def = yield* getDefinition(request.name);
 
@@ -425,7 +425,7 @@ export const ContinuousHandlerLayer = Layer.effect(
                       _type: "continuous.start" as const,
                       instanceId: runtime.instanceId,
                       created: true,
-                      status: (signal.purgeState ? "terminated" : "stopped") as PrimitiveStatus,
+                      status: (signal.purgeState ? "terminated" : "stopped") as JobStatus,
                     };
                   })
                 )
@@ -452,12 +452,12 @@ export const ContinuousHandlerLayer = Layer.effect(
               return yield* handleGetState(def);
           }
         }).pipe(
-          // Map internal errors to PrimitiveError
+          // Map internal errors to JobError
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(
               new ExecutionError({
-                primitiveType: "continuous",
-                primitiveName: request.name,
+                jobType: "continuous",
+                jobName: request.name,
                 instanceId: runtime.instanceId,
                 cause: e,
               })
@@ -466,8 +466,8 @@ export const ContinuousHandlerLayer = Layer.effect(
           Effect.catchTag("SchedulerError", (e) =>
             Effect.fail(
               new ExecutionError({
-                primitiveType: "continuous",
-                primitiveName: request.name,
+                jobType: "continuous",
+                jobName: request.name,
                 instanceId: runtime.instanceId,
                 cause: e,
               })
@@ -475,9 +475,9 @@ export const ContinuousHandlerLayer = Layer.effect(
           )
         ),
 
-      handleAlarm: (): Effect.Effect<void, PrimitiveError> =>
+      handleAlarm: (): Effect.Effect<void, JobError> =>
         Effect.gen(function* () {
-          // Get metadata to find primitive name
+          // Get metadata to find job name
           const meta = yield* metadata.get();
           if (!meta || meta.status === "stopped" || meta.status === "terminated") {
             return;
@@ -509,12 +509,12 @@ export const ContinuousHandlerLayer = Layer.effect(
             yield* scheduleNext(def);
           }
         }).pipe(
-          // Map internal errors to PrimitiveError
+          // Map internal errors to JobError
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(
               new ExecutionError({
-                primitiveType: "continuous",
-                primitiveName: "unknown",
+                jobType: "continuous",
+                jobName: "unknown",
                 instanceId: runtime.instanceId,
                 cause: e,
               })
@@ -523,8 +523,8 @@ export const ContinuousHandlerLayer = Layer.effect(
           Effect.catchTag("SchedulerError", (e) =>
             Effect.fail(
               new ExecutionError({
-                primitiveType: "continuous",
-                primitiveName: "unknown",
+                jobType: "continuous",
+                jobName: "unknown",
                 instanceId: runtime.instanceId,
                 cause: e,
               })

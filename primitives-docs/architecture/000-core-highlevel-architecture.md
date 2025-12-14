@@ -1,14 +1,14 @@
-# Primitives Package Core Architecture
+# Jobs Package Core Architecture
 
-This document defines the high-level architecture for `@durable-effect/primitives`, a package that provides durable primitives (Continuous, Buffer, Queue) under a unified engine. The architecture draws heavily from `@durable-effect/workflow` while being tailored for the distinct needs of each primitive type.
+This document defines the high-level architecture for `@durable-effect/jobs`, a package that provides durable jobs (Continuous, Debounce, WorkerPool) under a unified engine. The architecture draws heavily from `@durable-effect/workflow` while being tailored for the distinct needs of each primitive type.
 
 ---
 
 ## 1. Design Goals
 
-1. **Unified Engine** - All primitives share a single Durable Object class
+1. **Unified Engine** - All jobs share a single Durable Object class
 2. **Swappable Compute** - Abstract adapters allow future migration away from Cloudflare
-3. **Consistent Patterns** - Share as much infrastructure as possible between primitives
+3. **Consistent Patterns** - Share as much infrastructure as possible between jobs
 4. **Type Safety** - Full Effect Schema integration with TypeScript inference
 5. **Observability** - Standardized event tracking across all primitive types
 6. **Testability** - In-memory adapters for fast, isolated tests
@@ -21,15 +21,15 @@ This document defines the high-level architecture for `@durable-effect/primitive
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           CLIENT LAYER                                  │
-│  PrimitivesClient.fromBinding(env.PRIMITIVES)                           │
-│  - Typed accessors: client.continuous(), client.buffer(), client.queue()│
-│  - Instance ID resolution and routing (critical for Queue concurrency)  │
+│  JobsClient.fromBinding(env.PRIMITIVES)                           │
+│  - Typed accessors: client.continuous(), client.debounce(), client.workerPool()│
+│  - Instance ID resolution and routing (critical for WorkerPool concurrency)  │
 └─────────────────────────────────────┬───────────────────────────────────┘
                                       │ HTTP/RPC
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           ENGINE LAYER                                  │
-│  DurablePrimitivesEngine (Durable Object class)                         │
+│  DurableJobsEngine (Durable Object class)                         │
 │  - Receives requests, creates Layer, routes to Orchestrator             │
 │  - Manages alarm wakeups via alarm() method                             │
 └─────────────────────────────────────┬───────────────────────────────────┘
@@ -42,7 +42,7 @@ This document defines the high-level architecture for `@durable-effect/primitive
 │  - Routes to type-specific orchestrators                                │
 │                                                                         │
 │  ┌──────────────────┬──────────────────┬──────────────────┐             │
-│  │   Continuous     │     Buffer       │      Queue       │             │
+│  │   Continuous     │     Debounce       │      WorkerPool       │             │
 │  │  Orchestrator    │   Orchestrator   │   Orchestrator   │             │
 │  └──────────────────┴──────────────────┴──────────────────┘             │
 └─────────────────────────────────────┬───────────────────────────────────┘
@@ -53,7 +53,7 @@ This document defines the high-level architecture for `@durable-effect/primitive
 │  Type-specific execution logic                                          │
 │                                                                         │
 │  ┌──────────────────┬──────────────────┬──────────────────┐             │
-│  │   Continuous     │     Buffer       │      Queue       │             │
+│  │   Continuous     │     Debounce       │      WorkerPool       │             │
 │  │    Executor      │    Executor      │    Executor      │             │
 │  │  - run execute() │  - run onEvent() │  - run execute() │             │
 │  │  - schedule next │  - run execute() │  - process next  │             │
@@ -104,7 +104,7 @@ This document defines the high-level architecture for `@durable-effect/primitive
 
 ### 3.1 Shared Components (Import from workflow)
 
-The primitives package **imports and reuses** these from the workflow package:
+The jobs package **imports and reuses** these from the workflow package:
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
@@ -115,22 +115,22 @@ The primitives package **imports and reuses** these from the workflow package:
 | `SchedulerError` | `@durable-effect/workflow/errors` | Scheduler operation errors |
 | DO adapter implementations | `@durable-effect/workflow/adapters/durable-object` | Platform-specific code |
 
-### 3.2 Primitives-Specific Components
+### 3.2 Jobs-Specific Components
 
 | Component | Purpose |
 |-----------|---------|
 | `MetadataManager` | Track primitive type, name, status per instance |
 | `EventTracker` | Emit primitive-specific lifecycle events |
-| `StateManager` | Schema-validated state (Continuous, Buffer) |
-| `IdempotencyManager` | Event deduplication (Buffer, Queue) |
+| `StateManager` | Schema-validated state (Continuous, Debounce) |
+| `IdempotencyManager` | Event deduplication (Debounce, WorkerPool) |
 | Type-specific orchestrators | Handle primitive-specific operations |
 | Type-specific executors | Execute primitive logic |
 
 ### 3.3 Architecture Comparison
 
-| Aspect | Workflow | Primitives |
+| Aspect | Workflow | Jobs |
 |--------|----------|------------|
-| DO class | One per workflow registry | One for all primitives |
+| DO class | One per workflow registry | One for all jobs |
 | Instance routing | `workflowName:id` | `primitiveType:primitiveName:id` |
 | State machine | Full workflow lifecycle | Simpler per-primitive status |
 | Alarm semantics | Resume/recover workflow | Type-dependent (see Section 4) |
@@ -147,8 +147,8 @@ Each Durable Object instance is identified by a composite ID:
 ```ts
 // Format: {primitiveType}:{primitiveName}:{userProvidedId}
 const instanceId = `continuous:tokenRefresher:user-123`;
-const instanceId = `buffer:webhookBuffer:contact-456`;
-const instanceId = `queue:emailSender:0`;  // Note: Queue uses index, not user ID
+const instanceId = `debounce:webhookDebounce:contact-456`;
+const instanceId = `workerPool:emailSender:0`;  // Note: WorkerPool uses index, not user ID
 ```
 
 **Client resolves instance ID before calling DO:**
@@ -164,31 +164,31 @@ const continuous = (name: string) => ({
 });
 ```
 
-### 4.2 Queue's Multi-Instance Model
+### 4.2 WorkerPool's Multi-Instance Model
 
-Queue is **special** - it uses N instances for concurrency:
+WorkerPool is **special** - it uses N instances for concurrency:
 
 ```ts
-// Queue with concurrency: 5 creates instances:
-// queue:emailSender:0
-// queue:emailSender:1
-// queue:emailSender:2
-// queue:emailSender:3
-// queue:emailSender:4
+// WorkerPool with concurrency: 5 creates instances:
+// workerPool:emailSender:0
+// workerPool:emailSender:1
+// workerPool:emailSender:2
+// workerPool:emailSender:3
+// workerPool:emailSender:4
 
 // Client routes events across instances
-const queue = (name: string) => ({
-  enqueue: ({ id, event, partitionKey }) => {
-    const concurrency = registry.queue.get(name).concurrency;
+const workerPool = (name: string) => ({
+  enworkerPool: ({ id, event, partitionKey }) => {
+    const concurrency = registry.workerPool.get(name).concurrency;
 
     // Determine target instance
     const instanceIndex = partitionKey
       ? consistentHash(partitionKey, concurrency)
       : roundRobin(name, concurrency);
 
-    const instanceId = `queue:${name}:${instanceIndex}`;
+    const instanceId = `workerPool:${name}:${instanceIndex}`;
     const stub = binding.get(binding.idFromName(instanceId));
-    return stub.fetch(/* enqueue request */);
+    return stub.fetch(/* enworkerPool request */);
   },
 });
 ```
@@ -200,8 +200,8 @@ Each primitive type uses alarms differently:
 | Primitive | Alarm Trigger | Alarm Action |
 |-----------|---------------|--------------|
 | **Continuous** | `schedule(duration)` | Execute `execute()`, reschedule |
-| **Buffer** | `flushAfter` timer | Execute `execute()`, purge state |
-| **Queue** | After event processing | Process next event OR idle |
+| **Debounce** | `flushAfter` timer | Execute `execute()`, purge state |
+| **WorkerPool** | After event processing | Process next event OR idle |
 
 **The orchestrator determines alarm handling based on stored metadata:**
 
@@ -214,11 +214,11 @@ switch (meta.primitiveType) {
   case "continuous":
     yield* continuousOrchestrator.handleAlarm();
     break;
-  case "buffer":
-    yield* bufferOrchestrator.handleAlarm();
+  case "debounce":
+    yield* debounceOrchestrator.handleAlarm();
     break;
-  case "queue":
-    yield* queueOrchestrator.handleAlarm();
+  case "workerPool":
+    yield* workerPoolOrchestrator.handleAlarm();
     break;
 }
 ```
@@ -287,11 +287,11 @@ Shared services provide cross-cutting functionality used by all primitive types.
 
 ### 6.1 MetadataManager
 
-Manages standard metadata that all primitives track. **Critical for determining primitive type on alarm.**
+Manages standard metadata that all jobs track. **Critical for determining primitive type on alarm.**
 
 ```ts
 interface PrimitiveMetadata {
-  readonly primitiveType: "continuous" | "buffer" | "queue";
+  readonly primitiveType: "continuous" | "debounce" | "workerPool";
   readonly primitiveName: string;
   readonly instanceId: string;
   readonly createdAt: number;
@@ -323,7 +323,7 @@ interface MetadataManagerService {
   readonly markStopped: (reason?: string) => Effect.Effect<void, StorageError>;
 }
 
-class MetadataManager extends Context.Tag("@durable-effect/primitives/MetadataManager")<
+class MetadataManager extends Context.Tag("@durable-effect/jobs/MetadataManager")<
   MetadataManager,
   MetadataManagerService
 >() {}
@@ -354,23 +354,23 @@ type ContinuousEvent =
   | { type: "continuous.stopped"; primitiveName: string; instanceId: string; reason?: string }
   | { type: "continuous.error"; primitiveName: string; instanceId: string; error: string };
 
-type BufferEvent =
-  | { type: "buffer.eventReceived"; primitiveName: string; instanceId: string; eventId?: string; eventCount: number }
-  | { type: "buffer.flushing"; primitiveName: string; instanceId: string; eventCount: number; reason: "flushAfter" | "maxEvents" | "manual" }
-  | { type: "buffer.flushed"; primitiveName: string; instanceId: string; eventCount: number; durationMs: number }
-  | { type: "buffer.cleared"; primitiveName: string; instanceId: string; discardedEvents: number }
-  | { type: "buffer.error"; primitiveName: string; instanceId: string; error: string };
+type DebounceEvent =
+  | { type: "debounce.eventReceived"; primitiveName: string; instanceId: string; eventId?: string; eventCount: number }
+  | { type: "debounce.flushing"; primitiveName: string; instanceId: string; eventCount: number; reason: "flushAfter" | "maxEvents" | "manual" }
+  | { type: "debounce.flushed"; primitiveName: string; instanceId: string; eventCount: number; durationMs: number }
+  | { type: "debounce.cleared"; primitiveName: string; instanceId: string; discardedEvents: number }
+  | { type: "debounce.error"; primitiveName: string; instanceId: string; error: string };
 
-type QueueEvent =
-  | { type: "queue.enqueued"; primitiveName: string; instanceId: string; eventId: string; position: number }
-  | { type: "queue.processing"; primitiveName: string; instanceId: string; eventId: string; attempt: number }
-  | { type: "queue.completed"; primitiveName: string; instanceId: string; eventId: string; durationMs: number }
-  | { type: "queue.failed"; primitiveName: string; instanceId: string; eventId: string; error: string; attempt: number }
-  | { type: "queue.deadLettered"; primitiveName: string; instanceId: string; eventId: string; error: string }
-  | { type: "queue.paused"; primitiveName: string; instanceId: string }
-  | { type: "queue.resumed"; primitiveName: string; instanceId: string };
+type WorkerPoolEvent =
+  | { type: "workerPool.enworkerPoold"; primitiveName: string; instanceId: string; eventId: string; position: number }
+  | { type: "workerPool.processing"; primitiveName: string; instanceId: string; eventId: string; attempt: number }
+  | { type: "workerPool.completed"; primitiveName: string; instanceId: string; eventId: string; durationMs: number }
+  | { type: "workerPool.failed"; primitiveName: string; instanceId: string; eventId: string; error: string; attempt: number }
+  | { type: "workerPool.deadLettered"; primitiveName: string; instanceId: string; eventId: string; error: string }
+  | { type: "workerPool.paused"; primitiveName: string; instanceId: string }
+  | { type: "workerPool.resumed"; primitiveName: string; instanceId: string };
 
-type InternalPrimitiveEvent = ContinuousEvent | BufferEvent | QueueEvent;
+type InternalPrimitiveEvent = ContinuousEvent | DebounceEvent | WorkerPoolEvent;
 
 // Wire event (enriched for transport)
 interface PrimitiveEvent extends InternalPrimitiveEvent {
@@ -385,7 +385,7 @@ interface EventTrackerService {
   readonly pending: () => Effect.Effect<number>;
 }
 
-class EventTracker extends Context.Tag("@durable-effect/primitives/EventTracker")<
+class EventTracker extends Context.Tag("@durable-effect/jobs/EventTracker")<
   EventTracker,
   EventTrackerService
 >() {}
@@ -396,25 +396,25 @@ class EventTracker extends Context.Tag("@durable-effect/primitives/EventTracker"
 ```ts
 const createHttpBatchEventTracker = (config: EventTrackerConfig) =>
   Effect.gen(function* () {
-    const buffer: InternalPrimitiveEvent[] = [];
+    const debounce: InternalPrimitiveEvent[] = [];
 
     return {
       emit: (event) =>
         Effect.sync(() => {
-          buffer.push(event);
+          debounce.push(event);
         }),
 
       flush: () =>
         Effect.gen(function* () {
-          if (buffer.length === 0) return;
+          if (debounce.length === 0) return;
 
-          const events = buffer.map(e => ({
+          const events = debounce.map(e => ({
             ...e,
             timestamp: Date.now(),
             env: config.env,
             serviceKey: config.serviceKey,
           }));
-          buffer.length = 0;
+          debounce.length = 0;
 
           // Fire and forget via ctx.waitUntil - don't block response
           // This is handled at the engine layer
@@ -423,14 +423,14 @@ const createHttpBatchEventTracker = (config: EventTrackerConfig) =>
           );
         }),
 
-      pending: () => Effect.succeed(buffer.length),
+      pending: () => Effect.succeed(debounce.length),
     };
   });
 ```
 
 ### 6.3 StateManager
 
-Generic state management with schema validation. Used by Continuous (persistent state) and Buffer (accumulated state).
+Generic state management with schema validation. Used by Continuous (persistent state) and Debounce (accumulated state).
 
 ```ts
 interface StateManagerService<S> {
@@ -483,7 +483,7 @@ const createStateManager = <S extends Schema.Schema.AnyNoContext>(
 
 ### 6.4 IdempotencyManager
 
-Tracks processed event IDs to prevent duplicate processing. Used by Buffer and Queue.
+Tracks processed event IDs to prevent duplicate processing. Used by Debounce and WorkerPool.
 
 ```ts
 interface IdempotencyManagerService {
@@ -492,7 +492,7 @@ interface IdempotencyManagerService {
   readonly clearProcessed: (eventId: string) => Effect.Effect<void, StorageError>;
 }
 
-class IdempotencyManager extends Context.Tag("@durable-effect/primitives/IdempotencyManager")<
+class IdempotencyManager extends Context.Tag("@durable-effect/jobs/IdempotencyManager")<
   IdempotencyManager,
   IdempotencyManagerService
 >() {}
@@ -520,7 +520,7 @@ interface ScheduleManagerService {
   readonly hasSchedule: () => Effect.Effect<boolean, SchedulerError>;
 }
 
-class ScheduleManager extends Context.Tag("@durable-effect/primitives/ScheduleManager")<
+class ScheduleManager extends Context.Tag("@durable-effect/jobs/ScheduleManager")<
   ScheduleManager,
   ScheduleManagerService
 >() {}
@@ -528,7 +528,7 @@ class ScheduleManager extends Context.Tag("@durable-effect/primitives/ScheduleMa
 
 ### 6.6 PurgeManager
 
-Handles data cleanup. Used by Buffer (after flush) and optionally by Continuous (on stop).
+Handles data cleanup. Used by Debounce (after flush) and optionally by Continuous (on stop).
 
 ```ts
 interface PurgeManagerService {
@@ -538,7 +538,7 @@ interface PurgeManagerService {
   readonly getPendingPurge: () => Effect.Effect<number | undefined, StorageError>;
 }
 
-class PurgeManager extends Context.Tag("@durable-effect/primitives/PurgeManager")<
+class PurgeManager extends Context.Tag("@durable-effect/jobs/PurgeManager")<
   PurgeManager,
   PurgeManagerService
 >() {}
@@ -584,24 +584,24 @@ alarm fires → executeOnAlarm() → execute() → [update state] → [schedule 
 stop(reason) → [cancel schedule] → [purge state]
 ```
 
-### 7.2 BufferExecutor
+### 7.2 DebounceExecutor
 
 ```ts
-interface BufferExecutorService<I, S, E, R> {
-  /** Add event to buffer, optionally trigger flush */
-  readonly addEvent: (event: I, eventId?: string) => Effect.Effect<BufferAddResult, E, R>;
+interface DebounceExecutorService<I, S, E, R> {
+  /** Add event to debounce, optionally trigger flush */
+  readonly addEvent: (event: I, eventId?: string) => Effect.Effect<DebounceAddResult, E, R>;
 
-  /** Handle alarm - flush the buffer */
+  /** Handle alarm - flush the debounce */
   readonly executeOnAlarm: () => Effect.Effect<void, E, R>;
 
   /** Manual flush */
-  readonly flush: () => Effect.Effect<BufferFlushResult, E, R>;
+  readonly flush: () => Effect.Effect<DebounceFlushResult, E, R>;
 
-  /** Clear buffer without executing */
-  readonly clear: () => Effect.Effect<BufferClearResult, StorageError>;
+  /** Clear debounce without executing */
+  readonly clear: () => Effect.Effect<DebounceClearResult, StorageError>;
 
   /** Get current status */
-  readonly getStatus: () => Effect.Effect<BufferStatus, StorageError>;
+  readonly getStatus: () => Effect.Effect<DebounceStatus, StorageError>;
 
   /** Get current accumulated state */
   readonly getState: () => Effect.Effect<S | null, StorageError>;
@@ -621,12 +621,12 @@ alarm fires → executeOnAlarm() → execute(state) → [purge state, cancel ala
 flush() → execute(state) → [purge state, cancel alarm]
 ```
 
-### 7.3 QueueExecutor
+### 7.3 WorkerPoolExecutor
 
 ```ts
-interface QueueExecutorService<E, Err, R> {
-  /** Add event to queue */
-  readonly enqueue: (event: E, eventId: string, priority?: number) => Effect.Effect<QueueEnqueueResult, Err, R>;
+interface WorkerPoolExecutorService<E, Err, R> {
+  /** Add event to workerPool */
+  readonly enworkerPool: (event: E, eventId: string, priority?: number) => Effect.Effect<WorkerPoolEnworkerPoolResult, Err, R>;
 
   /** Handle alarm - process next event */
   readonly executeOnAlarm: () => Effect.Effect<void, Err, R>;
@@ -638,17 +638,17 @@ interface QueueExecutorService<E, Err, R> {
   readonly resume: () => Effect.Effect<void, StorageError>;
 
   /** Cancel pending event */
-  readonly cancel: (eventId: string) => Effect.Effect<QueueCancelResult, StorageError>;
+  readonly cancel: (eventId: string) => Effect.Effect<WorkerPoolCancelResult, StorageError>;
 
   /** Get current status */
-  readonly getStatus: () => Effect.Effect<QueueInstanceStatus, StorageError>;
+  readonly getStatus: () => Effect.Effect<WorkerPoolInstanceStatus, StorageError>;
 }
 ```
 
 **Execution Flow:**
 
 ```
-enqueue(event) → [dedupe check] → [add to pending list] → [schedule alarm if idle]
+enworkerPool(event) → [dedupe check] → [add to pending list] → [schedule alarm if idle]
      ↓
 alarm fires → executeOnAlarm() → [pop next event] → execute(event)
      ↓
@@ -676,23 +676,23 @@ interface ContinuousOrchestratorService {
   readonly handleAlarm: () => Effect.Effect<void, ...>;
 }
 
-// BufferOrchestrator
-interface BufferOrchestratorService {
-  readonly handleAdd: (req: BufferAddRequest) => Effect.Effect<BufferAddResult, ...>;
-  readonly handleFlush: (req: BufferFlushRequest) => Effect.Effect<BufferFlushResult, ...>;
-  readonly handleClear: (req: BufferClearRequest) => Effect.Effect<BufferClearResult, ...>;
-  readonly handleStatus: (req: StatusRequest) => Effect.Effect<BufferStatus, ...>;
+// DebounceOrchestrator
+interface DebounceOrchestratorService {
+  readonly handleAdd: (req: DebounceAddRequest) => Effect.Effect<DebounceAddResult, ...>;
+  readonly handleFlush: (req: DebounceFlushRequest) => Effect.Effect<DebounceFlushResult, ...>;
+  readonly handleClear: (req: DebounceClearRequest) => Effect.Effect<DebounceClearResult, ...>;
+  readonly handleStatus: (req: StatusRequest) => Effect.Effect<DebounceStatus, ...>;
   readonly handleGetState: (req: GetStateRequest) => Effect.Effect<unknown, ...>;
   readonly handleAlarm: () => Effect.Effect<void, ...>;
 }
 
-// QueueOrchestrator
-interface QueueOrchestratorService {
-  readonly handleEnqueue: (req: QueueEnqueueRequest) => Effect.Effect<QueueEnqueueResult, ...>;
-  readonly handlePause: (req: QueuePauseRequest) => Effect.Effect<void, ...>;
-  readonly handleResume: (req: QueueResumeRequest) => Effect.Effect<void, ...>;
-  readonly handleCancel: (req: QueueCancelRequest) => Effect.Effect<QueueCancelResult, ...>;
-  readonly handleStatus: (req: StatusRequest) => Effect.Effect<QueueInstanceStatus, ...>;
+// WorkerPoolOrchestrator
+interface WorkerPoolOrchestratorService {
+  readonly handleEnworkerPool: (req: WorkerPoolEnworkerPoolRequest) => Effect.Effect<WorkerPoolEnworkerPoolResult, ...>;
+  readonly handlePause: (req: WorkerPoolPauseRequest) => Effect.Effect<void, ...>;
+  readonly handleResume: (req: WorkerPoolResumeRequest) => Effect.Effect<void, ...>;
+  readonly handleCancel: (req: WorkerPoolCancelRequest) => Effect.Effect<WorkerPoolCancelResult, ...>;
+  readonly handleStatus: (req: StatusRequest) => Effect.Effect<WorkerPoolInstanceStatus, ...>;
   readonly handleAlarm: () => Effect.Effect<void, ...>;
 }
 ```
@@ -705,7 +705,7 @@ interface PrimitiveOrchestratorService {
   readonly handleAlarm: () => Effect.Effect<void, PrimitiveError>;
 }
 
-class PrimitiveOrchestrator extends Context.Tag("@durable-effect/primitives/PrimitiveOrchestrator")<
+class PrimitiveOrchestrator extends Context.Tag("@durable-effect/jobs/PrimitiveOrchestrator")<
   PrimitiveOrchestrator,
   PrimitiveOrchestratorService
 >() {}
@@ -718,8 +718,8 @@ const createPrimitiveOrchestrator = Effect.gen(function* () {
   const metadata = yield* MetadataManager;
   const tracker = yield* EventTracker;
   const continuousOrchestrator = yield* ContinuousOrchestrator;
-  const bufferOrchestrator = yield* BufferOrchestrator;
-  const queueOrchestrator = yield* QueueOrchestrator;
+  const debounceOrchestrator = yield* DebounceOrchestrator;
+  const workerPoolOrchestrator = yield* WorkerPoolOrchestrator;
 
   return {
     route: (request: PrimitiveRequest) =>
@@ -733,19 +733,19 @@ const createPrimitiveOrchestrator = Effect.gen(function* () {
           case "ContinuousGetState":
             return yield* routeToContinuous(continuousOrchestrator, request);
 
-          case "BufferAdd":
-          case "BufferFlush":
-          case "BufferClear":
-          case "BufferStatus":
-          case "BufferGetState":
-            return yield* routeToBuffer(bufferOrchestrator, request);
+          case "DebounceAdd":
+          case "DebounceFlush":
+          case "DebounceClear":
+          case "DebounceStatus":
+          case "DebounceGetState":
+            return yield* routeToDebounce(debounceOrchestrator, request);
 
-          case "QueueEnqueue":
-          case "QueuePause":
-          case "QueueResume":
-          case "QueueCancel":
-          case "QueueStatus":
-            return yield* routeToQueue(queueOrchestrator, request);
+          case "WorkerPoolEnworkerPool":
+          case "WorkerPoolPause":
+          case "WorkerPoolResume":
+          case "WorkerPoolCancel":
+          case "WorkerPoolStatus":
+            return yield* routeToWorkerPool(workerPoolOrchestrator, request);
         }
       }),
 
@@ -758,11 +758,11 @@ const createPrimitiveOrchestrator = Effect.gen(function* () {
           case "continuous":
             yield* continuousOrchestrator.handleAlarm();
             break;
-          case "buffer":
-            yield* bufferOrchestrator.handleAlarm();
+          case "debounce":
+            yield* debounceOrchestrator.handleAlarm();
             break;
-          case "queue":
-            yield* queueOrchestrator.handleAlarm();
+          case "workerPool":
+            yield* workerPoolOrchestrator.handleAlarm();
             break;
         }
       }),
@@ -776,13 +776,13 @@ const createPrimitiveOrchestrator = Effect.gen(function* () {
 
 The engine is the Durable Object entry point.
 
-### 9.1 DurablePrimitivesEngine
+### 9.1 DurableJobsEngine
 
 ```ts
 import { DurableObject } from "cloudflare:workers";
 import { Effect, Layer, pipe } from "effect";
 
-export class DurablePrimitivesEngine extends DurableObject {
+export class DurableJobsEngine extends DurableObject {
   readonly #runtimeLayer: Layer.Layer<StorageAdapter | SchedulerAdapter | RuntimeAdapter>;
   readonly #orchestratorLayer: Layer.Layer<PrimitiveOrchestrator | EventTracker | MetadataManager, never, never>;
 
@@ -865,7 +865,7 @@ The registry holds all primitive definitions and enables type-safe lookup.
 ```ts
 // Base definition shape
 interface PrimitiveDefinitionBase {
-  readonly _tag: "continuous" | "buffer" | "queue";
+  readonly _tag: "continuous" | "debounce" | "workerPool";
   readonly name: string;
 }
 
@@ -879,33 +879,33 @@ interface ContinuousDefinition<S, E, R> extends PrimitiveDefinitionBase {
   readonly onError?: (error: E, ctx: ContinuousContext<S>) => Effect.Effect<void, never, R>;
 }
 
-// Buffer definition
-interface BufferDefinition<I, S, E, R> extends PrimitiveDefinitionBase {
-  readonly _tag: "buffer";
+// Debounce definition
+interface DebounceDefinition<I, S, E, R> extends PrimitiveDefinitionBase {
+  readonly _tag: "debounce";
   readonly eventSchema: Schema.Schema<I, unknown, never>;
   readonly stateSchema?: Schema.Schema<S, unknown, never>;
   readonly flushAfter: Duration.DurationInput;
   readonly maxEvents?: number;
-  readonly execute: (ctx: BufferExecuteContext<S>) => Effect.Effect<void, E, R>;
-  readonly onEvent?: (ctx: BufferEventContext<I, S>) => S;  // Synchronous reducer
-  readonly onError?: (error: E, ctx: BufferExecuteContext<S>) => Effect.Effect<void, never, R>;
+  readonly execute: (ctx: DebounceExecuteContext<S>) => Effect.Effect<void, E, R>;
+  readonly onEvent?: (ctx: DebounceEventContext<I, S>) => S;  // Synchronous reducer
+  readonly onError?: (error: E, ctx: DebounceExecuteContext<S>) => Effect.Effect<void, never, R>;
 }
 
-// Queue definition
-interface QueueDefinition<E, Err, R> extends PrimitiveDefinitionBase {
-  readonly _tag: "queue";
+// WorkerPool definition
+interface WorkerPoolDefinition<E, Err, R> extends PrimitiveDefinitionBase {
+  readonly _tag: "workerPool";
   readonly eventSchema: Schema.Schema<E, unknown, never>;
   readonly concurrency: number;
-  readonly execute: (ctx: QueueExecuteContext<E>) => Effect.Effect<void, Err, R>;
-  readonly retry?: QueueRetryConfig;
-  readonly onDeadLetter?: (event: E, error: Err, ctx: QueueDeadLetterContext) => Effect.Effect<void, never, R>;
-  readonly onEmpty?: (ctx: QueueEmptyContext) => Effect.Effect<void, never, R>;
+  readonly execute: (ctx: WorkerPoolExecuteContext<E>) => Effect.Effect<void, Err, R>;
+  readonly retry?: WorkerPoolRetryConfig;
+  readonly onDeadLetter?: (event: E, error: Err, ctx: WorkerPoolDeadLetterContext) => Effect.Effect<void, never, R>;
+  readonly onEmpty?: (ctx: WorkerPoolEmptyContext) => Effect.Effect<void, never, R>;
 }
 
 type AnyPrimitiveDefinition =
   | ContinuousDefinition<any, any, any>
-  | BufferDefinition<any, any, any, any>
-  | QueueDefinition<any, any, any>;
+  | DebounceDefinition<any, any, any, any>
+  | WorkerPoolDefinition<any, any, any>;
 ```
 
 ### 10.2 Registry Structure
@@ -913,8 +913,8 @@ type AnyPrimitiveDefinition =
 ```ts
 interface PrimitiveRegistry {
   readonly continuous: Map<string, ContinuousDefinition<any, any, any>>;
-  readonly buffer: Map<string, BufferDefinition<any, any, any, any>>;
-  readonly queue: Map<string, QueueDefinition<any, any, any>>;
+  readonly debounce: Map<string, DebounceDefinition<any, any, any, any>>;
+  readonly workerPool: Map<string, WorkerPoolDefinition<any, any, any>>;
 }
 
 // Type-safe registry builder
@@ -923,8 +923,8 @@ const createPrimitiveRegistry = <T extends Record<string, AnyPrimitiveDefinition
 ): PrimitiveRegistry => {
   const registry: PrimitiveRegistry = {
     continuous: new Map(),
-    buffer: new Map(),
-    queue: new Map(),
+    debounce: new Map(),
+    workerPool: new Map(),
   };
 
   for (const [name, def] of Object.entries(definitions)) {
@@ -933,11 +933,11 @@ const createPrimitiveRegistry = <T extends Record<string, AnyPrimitiveDefinition
       case "continuous":
         registry.continuous.set(name, withName);
         break;
-      case "buffer":
-        registry.buffer.set(name, withName);
+      case "debounce":
+        registry.debounce.set(name, withName);
         break;
-      case "queue":
-        registry.queue.set(name, withName);
+      case "workerPool":
+        registry.workerPool.set(name, withName);
         break;
     }
   }
@@ -950,38 +950,38 @@ const createPrimitiveRegistry = <T extends Record<string, AnyPrimitiveDefinition
 
 ## 11. Client Layer
 
-The client provides typed access to primitives with proper instance routing.
+The client provides typed access to jobs with proper instance routing.
 
-### 11.1 PrimitivesClient Factory
+### 11.1 JobsClient Factory
 
 ```ts
-interface PrimitivesClientFactory<T extends PrimitiveRegistry> {
-  readonly fromBinding: (binding: DurableObjectNamespace) => PrimitivesClient<T>;
-  readonly Tag: Context.Tag<PrimitivesClient<T>, PrimitivesClient<T>>;
+interface JobsClientFactory<T extends PrimitiveRegistry> {
+  readonly fromBinding: (binding: DurableObjectNamespace) => JobsClient<T>;
+  readonly Tag: Context.Tag<JobsClient<T>, JobsClient<T>>;
 }
 
-interface PrimitivesClient<T extends PrimitiveRegistry> {
+interface JobsClient<T extends PrimitiveRegistry> {
   readonly continuous: <K extends keyof T["continuous"] & string>(
     name: K
   ) => ContinuousClient<T["continuous"][K]>;
 
-  readonly buffer: <K extends keyof T["buffer"] & string>(
+  readonly debounce: <K extends keyof T["debounce"] & string>(
     name: K
-  ) => BufferClient<T["buffer"][K]>;
+  ) => DebounceClient<T["debounce"][K]>;
 
-  readonly queue: <K extends keyof T["queue"] & string>(
+  readonly workerPool: <K extends keyof T["workerPool"] & string>(
     name: K
-  ) => QueueClient<T["queue"][K]>;
+  ) => WorkerPoolClient<T["workerPool"][K]>;
 }
 ```
 
 ### 11.2 Instance ID Resolution
 
 ```ts
-const createPrimitivesClient = <T extends PrimitiveRegistry>(
+const createJobsClient = <T extends PrimitiveRegistry>(
   binding: DurableObjectNamespace,
   registry: PrimitiveRegistry
-): PrimitivesClient<T> => {
+): JobsClient<T> => {
   // Helper to get stub for an instance
   const getStub = (instanceId: string) =>
     binding.get(binding.idFromName(instanceId));
@@ -1001,55 +1001,55 @@ const createPrimitivesClient = <T extends PrimitiveRegistry>(
       // ... other methods
     }),
 
-    buffer: (name) => ({
+    debounce: (name) => ({
       add: ({ id, event, eventId }) => {
-        const instanceId = `buffer:${name}:${id}`;
+        const instanceId = `debounce:${name}:${id}`;
         const stub = getStub(instanceId);
-        return sendRequest(stub, { _tag: "BufferAdd", name, id, event, eventId });
+        return sendRequest(stub, { _tag: "DebounceAdd", name, id, event, eventId });
       },
       // ... other methods
     }),
 
-    queue: (name) => {
-      const def = registry.queue.get(name);
+    workerPool: (name) => {
+      const def = registry.workerPool.get(name);
       const concurrency = def?.concurrency ?? 1;
       let roundRobinCounter = 0;
 
       return {
-        enqueue: ({ id, event, partitionKey, priority }) => {
+        enworkerPool: ({ id, event, partitionKey, priority }) => {
           // Route to specific instance based on partitionKey or round-robin
           const instanceIndex = partitionKey
             ? consistentHash(partitionKey, concurrency)
             : roundRobinCounter++ % concurrency;
 
-          const instanceId = `queue:${name}:${instanceIndex}`;
+          const instanceId = `workerPool:${name}:${instanceIndex}`;
           const stub = getStub(instanceId);
-          return sendRequest(stub, { _tag: "QueueEnqueue", name, eventId: id, event, priority });
+          return sendRequest(stub, { _tag: "WorkerPoolEnworkerPool", name, eventId: id, event, priority });
         },
 
         status: () => {
           // Aggregate status from all instances
           return Effect.all(
             Array.from({ length: concurrency }, (_, i) => {
-              const instanceId = `queue:${name}:${i}`;
+              const instanceId = `workerPool:${name}:${i}`;
               const stub = getStub(instanceId);
-              return sendRequest(stub, { _tag: "QueueStatus", name, instanceIndex: i });
+              return sendRequest(stub, { _tag: "WorkerPoolStatus", name, instanceIndex: i });
             })
-          ).pipe(Effect.map(aggregateQueueStatus));
+          ).pipe(Effect.map(aggregateWorkerPoolStatus));
         },
 
         pause: (index) => {
           if (index !== undefined) {
-            const instanceId = `queue:${name}:${index}`;
+            const instanceId = `workerPool:${name}:${index}`;
             const stub = getStub(instanceId);
-            return sendRequest(stub, { _tag: "QueuePause", name });
+            return sendRequest(stub, { _tag: "WorkerPoolPause", name });
           }
           // Pause all instances
           return Effect.all(
             Array.from({ length: concurrency }, (_, i) => {
-              const instanceId = `queue:${name}:${i}`;
+              const instanceId = `workerPool:${name}:${i}`;
               const stub = getStub(instanceId);
-              return sendRequest(stub, { _tag: "QueuePause", name });
+              return sendRequest(stub, { _tag: "WorkerPoolPause", name });
             })
           ).pipe(Effect.asVoid);
         },
@@ -1064,11 +1064,11 @@ const createPrimitivesClient = <T extends PrimitiveRegistry>(
 
 ## 12. Storage Key Namespacing
 
-All primitives use consistent key prefixes for organization and isolation.
+All jobs use consistent key prefixes for organization and isolation.
 
 ```ts
 const STORAGE_KEYS = {
-  // Metadata (all primitives)
+  // Metadata (all jobs)
   metadata: {
     type: "meta:type",
     name: "meta:name",
@@ -1078,7 +1078,7 @@ const STORAGE_KEYS = {
     status: "meta:status",
   },
 
-  // User state (Continuous, Buffer)
+  // User state (Continuous, Debounce)
   state: "state:data",
 
   // Continuous-specific
@@ -1088,24 +1088,24 @@ const STORAGE_KEYS = {
     lastExecutedAt: "continuous:lastExecutedAt",
   },
 
-  // Buffer-specific
-  buffer: {
-    eventCount: "buffer:eventCount",
-    bufferStartedAt: "buffer:bufferStartedAt",
-    flushScheduledAt: "buffer:flushScheduledAt",
+  // Debounce-specific
+  debounce: {
+    eventCount: "debounce:eventCount",
+    debounceStartedAt: "debounce:debounceStartedAt",
+    flushScheduledAt: "debounce:flushScheduledAt",
   },
 
-  // Queue-specific
-  queue: {
-    events: "queue:events:",        // Prefix: queue:events:{eventId}
-    pendingIds: "queue:pending",    // Ordered array of pending event IDs
-    processedCount: "queue:processedCount",
-    currentEventId: "queue:currentEventId",
-    currentAttempt: "queue:currentAttempt",
-    paused: "queue:paused",
+  // WorkerPool-specific
+  workerPool: {
+    events: "workerPool:events:",        // Prefix: workerPool:events:{eventId}
+    pendingIds: "workerPool:pending",    // Ordered array of pending event IDs
+    processedCount: "workerPool:processedCount",
+    currentEventId: "workerPool:currentEventId",
+    currentAttempt: "workerPool:currentAttempt",
+    paused: "workerPool:paused",
   },
 
-  // Idempotency (Buffer, Queue)
+  // Idempotency (Debounce, WorkerPool)
   idempotency: "idem:",  // Prefix: idem:{eventId}
 
   // Purge scheduling
@@ -1124,12 +1124,12 @@ import { Data } from "effect";
 
 // Primitive-specific errors
 class PrimitiveNotFoundError extends Data.TaggedError("PrimitiveNotFoundError")<{
-  readonly primitiveType: "continuous" | "buffer" | "queue";
+  readonly primitiveType: "continuous" | "debounce" | "workerPool";
   readonly primitiveName: string;
 }> {}
 
 class InstanceNotFoundError extends Data.TaggedError("InstanceNotFoundError")<{
-  readonly primitiveType: "continuous" | "buffer" | "queue";
+  readonly primitiveType: "continuous" | "debounce" | "workerPool";
   readonly primitiveName: string;
   readonly instanceId: string;
 }> {}
@@ -1146,7 +1146,7 @@ class ValidationError extends Data.TaggedError("ValidationError")<{
 }> {}
 
 class ExecutionError extends Data.TaggedError("ExecutionError")<{
-  readonly primitiveType: "continuous" | "buffer" | "queue";
+  readonly primitiveType: "continuous" | "debounce" | "workerPool";
   readonly primitiveName: string;
   readonly instanceId: string;
   readonly cause: unknown;
@@ -1164,13 +1164,13 @@ export { StorageError, SchedulerError } from "@durable-effect/workflow/errors";
 
 ---
 
-## 14. Factory: createDurablePrimitives
+## 14. Factory: createDurableJobs
 
 The main entry point for users.
 
 ```ts
-interface CreateDurablePrimitivesOptions<T extends Record<string, AnyPrimitiveDefinition>> {
-  readonly primitives: T;
+interface CreateDurableJobsOptions<T extends Record<string, AnyPrimitiveDefinition>> {
+  readonly jobs: T;
   readonly tracking?: {
     readonly enabled: boolean;
     readonly endpoint?: string;
@@ -1179,24 +1179,24 @@ interface CreateDurablePrimitivesOptions<T extends Record<string, AnyPrimitiveDe
   };
 }
 
-interface CreateDurablePrimitivesResult<T extends Record<string, AnyPrimitiveDefinition>> {
+interface CreateDurableJobsResult<T extends Record<string, AnyPrimitiveDefinition>> {
   /** The Durable Object class to export */
-  readonly Primitives: typeof DurablePrimitivesEngine;
+  readonly Jobs: typeof DurableJobsEngine;
 
   /** Factory for creating typed clients */
-  readonly PrimitivesClient: PrimitivesClientFactory<InferRegistry<T>>;
+  readonly JobsClient: JobsClientFactory<InferRegistry<T>>;
 
   /** The registry (for advanced use cases) */
   readonly registry: PrimitiveRegistry;
 }
 
-export const createDurablePrimitives = <T extends Record<string, AnyPrimitiveDefinition>>(
-  options: CreateDurablePrimitivesOptions<T>
-): CreateDurablePrimitivesResult<T> => {
-  const registry = createPrimitiveRegistry(options.primitives);
+export const createDurableJobs = <T extends Record<string, AnyPrimitiveDefinition>>(
+  options: CreateDurableJobsOptions<T>
+): CreateDurableJobsResult<T> => {
+  const registry = createPrimitiveRegistry(options.jobs);
 
   // Create DO class with registry and config bound
-  class BoundPrimitivesEngine extends DurablePrimitivesEngine {
+  class BoundJobsEngine extends DurableJobsEngine {
     constructor(state: DurableObjectState, env: Env) {
       super(state, {
         ...env,
@@ -1207,18 +1207,18 @@ export const createDurablePrimitives = <T extends Record<string, AnyPrimitiveDef
   }
 
   // Create client factory with Effect Tag for service pattern
-  const ClientTag = Context.GenericTag<PrimitivesClient<InferRegistry<T>>>(
-    "@durable-effect/primitives/Client"
+  const ClientTag = Context.GenericTag<JobsClient<InferRegistry<T>>>(
+    "@durable-effect/jobs/Client"
   );
 
-  const PrimitivesClient: PrimitivesClientFactory<InferRegistry<T>> = {
-    fromBinding: (binding) => createPrimitivesClient(binding, registry),
+  const JobsClient: JobsClientFactory<InferRegistry<T>> = {
+    fromBinding: (binding) => createJobsClient(binding, registry),
     Tag: ClientTag,
   };
 
   return {
-    Primitives: BoundPrimitivesEngine as any,
-    PrimitivesClient,
+    Jobs: BoundJobsEngine as any,
+    JobsClient,
     registry,
   };
 };
@@ -1281,7 +1281,7 @@ export const createInMemoryScheduler = () => {
 ### 15.2 Test Harness
 
 ```ts
-export const createTestPrimitives = <T extends Record<string, AnyPrimitiveDefinition>>(
+export const createTestJobs = <T extends Record<string, AnyPrimitiveDefinition>>(
   definitions: T
 ) => {
   const registry = createPrimitiveRegistry(definitions);
@@ -1327,10 +1327,10 @@ export const createTestPrimitives = <T extends Record<string, AnyPrimitiveDefini
 ## 16. File Structure
 
 ```
-packages/primitives/
+packages/jobs/
 ├── src/
 │   ├── index.ts                      # Public exports
-│   ├── factory.ts                    # createDurablePrimitives
+│   ├── factory.ts                    # createDurableJobs
 │   │
 │   ├── services/
 │   │   ├── metadata.ts               # MetadataManager
@@ -1340,7 +1340,7 @@ packages/primitives/
 │   │   ├── schedule.ts               # ScheduleManager
 │   │   └── purge.ts                  # PurgeManager
 │   │
-│   ├── primitives/
+│   ├── jobs/
 │   │   ├── continuous/
 │   │   │   ├── index.ts              # Public exports
 │   │   │   ├── definition.ts         # ContinuousDefinition type
@@ -1350,30 +1350,30 @@ packages/primitives/
 │   │   │   ├── context.ts            # ContinuousContext
 │   │   │   └── client.ts             # ContinuousClient
 │   │   │
-│   │   ├── buffer/
+│   │   ├── debounce/
 │   │   │   ├── index.ts              # Public exports
-│   │   │   ├── definition.ts         # BufferDefinition type
-│   │   │   ├── make.ts               # Buffer.make factory
-│   │   │   ├── executor.ts           # BufferExecutor
-│   │   │   ├── orchestrator.ts       # BufferOrchestrator
-│   │   │   ├── context.ts            # BufferContext types
-│   │   │   └── client.ts             # BufferClient
+│   │   │   ├── definition.ts         # DebounceDefinition type
+│   │   │   ├── make.ts               # Debounce.make factory
+│   │   │   ├── executor.ts           # DebounceExecutor
+│   │   │   ├── orchestrator.ts       # DebounceOrchestrator
+│   │   │   ├── context.ts            # DebounceContext types
+│   │   │   └── client.ts             # DebounceClient
 │   │   │
-│   │   └── queue/
+│   │   └── workerPool/
 │   │       ├── index.ts              # Public exports
-│   │       ├── definition.ts         # QueueDefinition type
-│   │       ├── make.ts               # Queue.make factory
-│   │       ├── executor.ts           # QueueExecutor
-│   │       ├── orchestrator.ts       # QueueOrchestrator
-│   │       ├── context.ts            # QueueContext types
-│   │       └── client.ts             # QueueClient
+│   │       ├── definition.ts         # WorkerPoolDefinition type
+│   │       ├── make.ts               # WorkerPool.make factory
+│   │       ├── executor.ts           # WorkerPoolExecutor
+│   │       ├── orchestrator.ts       # WorkerPoolOrchestrator
+│   │       ├── context.ts            # WorkerPoolContext types
+│   │       └── client.ts             # WorkerPoolClient
 │   │
 │   ├── orchestrator/
 │   │   ├── index.ts                  # PrimitiveOrchestrator
 │   │   └── types.ts                  # Request/Response types
 │   │
 │   ├── engine/
-│   │   ├── engine.ts                 # DurablePrimitivesEngine DO class
+│   │   ├── engine.ts                 # DurableJobsEngine DO class
 │   │   └── types.ts                  # Engine interfaces
 │   │
 │   ├── registry/
@@ -1381,7 +1381,7 @@ packages/primitives/
 │   │   └── types.ts                  # Registry types
 │   │
 │   ├── client/
-│   │   ├── client.ts                 # PrimitivesClient factory
+│   │   ├── client.ts                 # JobsClient factory
 │   │   └── types.ts                  # Client types
 │   │
 │   ├── errors/
@@ -1396,8 +1396,8 @@ packages/primitives/
 │
 ├── test/
 │   ├── continuous.test.ts
-│   ├── buffer.test.ts
-│   ├── queue.test.ts
+│   ├── debounce.test.ts
+│   ├── workerPool.test.ts
 │   └── integration.test.ts
 │
 └── package.json
@@ -1411,10 +1411,10 @@ packages/primitives/
 
 | Layer | Purpose | Key Types |
 |-------|---------|-----------|
-| **Client** | User-facing API, instance routing | `PrimitivesClient`, type-specific clients |
-| **Engine** | DO entry point, layer composition | `DurablePrimitivesEngine` |
+| **Client** | User-facing API, instance routing | `JobsClient`, type-specific clients |
+| **Engine** | DO entry point, layer composition | `DurableJobsEngine` |
 | **Orchestrator** | Request routing, alarm dispatch | `PrimitiveOrchestrator`, type-specific orchestrators |
-| **Executor** | Primitive-specific logic | `ContinuousExecutor`, `BufferExecutor`, `QueueExecutor` |
+| **Executor** | Primitive-specific logic | `ContinuousExecutor`, `DebounceExecutor`, `WorkerPoolExecutor` |
 | **Shared Services** | Cross-cutting concerns | `MetadataManager`, `EventTracker`, `StateManager`, etc. |
 | **Adapters** | Platform abstraction | `StorageAdapter`, `SchedulerAdapter`, `RuntimeAdapter` |
 | **Platform** | Implementation | Cloudflare Durable Objects |
@@ -1423,10 +1423,10 @@ packages/primitives/
 
 | Decision | Rationale |
 |----------|-----------|
-| **Single DO class for all primitives** | Simplifies deployment, reduces binding complexity |
+| **Single DO class for all jobs** | Simplifies deployment, reduces binding complexity |
 | **Shared adapters with workflow** | Code reuse, consistent platform abstraction |
 | **Instance ID includes primitive type** | Enables alarm routing without additional storage reads |
-| **Queue uses multiple DO instances** | Each DO processes sequentially; concurrency via N instances |
+| **WorkerPool uses multiple DO instances** | Each DO processes sequentially; concurrency via N instances |
 | **Client handles routing** | Keeps DO logic simple; client has full type information |
 | **Fire-and-forget event tracking** | Non-blocking observability via `ctx.waitUntil()` |
 
@@ -1434,7 +1434,7 @@ packages/primitives/
 
 - **Code sharing** - Adapters, error types shared with workflow package
 - **Swappable compute** - Replace DO with another platform via adapters
-- **Consistent patterns** - All primitives follow same layered structure
+- **Consistent patterns** - All jobs follow same layered structure
 - **Type safety** - Full Effect Schema integration with TypeScript inference
 - **Observability** - Unified event tracking across all primitive types
 - **Testability** - In-memory adapters for fast, isolated unit tests
