@@ -1,9 +1,9 @@
-// packages/primitives/src/engine/index.ts
+// packages/jobs/src/engine/index.ts
 
-export { DurablePrimitivesEngine } from "./engine";
+export { DurableJobsEngine } from "./engine";
 
 export type {
-  DurablePrimitivesEngineInterface,
-  PrimitivesEngineConfig,
-  PrimitivesEnv,
+  DurableJobsEngineInterface,
+  JobsEngineConfig,
+  JobsEnv,
 } from "./types";

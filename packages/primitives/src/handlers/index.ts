@@ -1,4 +1,4 @@
-// packages/primitives/src/handlers/index.ts
+// packages/jobs/src/handlers/index.ts
 
 import { Layer } from "effect";
 import { ContinuousHandlerLayer } from "./continuous";
@@ -18,14 +18,14 @@ export {
 // =============================================================================
 
 /**
- * Combined layer for all primitive handlers.
+ * Combined layer for all job handlers.
  *
  * Phase 3: Only ContinuousHandler
- * Phase 4: Add BufferHandler
- * Phase 5: Add QueueHandler
+ * Phase 4: Add DebounceHandler
+ * Phase 5: Add WorkerPoolHandler
  */
-export const PrimitiveHandlersLayer = Layer.mergeAll(
+export const JobHandlersLayer = Layer.mergeAll(
   ContinuousHandlerLayer
-  // TODO: Add BufferHandlerLayer in Phase 4
-  // TODO: Add QueueHandlerLayer in Phase 5
+  // TODO: Add DebounceHandlerLayer in Phase 4
+  // TODO: Add WorkerPoolHandlerLayer in Phase 5
 );

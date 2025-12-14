@@ -1,4 +1,4 @@
-// packages/primitives/src/services/entity-state.ts
+// packages/jobs/src/services/entity-state.ts
 
 import { Effect, Schema } from "effect";
 import { StorageAdapter, type StorageError } from "@durable-effect/core";
@@ -51,7 +51,7 @@ export interface EntityStateServiceI<S> {
 /**
  * Creates an EntityStateService for a specific schema.
  *
- * This is a factory function (not a Layer) because each primitive
+ * This is a factory function (not a Layer) because each job
  * handler needs a state service typed to its own schema.
  *
  * Note: Schema must have no context requirements (R = never).

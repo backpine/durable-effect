@@ -1,28 +1,28 @@
-# Queue Primitive API Design
+# WorkerPool Primitive API Design
 
 ## Design Philosophy
 
-The Queue primitive processes events sequentially with controlled concurrency. It follows the same Effect-first patterns as Continuous and Buffer:
+The WorkerPool primitive processes events sequentially with controlled concurrency. It follows the same Effect-first patterns as Continuous and Debounce:
 
 1. **Effect-first** - All operations are Effects, yieldable in generators
 2. **Schema-driven** - Events are defined via Effect Schema
 3. **Idempotent by default** - Client operations use IDs to ensure exactly-once semantics
 4. **Explicit concurrency** - User must define concurrency (no hidden defaults)
-5. **Smart routing** - Client handles distribution across queue instances
+5. **Smart routing** - Client handles distribution across workerPool instances
 
 ---
 
 ## Core Concept
 
-A Queue:
-1. Receives events via `client.queue("name").enqueue({ id, event })`
+A WorkerPool:
+1. Receives events via `client.workerPool("name").enworkerPool({ id, event })`
 2. Client routes to one of N instances based on concurrency setting
 3. Each instance processes events **one at a time** in FIFO order
 4. After processing, moves to next event (or idles if empty)
 
-**Key distinction from Buffer:**
-- Buffer: Accumulates → Flush all at once → Purge
-- Queue: Enqueue → Process one → Repeat until empty
+**Key distinction from Debounce:**
+- Debounce: Accumulates → Flush all at once → Purge
+- WorkerPool: EnworkerPool → Process one → Repeat until empty
 
 ---
 
@@ -31,15 +31,15 @@ A Queue:
 Considered names:
 | Name | Pros | Cons |
 |------|------|------|
-| `Queue` | Simple, universally understood | Generic |
-| `WorkQueue` | Explicit about purpose | Longer |
-| `JobQueue` | Common pattern | Implies batch jobs |
-| `TaskQueue` | Clear | Could conflict with Effect Task |
+| `WorkerPool` | Simple, universally understood | Generic |
+| `WorkWorkerPool` | Explicit about purpose | Longer |
+| `JobWorkerPool` | Common pattern | Implies batch jobs |
+| `TaskWorkerPool` | Clear | Could conflict with Effect Task |
 | `Processor` | Describes action | Doesn't imply queuing |
 | `Channel` | Go/Clojure terminology | Less familiar |
 | `Pipeline` | Implies chaining | Misleading |
 
-**Decision: `Queue`** - Simple, clear, and the most intuitive name for this pattern.
+**Decision: `WorkerPool`** - Simple, clear, and the most intuitive name for this pattern.
 
 ---
 
@@ -48,10 +48,10 @@ Considered names:
 ### Definition
 
 ```ts
-import { Queue } from "@durable-effect/primitives";
+import { WorkerPool } from "@durable-effect/jobs";
 import { Schema } from "effect";
 
-const webhookProcessor = Queue.make({
+const webhookProcessor = WorkerPool.make({
   eventSchema: Schema.Struct({
     type: Schema.String,
     webhookId: Schema.String,
@@ -76,25 +76,25 @@ const webhookProcessor = Queue.make({
 ### Registration & Export
 
 ```ts
-import { createDurablePrimitives } from "@durable-effect/primitives";
+import { createDurableJobs } from "@durable-effect/jobs";
 
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
+const { Jobs, JobsClient } = createDurableJobs({
   webhookProcessor,
-  // ... other primitives
+  // ... other jobs
 });
 
 // Export DO class for Cloudflare
-export { Primitives };
+export { Jobs };
 ```
 
 ### Client Usage
 
 ```ts
 // In your worker/webhook handler
-const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+const client = JobsClient.fromBinding(env.PRIMITIVES);
 
-// Enqueue event (client handles routing to 1 of 5 instances)
-yield* client.queue("webhookProcessor").enqueue({
+// EnworkerPool event (client handles routing to 1 of 5 instances)
+yield* client.workerPool("webhookProcessor").enworkerPool({
   id: webhookId,  // Idempotency key
   event: {
     type: "order.shipped",
@@ -109,20 +109,20 @@ yield* client.queue("webhookProcessor").enqueue({
 
 ## Detailed API
 
-### `Queue.make(config)`
+### `WorkerPool.make(config)`
 
-Creates a Queue definition.
+Creates a WorkerPool definition.
 
 ```ts
-interface QueueConfig<E extends Schema.Schema.AnyNoContext, Err, R> {
+interface WorkerPoolConfig<E extends Schema.Schema.AnyNoContext, Err, R> {
   /**
    * Effect Schema defining the event shape.
-   * Events enqueued via client.enqueue() must match this schema.
+   * Events enworkerPoold via client.enworkerPool() must match this schema.
    */
   readonly eventSchema: E;
 
   /**
-   * Number of concurrent queue instances.
+   * Number of concurrent workerPool instances.
    * REQUIRED - no default. User must explicitly choose.
    *
    * Each instance processes one event at a time.
@@ -135,7 +135,7 @@ interface QueueConfig<E extends Schema.Schema.AnyNoContext, Err, R> {
    * Called for each event in FIFO order.
    */
   readonly execute: (
-    ctx: QueueExecuteContext<Schema.Schema.Type<E>>
+    ctx: WorkerPoolExecuteContext<Schema.Schema.Type<E>>
   ) => Effect.Effect<void, Err, R>;
 
   /**
@@ -155,32 +155,32 @@ interface QueueConfig<E extends Schema.Schema.AnyNoContext, Err, R> {
   readonly onDeadLetter?: (
     event: Schema.Schema.Type<E>,
     error: Err,
-    ctx: QueueDeadLetterContext
+    ctx: WorkerPoolDeadLetterContext
   ) => Effect.Effect<void, never, R>;
 
   /**
-   * Optional handler called when queue becomes empty.
+   * Optional handler called when workerPool becomes empty.
    * Useful for cleanup or notifications.
    */
   readonly onEmpty?: (
-    ctx: QueueEmptyContext
+    ctx: WorkerPoolEmptyContext
   ) => Effect.Effect<void, never, R>;
 }
 ```
 
-### `QueueExecuteContext<E>`
+### `WorkerPoolExecuteContext<E>`
 
 The context provided to the `execute` function.
 
 ```ts
-interface QueueExecuteContext<E> {
+interface WorkerPoolExecuteContext<E> {
   /**
    * The event being processed.
    */
   readonly event: Effect.Effect<E, never, never>;
 
   /**
-   * The unique ID of this event (provided at enqueue time).
+   * The unique ID of this event (provided at enworkerPool time).
    */
   readonly eventId: string;
 
@@ -191,9 +191,9 @@ interface QueueExecuteContext<E> {
   readonly attempt: number;
 
   /**
-   * Timestamp when this event was enqueued.
+   * Timestamp when this event was enworkerPoold.
    */
-  readonly enqueuedAt: number;
+  readonly enworkerPooldAt: number;
 
   /**
    * Timestamp when processing started for this attempt.
@@ -201,7 +201,7 @@ interface QueueExecuteContext<E> {
   readonly processingStartedAt: number;
 
   /**
-   * The queue instance index (0 to concurrency-1).
+   * The workerPool instance index (0 to concurrency-1).
    */
   readonly instanceIndex: number;
 
@@ -211,18 +211,18 @@ interface QueueExecuteContext<E> {
   readonly processedCount: Effect.Effect<number, never, never>;
 
   /**
-   * Number of events currently waiting in this instance's queue.
+   * Number of events currently waiting in this instance's workerPool.
    */
   readonly pendingCount: Effect.Effect<number, never, never>;
 }
 ```
 
-### `QueueDeadLetterContext`
+### `WorkerPoolDeadLetterContext`
 
 Context for dead letter handling.
 
 ```ts
-interface QueueDeadLetterContext {
+interface WorkerPoolDeadLetterContext {
   /**
    * The event ID.
    */
@@ -234,9 +234,9 @@ interface QueueDeadLetterContext {
   readonly attempts: number;
 
   /**
-   * Timestamp when first enqueued.
+   * Timestamp when first enworkerPoold.
    */
-  readonly enqueuedAt: number;
+  readonly enworkerPooldAt: number;
 
   /**
    * Timestamp of final failure.
@@ -244,7 +244,7 @@ interface QueueDeadLetterContext {
   readonly failedAt: number;
 
   /**
-   * The queue instance index.
+   * The workerPool instance index.
    */
   readonly instanceIndex: number;
 }
@@ -254,14 +254,14 @@ interface QueueDeadLetterContext {
 
 ## Client Routing Logic
 
-The client is responsible for distributing events across queue instances. This happens **in the client**, not the DO.
+The client is responsible for distributing events across workerPool instances. This happens **in the client**, not the DO.
 
 ### Instance ID Resolution
 
 ```ts
 // Internal client logic (conceptual)
 function resolveInstanceId(
-  queueName: string,
+  workerPoolName: string,
   concurrency: number,
   eventId: string,
   partitionKey?: string
@@ -269,10 +269,10 @@ function resolveInstanceId(
   // Determine which instance (0 to concurrency-1)
   const instanceIndex = partitionKey
     ? consistentHash(partitionKey, concurrency)
-    : roundRobinIndex(queueName, concurrency);
+    : roundRobinIndex(workerPoolName, concurrency);
 
-  // Instance ID format: {queueName}:{instanceIndex}
-  return `${queueName}:${instanceIndex}`;
+  // Instance ID format: {workerPoolName}:{instanceIndex}
+  return `${workerPoolName}:${instanceIndex}`;
 }
 ```
 
@@ -283,7 +283,7 @@ When no partition key is provided, events are distributed round-robin:
 ```ts
 // Simplified round-robin (actual implementation uses atomic counter)
 let counter = 0;
-function roundRobinIndex(queueName: string, concurrency: number): number {
+function roundRobinIndex(workerPoolName: string, concurrency: number): number {
   return counter++ % concurrency;
 }
 ```
@@ -313,19 +313,19 @@ function consistentHash(key: string, concurrency: number): number {
 
 ## Client API
 
-### Getting a Queue Client
+### Getting a WorkerPool Client
 
 ```ts
-const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
-const webhookQueue = client.queue("webhookProcessor");
+const client = JobsClient.fromBinding(env.PRIMITIVES);
+const webhookWorkerPool = client.workerPool("webhookProcessor");
 ```
 
-### `enqueue(options)`
+### `enworkerPool(options)`
 
-Add an event to the queue. **Idempotent** - same `id` is deduplicated.
+Add an event to the workerPool. **Idempotent** - same `id` is deduplicated.
 
 ```ts
-interface QueueEnqueueOptions<E> {
+interface WorkerPoolEnworkerPoolOptions<E> {
   /**
    * Unique identifier for this event.
    * Used for idempotency - same ID won't be processed twice.
@@ -356,7 +356,7 @@ interface QueueEnqueueOptions<E> {
 }
 
 // Usage - round robin (default)
-const result = yield* webhookQueue.enqueue({
+const result = yield* webhookWorkerPool.enworkerPool({
   id: webhookId,
   event: {
     type: "order.shipped",
@@ -367,30 +367,30 @@ const result = yield* webhookQueue.enqueue({
 });
 
 // Usage - with partition key (ordered per customer)
-const result = yield* webhookQueue.enqueue({
+const result = yield* webhookWorkerPool.enworkerPool({
   id: webhookId,
   event: { ... },
   partitionKey: customerId,  // All events for this customer go to same instance
 });
 
 // Returns
-interface QueueEnqueueResult {
+interface WorkerPoolEnworkerPoolResult {
   readonly eventId: string;
   readonly instanceId: string;
   readonly instanceIndex: number;
-  readonly position: number;      // Position in queue (0 = processing now)
+  readonly position: number;      // Position in workerPool (0 = processing now)
   readonly created: boolean;      // false if duplicate
 }
 ```
 
-### `enqueueMany(options)`
+### `enworkerPoolMany(options)`
 
-Batch enqueue multiple events.
+Batch enworkerPool multiple events.
 
 ```ts
-interface QueueEnqueueManyOptions<E> {
+interface WorkerPoolEnworkerPoolManyOptions<E> {
   /**
-   * Events to enqueue.
+   * Events to enworkerPool.
    */
   readonly events: ReadonlyArray<{
     readonly id: string;
@@ -401,7 +401,7 @@ interface QueueEnqueueManyOptions<E> {
 }
 
 // Usage
-const results = yield* webhookQueue.enqueueMany({
+const results = yield* webhookWorkerPool.enworkerPoolMany({
   events: webhooks.map(w => ({
     id: w.id,
     event: w,
@@ -410,21 +410,21 @@ const results = yield* webhookQueue.enqueueMany({
 });
 
 // Returns
-interface QueueEnqueueManyResult {
-  readonly enqueued: number;
+interface WorkerPoolEnworkerPoolManyResult {
+  readonly enworkerPoold: number;
   readonly duplicates: number;
-  readonly results: ReadonlyArray<QueueEnqueueResult>;
+  readonly results: ReadonlyArray<WorkerPoolEnworkerPoolResult>;
 }
 ```
 
 ### `status()`
 
-Get overall queue status across all instances.
+Get overall workerPool status across all instances.
 
 ```ts
-const status = yield* webhookQueue.status();
+const status = yield* webhookWorkerPool.status();
 
-interface QueueStatus {
+interface WorkerPoolStatus {
   readonly concurrency: number;
   readonly instances: ReadonlyArray<{
     readonly index: number;
@@ -444,9 +444,9 @@ interface QueueStatus {
 Get status of a specific instance.
 
 ```ts
-const status = yield* webhookQueue.instanceStatus(0);
+const status = yield* webhookWorkerPool.instanceStatus(0);
 
-interface QueueInstanceStatus {
+interface WorkerPoolInstanceStatus {
   readonly index: number;
   readonly instanceId: string;
   readonly status: "processing" | "idle" | "paused";
@@ -454,9 +454,9 @@ interface QueueInstanceStatus {
   readonly processedCount: number;
   readonly currentEventId: string | null;
   readonly currentEventStartedAt: number | null;
-  readonly queuedEvents: ReadonlyArray<{
+  readonly workerPooldEvents: ReadonlyArray<{
     readonly eventId: string;
-    readonly enqueuedAt: number;
+    readonly enworkerPooldAt: number;
     readonly priority: number;
   }>;
 }
@@ -468,14 +468,14 @@ Pause/resume processing.
 
 ```ts
 // Pause all instances
-yield* webhookQueue.pause();
+yield* webhookWorkerPool.pause();
 
 // Pause specific instance
-yield* webhookQueue.pause(2);
+yield* webhookWorkerPool.pause(2);
 
 // Resume
-yield* webhookQueue.resume();
-yield* webhookQueue.resume(2);
+yield* webhookWorkerPool.resume();
+yield* webhookWorkerPool.resume(2);
 ```
 
 ### `cancel(eventId)`
@@ -483,9 +483,9 @@ yield* webhookQueue.resume(2);
 Cancel a pending event (if not yet processing).
 
 ```ts
-const result = yield* webhookQueue.cancel(eventId);
+const result = yield* webhookWorkerPool.cancel(eventId);
 
-interface QueueCancelResult {
+interface WorkerPoolCancelResult {
   readonly cancelled: boolean;
   readonly reason: "cancelled" | "not_found" | "already_processing" | "already_completed";
 }
@@ -493,27 +493,27 @@ interface QueueCancelResult {
 
 ### `drain(index?)`
 
-Wait for queue(s) to empty.
+Wait for workerPool(s) to empty.
 
 ```ts
 // Wait for all instances to empty
-yield* webhookQueue.drain();
+yield* webhookWorkerPool.drain();
 
 // Wait for specific instance
-yield* webhookQueue.drain(2);
+yield* webhookWorkerPool.drain(2);
 
 // With timeout
-yield* webhookQueue.drain().pipe(Effect.timeout("5 minutes"));
+yield* webhookWorkerPool.drain().pipe(Effect.timeout("5 minutes"));
 ```
 
 ---
 
 ## Complete Examples
 
-### Example 1: Webhook Delivery Queue
+### Example 1: Webhook Delivery WorkerPool
 
 ```ts
-import { Queue } from "@durable-effect/primitives";
+import { WorkerPool } from "@durable-effect/jobs";
 import { Effect, Schema } from "effect";
 
 const WebhookEvent = Schema.Struct({
@@ -526,7 +526,7 @@ const WebhookEvent = Schema.Struct({
 
 type WebhookEvent = Schema.Schema.Type<typeof WebhookEvent>;
 
-const webhookDelivery = Queue.make({
+const webhookDelivery = WorkerPool.make({
   eventSchema: WebhookEvent,
 
   concurrency: 10,
@@ -576,7 +576,7 @@ const webhookDelivery = Queue.make({
         customerId: event.customerId,
         error: String(error),
         attempts: ctx.attempts,
-        enqueuedAt: ctx.enqueuedAt,
+        enworkerPooldAt: ctx.enworkerPooldAt,
         failedAt: ctx.failedAt,
       });
 
@@ -591,12 +591,12 @@ const webhookDelivery = Queue.make({
 ```ts
 export default {
   async fetch(request: Request, env: Env) {
-    const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+    const client = JobsClient.fromBinding(env.PRIMITIVES);
     const webhook = await request.json();
 
-    // Enqueue with partition key to ensure ordering per customer
+    // EnworkerPool with partition key to ensure ordering per customer
     const result = await Effect.runPromise(
-      client.queue("webhookDelivery").enqueue({
+      client.workerPool("webhookDelivery").enworkerPool({
         id: webhook.id,
         event: {
           webhookId: webhook.id,
@@ -610,7 +610,7 @@ export default {
     );
 
     return new Response(JSON.stringify({
-      queued: true,
+      workerPoold: true,
       position: result.position,
       instanceIndex: result.instanceIndex,
     }));
@@ -618,7 +618,7 @@ export default {
 };
 ```
 
-### Example 2: Email Sending Queue
+### Example 2: Email Sending WorkerPool
 
 ```ts
 const EmailJob = Schema.Struct({
@@ -630,7 +630,7 @@ const EmailJob = Schema.Struct({
   scheduledFor: Schema.optional(Schema.Number),
 });
 
-const emailQueue = Queue.make({
+const emailWorkerPool = WorkerPool.make({
   eventSchema: EmailJob,
 
   concurrency: 20,  // 20 concurrent email senders
@@ -646,7 +646,7 @@ const emailQueue = Queue.make({
 
       // Check if scheduled for future
       if (email.scheduledFor && email.scheduledFor > Date.now()) {
-        // Re-enqueue with delay (or use a different pattern)
+        // Re-enworkerPool with delay (or use a different pattern)
         yield* Effect.sleep(Duration.millis(email.scheduledFor - Date.now()));
       }
 
@@ -665,8 +665,8 @@ const emailQueue = Queue.make({
 
   onEmpty: (ctx) =>
     Effect.gen(function* () {
-      // Log when queue drains
-      console.log(`Email queue instance ${ctx.instanceIndex} is empty`);
+      // Log when workerPool drains
+      console.log(`Email workerPool instance ${ctx.instanceIndex} is empty`);
     }),
 });
 ```
@@ -675,7 +675,7 @@ const emailQueue = Queue.make({
 
 ```ts
 // Send email immediately (round-robin distribution)
-yield* client.queue("emailQueue").enqueue({
+yield* client.workerPool("emailWorkerPool").enworkerPool({
   id: `email-${userId}-${Date.now()}`,
   event: {
     emailId: generateId(),
@@ -686,7 +686,7 @@ yield* client.queue("emailQueue").enqueue({
 });
 
 // Send bulk emails
-yield* client.queue("emailQueue").enqueueMany({
+yield* client.workerPool("emailWorkerPool").enworkerPoolMany({
   events: users.map(user => ({
     id: `campaign-${campaignId}-${user.id}`,
     event: {
@@ -712,7 +712,7 @@ const OrderJob = Schema.Struct({
   status: Schema.Literal("pending", "processing", "shipped", "delivered"),
 });
 
-const orderProcessor = Queue.make({
+const orderProcessor = WorkerPool.make({
   eventSchema: OrderJob,
 
   concurrency: 5,
@@ -729,7 +729,7 @@ const orderProcessor = Queue.make({
 
       console.log(
         `Processing order ${order.orderId} ` +
-        `(${pending} orders waiting in this queue)`
+        `(${pending} orders waiting in this workerPool)`
       );
 
       // Reserve inventory
@@ -741,8 +741,8 @@ const orderProcessor = Queue.make({
       // Update order status
       yield* updateOrderStatus(order.orderId, "processing");
 
-      // Trigger fulfillment (enqueue to another queue)
-      yield* enqueueFulfillment(order);
+      // Trigger fulfillment (enworkerPool to another workerPool)
+      yield* enworkerPoolFulfillment(order);
     }),
 
   onDeadLetter: (order, error, ctx) =>
@@ -763,7 +763,7 @@ const orderProcessor = Queue.make({
 
 ```ts
 // Ensure orders for same customer are processed in sequence
-yield* client.queue("orderProcessor").enqueue({
+yield* client.workerPool("orderProcessor").enworkerPool({
   id: order.id,
   event: order,
   partitionKey: order.customerId,  // Customer's orders processed in order
@@ -789,7 +789,7 @@ Events:  E1  E2  E3  E4  E5  E6  E7  E8  E9  E10
          ┌─────┼─────┼─────┼─────┼─────┘
          ▼     ▼     ▼     ▼     ▼
        ┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐
-       │ 0 │ │ 1 │ │ 2 │ │ 3 │ │ 4 │   Queue Instances
+       │ 0 │ │ 1 │ │ 2 │ │ 3 │ │ 4 │   WorkerPool Instances
        └─┬─┘ └─┬─┘ └─┬─┘ └─┬─┘ └─┬─┘   (concurrency: 5)
          │     │     │     │     │
          ▼     ▼     ▼     ▼     ▼
@@ -840,21 +840,21 @@ Events:  [A1] [B1] [A2] [C1] [B2] [A3] [C2] [B3]
 
 ```ts
 // BAD: One customer generates 90% of traffic
-yield* queue.enqueue({
+yield* workerPool.enworkerPool({
   id: eventId,
   event: data,
   partitionKey: "mega-corp",  // Creates bottleneck on one instance
 });
 
 // BETTER: Sub-partition or accept out-of-order
-yield* queue.enqueue({
+yield* workerPool.enworkerPool({
   id: eventId,
   event: data,
   partitionKey: `${customerId}:${userId}`,  // Spread within customer
 });
 
 // OR: No partition key, accept parallel processing
-yield* queue.enqueue({
+yield* workerPool.enworkerPool({
   id: eventId,
   event: data,
   // No partitionKey = round-robin = max throughput
@@ -873,7 +873,7 @@ const MyEvent = Schema.Struct({
 });
 
 // 2. Types flow through the API
-const queue = Queue.make({
+const workerPool = WorkerPool.make({
   eventSchema: MyEvent,
   concurrency: 5,
 
@@ -888,8 +888,8 @@ const queue = Queue.make({
   },
 });
 
-// 3. Client enqueue() is typed by eventSchema
-yield* client.queue("myQueue").enqueue({
+// 3. Client enworkerPool() is typed by eventSchema
+yield* client.workerPool("myWorkerPool").enworkerPool({
   id: "123",
   event: { id: "e1", data: 42 },
   //      ^? Must match MyEvent
@@ -898,9 +898,9 @@ yield* client.queue("myQueue").enqueue({
 
 ---
 
-## Comparison: Queue vs Buffer vs Continuous
+## Comparison: WorkerPool vs Debounce vs Continuous
 
-| Aspect | Queue | Buffer | Continuous |
+| Aspect | WorkerPool | Debounce | Continuous |
 |--------|-------|--------|------------|
 | **Trigger** | Each event | Time/count threshold | Schedule |
 | **Processing** | One at a time | All at once | Each execution |
@@ -915,20 +915,20 @@ yield* client.queue("myQueue").enqueue({
 
 | Feature | API |
 |---------|-----|
-| Define queue | `Queue.make({ eventSchema, concurrency, execute })` |
+| Define workerPool | `WorkerPool.make({ eventSchema, concurrency, execute })` |
 | Concurrency | `concurrency: 5` (required) |
 | Retry config | `retry: { maxAttempts: 3, delay: ... }` |
 | Execute context - event | `yield* ctx.event` |
 | Execute context - attempt | `ctx.attempt` |
 | Execute context - pending | `yield* ctx.pendingCount` |
 | Dead letter handler | `onDeadLetter: (event, error, ctx) => ...` |
-| Client - enqueue | `yield* client.queue("name").enqueue({ id, event })` |
-| Client - partition key | `enqueue({ ..., partitionKey: "customer-123" })` |
-| Client - batch enqueue | `yield* client.queue("name").enqueueMany({ events })` |
-| Client - status | `yield* client.queue("name").status()` |
-| Client - pause/resume | `yield* client.queue("name").pause()` |
-| Client - cancel | `yield* client.queue("name").cancel(eventId)` |
-| Client - drain | `yield* client.queue("name").drain()` |
+| Client - enworkerPool | `yield* client.workerPool("name").enworkerPool({ id, event })` |
+| Client - partition key | `enworkerPool({ ..., partitionKey: "customer-123" })` |
+| Client - batch enworkerPool | `yield* client.workerPool("name").enworkerPoolMany({ events })` |
+| Client - status | `yield* client.workerPool("name").status()` |
+| Client - pause/resume | `yield* client.workerPool("name").pause()` |
+| Client - cancel | `yield* client.workerPool("name").cancel(eventId)` |
+| Client - drain | `yield* client.workerPool("name").drain()` |
 
 The API prioritizes:
 - **Effect-native patterns** (generators, yieldable operations)

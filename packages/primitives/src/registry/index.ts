@@ -1,12 +1,12 @@
-// packages/primitives/src/registry/index.ts
+// packages/jobs/src/registry/index.ts
 
 export {
-  createPrimitiveRegistry,
+  createJobRegistry,
   getContinuousDefinition,
-  getBufferDefinition,
-  getQueueDefinition,
-  getPrimitiveDefinition,
-  getAllPrimitiveNames,
+  getDebounceDefinition,
+  getWorkerPoolDefinition,
+  getJobDefinition,
+  getAllJobNames,
 } from "./registry";
 
 export type {
@@ -14,24 +14,24 @@ export type {
   ContinuousSchedule,
   // Unregistered definition types (what user creates)
   UnregisteredContinuousDefinition,
-  UnregisteredBufferDefinition,
-  UnregisteredQueueDefinition,
+  UnregisteredDebounceDefinition,
+  UnregisteredWorkerPoolDefinition,
   AnyUnregisteredDefinition,
   // Registered definition types (with name)
   ContinuousDefinition,
-  BufferDefinition,
-  QueueDefinition,
-  QueueRetryConfig,
-  AnyPrimitiveDefinition,
+  DebounceDefinition,
+  WorkerPoolDefinition,
+  WorkerPoolRetryConfig,
+  AnyJobDefinition,
   // Context types
   ContinuousContext,
   TerminateOptions,
-  BufferExecuteContext,
-  BufferEventContext,
-  QueueExecuteContext,
-  QueueDeadLetterContext,
-  QueueEmptyContext,
+  DebounceExecuteContext,
+  DebounceEventContext,
+  WorkerPoolExecuteContext,
+  WorkerPoolDeadLetterContext,
+  WorkerPoolEmptyContext,
   // Registry types
-  PrimitiveRegistry,
+  JobRegistry,
   InferRegistry,
 } from "./types";

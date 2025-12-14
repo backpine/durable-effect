@@ -1,7 +1,7 @@
 # Distributed Concurrency Manager Architecture Report
 
 **Date**: 2024-12-08
-**Package**: `@durable-effect/primitives`
+**Package**: `@durable-effect/jobs`
 **Focus**: Distributed processing with bounded concurrency across Durable Object instances
 
 ---
@@ -25,7 +25,7 @@ This report analyzes the architecture for a **Distributed Concurrency Manager** 
                     ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
                     │  DO #1    │ │  DO #2    │ │  DO #3    │ │  DO #4    │
                     │ (1 slot)  │ │ (1 slot)  │ │ (1 slot)  │ │ (1 slot)  │
-                    │ + queue   │ │ + queue   │ │ + queue   │ │ + queue   │
+                    │ + workerPool   │ │ + workerPool   │ │ + workerPool   │ │ + workerPool   │
                     └───────────┘ └───────────┘ └───────────┘ └───────────┘
                             │         │         │         │
                             └─────────┴─────────┴─────────┴─────────────┐
@@ -122,7 +122,7 @@ Global limit: 4 concurrent
 │  (1 slot)   │  │  (1 slot)   │  │  (1 slot)   │  │  (1 slot)   │
 │             │  │             │  │             │  │             │
 │  ┌───────┐  │  │  ┌───────┐  │  │  ┌───────┐  │  │  ┌───────┐  │
-│  │ Queue │  │  │  │ Queue │  │  │  │ Queue │  │  │  │ Queue │  │
+│  │ WorkerPool │  │  │  │ WorkerPool │  │  │  │ WorkerPool │  │  │  │ WorkerPool │  │
 │  └───┬───┘  │  │  └───┬───┘  │  │  └───┬───┘  │  │  └───┬───┘  │
 │      │      │  │      │      │  │      │      │  │      │      │
 │  ┌───▼───┐  │  │  ┌───▼───┐  │  │  ┌───▼───┐  │  │  ┌───▼───┐  │
@@ -144,7 +144,7 @@ Global limit: 4 concurrent
 
 ### Option C: Work Stealing
 
-Workers process their own queue but can "steal" from neighbors when idle.
+Workers process their own workerPool but can "steal" from neighbors when idle.
 
 **Pros:**
 - Better load balancing than static partitioning
@@ -155,13 +155,13 @@ Workers process their own queue but can "steal" from neighbors when idle.
 - Race conditions on stealing
 - Hard to implement with DO constraints
 
-### Option D: Central Queue + Worker Pool
+### Option D: Central WorkerPool + Worker Pool
 
-Single queue DO, multiple worker DOs pull work.
+Single workerPool DO, multiple worker DOs pull work.
 
 ```
 Events ──► ┌────────────┐ ◄── pull() ── ┌────────────┐
-           │   Queue    │               │  Worker 1  │
+           │   WorkerPool    │               │  Worker 1  │
            │    DO      │ ◄── pull() ── ├────────────┤
            │            │               │  Worker 2  │
            │            │ ◄── pull() ── ├────────────┤
@@ -174,9 +174,9 @@ Events ──► ┌────────────┐ ◄── pull() ─
 - Workers self-regulate
 
 **Cons:**
-- Queue becomes bottleneck
+- WorkerPool becomes bottleneck
 - Pull latency adds overhead
-- Queue DO memory limits
+- WorkerPool DO memory limits
 
 ---
 
@@ -197,8 +197,8 @@ interface ConcurrencyManagerConfig {
   /** How to route events to partitions */
   readonly routing: "round-robin" | "hash" | "affinity";
 
-  /** Max queue depth per partition before backpressure */
-  readonly maxQueueDepth: number;
+  /** Max workerPool depth per partition before backpressure */
+  readonly maxWorkerPoolDepth: number;
 
   /** Processing timeout per item */
   readonly timeout: Duration;
@@ -233,7 +233,7 @@ Example:
 ```
                           ┌──────────────────────────────────────────────────────┐
                           │                    Event Source                       │
-                          │        (Kafka, HTTP webhook, Cloudflare Queue)        │
+                          │        (Kafka, HTTP webhook, Cloudflare WorkerPool)        │
                           └──────────────────────────┬───────────────────────────┘
                                                      │
                                                      ▼
@@ -256,7 +256,7 @@ Example:
 │  │    (DO instance)    │  │    (DO instance)    │  │    (DO instance)    │  │    (DO instance)    │
 │  │                     │  │                     │  │                     │  │                     │
 │  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │
-│  │  │ Pending Queue │  │  │  │ Pending Queue │  │  │  │ Pending Queue │  │  │  │ Pending Queue │  │
+│  │  │ Pending WorkerPool │  │  │  │ Pending WorkerPool │  │  │  │ Pending WorkerPool │  │  │  │ Pending WorkerPool │  │
 │  │  │  [e1,e2,e3]   │  │  │  │  [e4,e5]      │  │  │  │  [e6,e7,e8]   │  │  │  │  []           │  │
 │  │  └───────┬───────┘  │  │  └───────┬───────┘  │  │  └───────┬───────┘  │  │  └───────┬───────┘  │
 │  │          │          │  │          │          │  │          │          │  │          │          │
@@ -270,7 +270,7 @@ Example:
 │  │  State:             │  │  State:             │  │  State:             │  │  State:             │
 │  │  - slots: 1         │  │  - slots: 1         │  │  - slots: 1         │  │  - slots: 1         │
 │  │  - active: 1        │  │  - active: 1        │  │  - active: 0        │  │  - active: 0        │
-│  │  - queued: 3        │  │  - queued: 2        │  │  - queued: 3        │  │  - queued: 0        │
+│  │  - workerPoold: 3        │  │  - workerPoold: 2        │  │  - workerPoold: 3        │  │  - workerPoold: 0        │
 │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘
 │                                                                                             │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -285,24 +285,24 @@ Example:
 ### State Machine Per Partition
 
 ```
-                                    enqueue(event)
+                                    enworkerPool(event)
                                          │
                                          ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                              PARTITION STATE MACHINE                          │
 │                                                                              │
-│   ┌─────────┐  queue.length > 0   ┌────────────┐  slot available  ┌────────┐│
+│   ┌─────────┐  workerPool.length > 0   ┌────────────┐  slot available  ┌────────┐│
 │   │  IDLE   │ ─────────────────► │  QUEUED    │ ───────────────► │PROCESS ││
 │   │         │ ◄───────────────── │            │ ◄─────────────── │   ING  ││
-│   └─────────┘    queue empty     └────────────┘   slot released  └────────┘│
+│   └─────────┘    workerPool empty     └────────────┘   slot released  └────────┘│
 │        │                               │                              │     │
 │        │                               │                              │     │
 │        │         Alarm fires           │                              │     │
 │        └───────────────────────────────┴──────────────────────────────┘     │
 │                                                                              │
 │   Events:                                                                    │
-│   - enqueue(event): Add to queue, start processing if slot available        │
-│   - processComplete(id): Release slot, dequeue next                          │
+│   - enworkerPool(event): Add to workerPool, start processing if slot available        │
+│   - processComplete(id): Release slot, deworkerPool next                          │
 │   - alarm(): Check for stuck items, retry failures                          │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -316,9 +316,9 @@ Example:
 
 | Component | Bottleneck Risk | Symptoms | Mitigation |
 |-----------|-----------------|----------|------------|
-| **Router** | Medium | High latency, dropped events | Use Cloudflare Queue as buffer |
-| **Partition DO** | Low-Medium | Queue overflow, memory pressure | Max queue depth, backpressure |
-| **Storage writes** | Medium | Slow enqueue, high latency | Batch writes, write coalescing |
+| **Router** | Medium | High latency, dropped events | Use Cloudflare WorkerPool as debounce |
+| **Partition DO** | Low-Medium | WorkerPool overflow, memory pressure | Max workerPool depth, backpressure |
+| **Storage writes** | Medium | Slow enworkerPool, high latency | Batch writes, write coalescing |
 | **Processing target** | High | Timeout errors, retry storms | Circuit breaker, backoff |
 | **Single partition** | High | One hot partition | Better hash function, rebalancing |
 
@@ -331,12 +331,12 @@ Example:
 │                    ROUTER SCALING                                │
 │                                                                  │
 │  Single Cloudflare Worker: ~1000 RPS per instance               │
-│  With Queue buffer: 10,000+ events/sec (batched)                │
+│  With WorkerPool debounce: 10,000+ events/sec (batched)                │
 │                                                                  │
 │  Recommendation:                                                 │
 │  ┌─────────┐      ┌──────────────┐      ┌─────────────────┐     │
-│  │ Events  │─────►│ CF Queue     │─────►│ Consumer Worker │     │
-│  │         │      │ (buffer)     │      │ (batch dispatch)│     │
+│  │ Events  │─────►│ CF WorkerPool     │─────►│ Consumer Worker │     │
+│  │         │      │ (debounce)     │      │ (batch dispatch)│     │
 │  └─────────┘      └──────────────┘      └─────────────────┘     │
 │                                                                  │
 │  Benefits:                                                       │
@@ -357,11 +357,11 @@ Example:
 │  Concurrent requests: 1 (single-threaded)                       │
 │  Subrequests: 1000 per request                                  │
 │                                                                  │
-│  Queue sizing:                                                   │
+│  WorkerPool sizing:                                                   │
 │  - 10,000 events × 1KB each = 10MB (safe)                       │
 │  - 100,000 events × 1KB each = 100MB (risky)                    │
 │                                                                  │
-│  Recommendation: maxQueueDepth = 10,000                          │
+│  Recommendation: maxWorkerPoolDepth = 10,000                          │
 │  With backpressure at 8,000                                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -373,8 +373,8 @@ Example:
 │                    STORAGE OPERATIONS                            │
 │                                                                  │
 │  Per-event cost (naive implementation):                          │
-│  - 1 write to enqueue                                           │
-│  - 1 read to dequeue                                            │
+│  - 1 write to enworkerPool                                           │
+│  - 1 read to deworkerPool                                            │
 │  - 1 write to update state                                      │
 │  - 1 write on complete                                          │
 │  Total: 4 operations per event = $0.0000032 per event           │
@@ -440,7 +440,7 @@ Solutions:
 │  - P = number of partitions (4)                                            │
 │  - S = slots per partition (1)                                             │
 │  - T = average processing time (100ms)                                     │
-│  - Q = max queue depth per partition (10,000)                              │
+│  - Q = max workerPool depth per partition (10,000)                              │
 │                                                                            │
 │  Maximum throughput:                                                        │
 │  throughput = (P × S) / T = (4 × 1) / 0.1 = 40 events/sec                 │
@@ -448,11 +448,11 @@ Solutions:
 │  With processing time 10ms:                                                │
 │  throughput = (4 × 1) / 0.01 = 400 events/sec                             │
 │                                                                            │
-│  Queue drain time at max depth:                                            │
+│  WorkerPool drain time at max depth:                                            │
 │  drain_time = (P × Q) / throughput = (4 × 10000) / 40 = 1000 sec          │
 │                                                                            │
 │  Backpressure trigger:                                                      │
-│  If input_rate > throughput for extended period, queues grow               │
+│  If input_rate > throughput for extended period, workerPools grow               │
 │  Must reject or slow incoming events                                        │
 │                                                                            │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -471,11 +471,11 @@ Solutions:
 │                    PROCESSING FAILURE                                       │
 │                                                                            │
 │  Timeline:                                                                  │
-│  t=0    Event dequeued, processing started                                 │
+│  t=0    Event deworkerPoold, processing started                                 │
 │  t=50ms Processing throws exception                                        │
 │  t=50ms Catch error, increment retry count                                 │
-│  t=50ms If retries < max: re-enqueue with backoff                         │
-│  t=50ms Else: move to dead-letter queue                                    │
+│  t=50ms If retries < max: re-enworkerPool with backoff                         │
+│  t=50ms Else: move to dead-letter workerPool                                    │
 │                                                                            │
 │  State transitions:                                                         │
 │  ┌─────────┐     ┌────────────┐     ┌─────────┐                            │
@@ -488,7 +488,7 @@ Solutions:
 │  Implementation:                                                            │
 │  - Store attempt count with event                                          │
 │  - Calculate next attempt time: now + backoff(attempt)                     │
-│  - Re-insert at calculated time (priority queue)                           │
+│  - Re-insert at calculated time (priority workerPool)                           │
 │                                                                            │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -519,7 +519,7 @@ Solutions:
 │  Alarm schedule:                                                            │
 │  nextAlarm = min(                                                          │
 │    processingStartedAt + timeout,    // Check for stuck                    │
-│    nextQueuedEventTime,              // Process next                       │
+│    nextWorkerPooldEventTime,              // Process next                       │
 │    nextRetryTime                     // Retry failed                       │
 │  )                                                                          │
 │                                                                            │
@@ -535,7 +535,7 @@ Solutions:
 │  Scenario: DO evicted from memory, restarted on next request               │
 │                                                                            │
 │  What's preserved:                                                          │
-│  ✓ Storage (queue, state)                                                  │
+│  ✓ Storage (workerPool, state)                                                  │
 │  ✓ Scheduled alarms                                                        │
 │                                                                            │
 │  What's lost:                                                               │
@@ -565,7 +565,7 @@ Solutions:
 │                    POISON MESSAGE HANDLING                                  │
 │                                                                            │
 │  Definition: Message that always fails processing                          │
-│  Danger: Blocks the queue, consumes all retries                            │
+│  Danger: Blocks the workerPool, consumes all retries                            │
 │                                                                            │
 │  Detection:                                                                 │
 │  - Track failure count per event                                           │
@@ -573,7 +573,7 @@ Solutions:
 │                                                                            │
 │  Dead-letter handling:                                                      │
 │  Option A: Separate DLQ partition                                          │
-│  Option B: External storage (R2, Queue)                                    │
+│  Option B: External storage (R2, WorkerPool)                                    │
 │  Option C: Emit event for manual handling                                  │
 │                                                                            │
 │  State schema:                                                              │
@@ -602,7 +602,7 @@ Solutions:
 | Processing timeout | Alarm check | Retry | Possible duplicate processing |
 | DO restart | On constructor | Re-check in-flight | None (storage persisted) |
 | Poison message | Retry count | Dead-letter | None |
-| Router crash | CF auto-restart | Retry from Queue | None (Queue persisted) |
+| Router crash | CF auto-restart | Retry from WorkerPool | None (WorkerPool persisted) |
 | Storage failure | Effect error | Fail request, retry | Possible (rare) |
 
 ---
@@ -618,33 +618,33 @@ interface PartitionState {
     readonly partitionId: number;
     readonly totalPartitions: number;
     readonly slotsPerPartition: number;
-    readonly maxQueueDepth: number;
+    readonly maxWorkerPoolDepth: number;
     readonly processingTimeout: number;
     readonly maxRetries: number;
   };
 
-  /** Queue of pending events */
-  readonly queue: ReadonlyArray<QueuedEvent>;
+  /** WorkerPool of pending events */
+  readonly workerPool: ReadonlyArray<WorkerPooldEvent>;
 
   /** Currently processing events (one per slot) */
   readonly processing: ReadonlyArray<ProcessingEvent>;
 
-  /** Dead-letter queue for failed events */
+  /** Dead-letter workerPool for failed events */
   readonly deadLetter: ReadonlyArray<DeadLetterEvent>;
 
   /** Metrics */
   readonly metrics: {
-    readonly totalEnqueued: number;
+    readonly totalEnworkerPoold: number;
     readonly totalProcessed: number;
     readonly totalFailed: number;
     readonly totalDeadLettered: number;
   };
 }
 
-interface QueuedEvent {
+interface WorkerPooldEvent {
   readonly id: string;
   readonly payload: unknown;
-  readonly enqueuedAt: number;
+  readonly enworkerPooldAt: number;
   readonly attempts: number;
   readonly nextAttemptAt?: number;  // For delayed retries
 }
@@ -672,7 +672,7 @@ const ConcurrencyPartitionHandler: PrimitiveHandler<
   PartitionConfig,
   PartitionState,
   {
-    enqueue: (events: unknown[]) => { queued: number; rejected: number };
+    enworkerPool: (events: unknown[]) => { workerPoold: number; rejected: number };
     getStatus: () => PartitionStatus;
     drain: () => { drained: number };
   }
@@ -682,11 +682,11 @@ const ConcurrencyPartitionHandler: PrimitiveHandler<
   initialize: (config) =>
     Effect.succeed({
       config,
-      queue: [],
+      workerPool: [],
       processing: [],
       deadLetter: [],
       metrics: {
-        totalEnqueued: 0,
+        totalEnworkerPoold: 0,
         totalProcessed: 0,
         totalFailed: 0,
         totalDeadLettered: 0,
@@ -716,15 +716,15 @@ const ConcurrencyPartitionHandler: PrimitiveHandler<
       // 2. Process ready items if slots available
       while (
         newState.processing.length < config.slotsPerPartition &&
-        newState.queue.length > 0
+        newState.workerPool.length > 0
       ) {
-        const next = getNextReadyEvent(newState.queue, now);
+        const next = getNextReadyEvent(newState.workerPool, now);
         if (!next) break;
 
-        // Move from queue to processing
+        // Move from workerPool to processing
         newState = {
           ...newState,
-          queue: newState.queue.filter((e) => e.id !== next.id),
+          workerPool: newState.workerPool.filter((e) => e.id !== next.id),
           processing: [
             ...newState.processing,
             {
@@ -747,35 +747,35 @@ const ConcurrencyPartitionHandler: PrimitiveHandler<
     }),
 
   actions: {
-    enqueue: (state, config, events) =>
+    enworkerPool: (state, config, events) =>
       Effect.gen(function* () {
         const ctx = yield* PrimitiveContext;
         const now = yield* ctx.now;
 
-        const availableCapacity = config.maxQueueDepth - state.queue.length;
-        const toEnqueue = events.slice(0, availableCapacity);
-        const rejected = events.length - toEnqueue.length;
+        const availableCapacity = config.maxWorkerPoolDepth - state.workerPool.length;
+        const toEnworkerPool = events.slice(0, availableCapacity);
+        const rejected = events.length - toEnworkerPool.length;
 
-        const newQueue = [
-          ...state.queue,
-          ...toEnqueue.map((payload, i) => ({
+        const newWorkerPool = [
+          ...state.workerPool,
+          ...toEnworkerPool.map((payload, i) => ({
             id: `${now}-${i}-${Math.random().toString(36).slice(2)}`,
             payload,
-            enqueuedAt: now,
+            enworkerPooldAt: now,
             attempts: 0,
           })),
         ];
 
         // Try to start processing immediately if slots available
         let processing = state.processing;
-        let queue = newQueue;
+        let workerPool = newWorkerPool;
 
         while (
           processing.length < config.slotsPerPartition &&
-          queue.length > 0
+          workerPool.length > 0
         ) {
-          const next = queue[0];
-          queue = queue.slice(1);
+          const next = workerPool[0];
+          workerPool = workerPool.slice(1);
           processing = [
             ...processing,
             {
@@ -792,11 +792,11 @@ const ConcurrencyPartitionHandler: PrimitiveHandler<
 
         const newState = {
           ...state,
-          queue,
+          workerPool,
           processing,
           metrics: {
             ...state.metrics,
-            totalEnqueued: state.metrics.totalEnqueued + toEnqueue.length,
+            totalEnworkerPoold: state.metrics.totalEnworkerPoold + toEnworkerPool.length,
           },
         };
 
@@ -807,7 +807,7 @@ const ConcurrencyPartitionHandler: PrimitiveHandler<
 
         return {
           newState,
-          result: { queued: toEnqueue.length, rejected },
+          result: { workerPoold: toEnworkerPool.length, rejected },
           nextAlarm,
         };
       }),
@@ -816,7 +816,7 @@ const ConcurrencyPartitionHandler: PrimitiveHandler<
       Effect.succeed({
         newState: state,
         result: {
-          queueDepth: state.queue.length,
+          workerPoolDepth: state.workerPool.length,
           processing: state.processing.length,
           deadLetterCount: state.deadLetter.length,
           metrics: state.metrics,
@@ -827,13 +827,13 @@ const ConcurrencyPartitionHandler: PrimitiveHandler<
       Effect.succeed({
         newState: {
           ...state,
-          queue: [],
+          workerPool: [],
           metrics: {
             ...state.metrics,
-            totalFailed: state.metrics.totalFailed + state.queue.length,
+            totalFailed: state.metrics.totalFailed + state.workerPool.length,
           },
         },
-        result: { drained: state.queue.length },
+        result: { drained: state.workerPool.length },
       }),
   },
 };
@@ -881,9 +881,9 @@ class ConcurrencyRouter {
    * Uses parallel dispatch for efficiency.
    */
   async dispatch(events: unknown[]): Promise<{
-    queued: number;
+    workerPoold: number;
     rejected: number;
-    byPartition: Map<number, { queued: number; rejected: number }>;
+    byPartition: Map<number, { workerPoold: number; rejected: number }>;
   }> {
     const partitioned = await this.routeBatch(events);
 
@@ -891,22 +891,22 @@ class ConcurrencyRouter {
       Array.from(partitioned.entries()).map(async ([partition, batch]) => {
         const result = await this.client
           .concurrencyPartition(`partition-${partition}`)
-          .enqueue(batch);
+          .enworkerPool(batch);
         return { partition, result };
       })
     );
 
-    let totalQueued = 0;
+    let totalWorkerPoold = 0;
     let totalRejected = 0;
-    const byPartition = new Map<number, { queued: number; rejected: number }>();
+    const byPartition = new Map<number, { workerPoold: number; rejected: number }>();
 
     for (const { partition, result } of results) {
-      totalQueued += result.queued;
+      totalWorkerPoold += result.workerPoold;
       totalRejected += result.rejected;
       byPartition.set(partition, result);
     }
 
-    return { queued: totalQueued, rejected: totalRejected, byPartition };
+    return { workerPoold: totalWorkerPoold, rejected: totalRejected, byPartition };
   }
 
   private selectPartition(event: unknown): number {
@@ -947,7 +947,7 @@ class ConcurrencyRouter {
  */
 type BackpressureStrategy =
   | { type: "reject"; reason: string }
-  | { type: "queue-external"; target: "cloudflare-queue" | "r2" }
+  | { type: "workerPool-external"; target: "cloudflare-workerPool" | "r2" }
   | { type: "throttle"; delayMs: number }
   | { type: "shed-load"; dropPercent: number };
 
@@ -981,15 +981,15 @@ class BackpressureAwareRouter extends ConcurrencyRouter {
     let totalUsed = 0;
 
     for (const status of this.partitionStatus.values()) {
-      totalCapacity += status.maxQueueDepth;
-      totalUsed += status.queueDepth;
+      totalCapacity += status.maxWorkerPoolDepth;
+      totalUsed += status.workerPoolDepth;
     }
 
     const utilizationPercent = totalUsed / totalCapacity;
 
     if (utilizationPercent > 0.95) {
       // Critical - reject
-      return { type: "reject", reason: "Queue capacity exceeded" };
+      return { type: "reject", reason: "WorkerPool capacity exceeded" };
     }
 
     if (utilizationPercent > 0.8) {
@@ -1007,7 +1007,7 @@ class BackpressureAwareRouter extends ConcurrencyRouter {
     switch (strategy.type) {
       case "reject":
         return {
-          queued: 0,
+          workerPoold: 0,
           rejected: events.length,
           byPartition: new Map(),
           backpressure: strategy,
@@ -1017,11 +1017,11 @@ class BackpressureAwareRouter extends ConcurrencyRouter {
         await sleep(strategy.delayMs);
         return super.dispatch(events);
 
-      case "queue-external":
-        // Send to external queue for later processing
-        await this.sendToExternalQueue(events, strategy.target);
+      case "workerPool-external":
+        // Send to external workerPool for later processing
+        await this.sendToExternalWorkerPool(events, strategy.target);
         return {
-          queued: events.length,
+          workerPoold: events.length,
           rejected: 0,
           byPartition: new Map(),
           backpressure: strategy,
@@ -1048,21 +1048,21 @@ class BackpressureAwareRouter extends ConcurrencyRouter {
 
 ## Alternative Approaches
 
-### Alternative A: Cloudflare Queue Native
+### Alternative A: Cloudflare WorkerPool Native
 
-Use Cloudflare Queues' built-in concurrency control instead of building with DOs.
+Use Cloudflare WorkerPools' built-in concurrency control instead of building with DOs.
 
 ```typescript
 // wrangler.toml
-[[queues.consumers]]
-queue = "events"
+[[workerPools.consumers]]
+workerPool = "events"
 max_batch_size = 10
 max_retries = 3
 max_concurrency = 4  // <-- Native concurrency limit!
 
 // worker
 export default {
-  async queue(batch, env) {
+  async workerPool(batch, env) {
     // Process batch - CF guarantees max 4 concurrent
     for (const msg of batch.messages) {
       await processEvent(msg.body);
@@ -1080,18 +1080,18 @@ export default {
 **Cons:**
 - Less control over routing
 - Can't do priority queuing
-- Limited to Queue semantics
+- Limited to WorkerPool semantics
 
-**When to use:** If you don't need custom routing, ordering, or priority, use CF Queues directly.
+**When to use:** If you don't need custom routing, ordering, or priority, use CF WorkerPools directly.
 
-### Alternative B: Hybrid (Queue + DO for State)
+### Alternative B: Hybrid (WorkerPool + DO for State)
 
-Use Queue for distribution, DO for processing state.
+Use WorkerPool for distribution, DO for processing state.
 
 ```
 ┌─────────┐     ┌─────────────┐     ┌────────────┐
-│ Events  │────►│ CF Queue    │────►│ Worker     │
-└─────────┘     │ (buffer)    │     │ (dispatch) │
+│ Events  │────►│ CF WorkerPool    │────►│ Worker     │
+└─────────┘     │ (debounce)    │     │ (dispatch) │
                 └─────────────┘     └──────┬─────┘
                                            │
                       ┌────────────────────┼────────────────────┐
@@ -1104,27 +1104,27 @@ Use Queue for distribution, DO for processing state.
 ```
 
 **Pros:**
-- Queue handles distribution
+- WorkerPool handles distribution
 - DOs handle stateful processing
 - Clear separation of concerns
 
 **Cons:**
 - Two systems to manage
-- Coordination between Queue and DOs
+- Coordination between WorkerPool and DOs
 
-### Alternative C: Single Queue DO + Worker Pool
+### Alternative C: Single WorkerPool DO + Worker Pool
 
 ```typescript
-// Central queue DO
-class QueueDO {
-  private queue: Event[] = [];
+// Central workerPool DO
+class WorkerPoolDO {
+  private workerPool: Event[] = [];
 
-  async enqueue(events: Event[]) {
-    this.queue.push(...events);
+  async enworkerPool(events: Event[]) {
+    this.workerPool.push(...events);
   }
 
   async pull(count: number): Promise<Event[]> {
-    const batch = this.queue.splice(0, count);
+    const batch = this.workerPool.splice(0, count);
     return batch;
   }
 }
@@ -1132,8 +1132,8 @@ class QueueDO {
 // Worker DO
 class WorkerDO {
   async process() {
-    // Pull from queue
-    const events = await queueDO.pull(1);
+    // Pull from workerPool
+    const events = await workerPoolDO.pull(1);
     // Process
     await processEvent(events[0]);
     // Schedule next pull
@@ -1147,9 +1147,9 @@ class WorkerDO {
 - Natural work distribution
 
 **Cons:**
-- Queue is single point of failure
+- WorkerPool is single point of failure
 - Pull latency overhead
-- Queue DO becomes bottleneck at scale
+- WorkerPool DO becomes bottleneck at scale
 
 ---
 
@@ -1159,8 +1159,8 @@ class WorkerDO {
 |----------|------------|---------|------------|-------------|------|
 | **Partitioned Slots** | High | Low | Medium | High | Low |
 | **Central Coordinator** | Medium | High | Low | Medium | Low |
-| **CF Queue Native** | High | Medium | Very Low | Very High | Low |
-| **Hybrid Queue+DO** | High | Medium | High | High | Medium |
+| **CF WorkerPool Native** | High | Medium | Very Low | Very High | Low |
+| **Hybrid WorkerPool+DO** | High | Medium | High | High | Medium |
 | **Work Stealing** | High | Low | Very High | Medium | Low |
 
 ### Decision Guide
@@ -1177,19 +1177,19 @@ START
   │               │
   │               ├─► Yes: Use Partitioned Slots with round-robin
   │               │
-  │               └─► No: Use CF Queue Native
+  │               └─► No: Use CF WorkerPool Native
   │
   ├─► Processing time > 30 seconds?
   │     │
-  │     └─► Yes: Use Hybrid (Queue buffers, DO tracks long-running)
+  │     └─► Yes: Use Hybrid (WorkerPool debounces, DO tracks long-running)
   │
   ├─► Need priority queuing?
   │     │
-  │     └─► Yes: Use Partitioned Slots with priority queue implementation
+  │     └─► Yes: Use Partitioned Slots with priority workerPool implementation
   │
   └─► Simple use case, minimal requirements?
         │
-        └─► Yes: Use CF Queue Native
+        └─► Yes: Use CF WorkerPool Native
 ```
 
 ---
@@ -1198,15 +1198,15 @@ START
 
 ### For Your Use Case (4 concurrent, stream processing)
 
-**Recommended: Partitioned Slots with CF Queue Buffer**
+**Recommended: Partitioned Slots with CF WorkerPool Debounce**
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                      RECOMMENDED ARCHITECTURE                     │
 │                                                                  │
 │   ┌─────────┐     ┌──────────────┐     ┌─────────────────────┐  │
-│   │ Events  │────►│ CF Queue     │────►│ Consumer Worker     │  │
-│   │ (HTTP)  │     │ (buffer)     │     │ (batch router)      │  │
+│   │ Events  │────►│ CF WorkerPool     │────►│ Consumer Worker     │  │
+│   │ (HTTP)  │     │ (debounce)     │     │ (batch router)      │  │
 │   └─────────┘     └──────────────┘     └──────────┬──────────┘  │
 │                                                   │              │
 │                    ┌──────────────────────────────┼──────────────┤
@@ -1220,8 +1220,8 @@ START
 │                                                                  │
 │   Properties:                                                    │
 │   - Max 4 concurrent (1 per partition)                          │
-│   - CF Queue absorbs spikes                                      │
-│   - Each DO manages its queue + processing                       │
+│   - CF WorkerPool absorbs spikes                                      │
+│   - Each DO manages its workerPool + processing                       │
 │   - Failure isolated to partition                                │
 │   - Linear scaling (add partitions = add concurrency)            │
 │                                                                  │
@@ -1232,7 +1232,7 @@ START
 
 1. **Phase 1: Core Partition Primitive**
    - [ ] Define `ConcurrencyPartitionHandler`
-   - [ ] Implement queue management (enqueue, dequeue)
+   - [ ] Implement workerPool management (enworkerPool, deworkerPool)
    - [ ] Implement slot-based processing control
    - [ ] Add timeout detection via alarms
    - [ ] Add retry logic with exponential backoff
@@ -1245,8 +1245,8 @@ START
    - [ ] Add metrics/observability
 
 3. **Phase 3: Integration**
-   - [ ] CF Queue consumer setup
-   - [ ] Batch dispatch from Queue to DOs
+   - [ ] CF WorkerPool consumer setup
+   - [ ] Batch dispatch from WorkerPool to DOs
    - [ ] End-to-end monitoring
    - [ ] Load testing
 
@@ -1254,13 +1254,13 @@ START
    - [ ] Chaos testing (DO restarts, timeouts)
    - [ ] Hot partition detection
    - [ ] Adaptive routing based on load
-   - [ ] Alerting on queue depth, DLQ growth
+   - [ ] Alerting on workerPool depth, DLQ growth
 
 ### Key Metrics to Monitor
 
 | Metric | Warning Threshold | Critical Threshold |
 |--------|-------------------|-------------------|
-| Queue depth per partition | > 1000 | > 5000 |
+| WorkerPool depth per partition | > 1000 | > 5000 |
 | Processing latency P99 | > 5s | > 30s |
 | Dead-letter rate | > 1% | > 5% |
 | Retry rate | > 10% | > 25% |
@@ -1276,14 +1276,14 @@ Assumptions:
 - 1KB avg event size
 
 DO Requests:
-- Enqueue: 1M / 100 (batched) = 10,000 requests
+- EnworkerPool: 1M / 100 (batched) = 10,000 requests
 - Alarm: ~10,000 requests (one per batch)
 - Total: ~20,000 requests/day = $0.30/day
 
 DO Storage:
 - ~10,000 operations/day = $0.01/day
 
-CF Queue:
+CF WorkerPool:
 - 1M messages = $0.40/day
 
 Total: ~$0.71/day = ~$21/month
@@ -1300,10 +1300,10 @@ Building a distributed concurrency manager on Durable Objects requires careful c
 
 1. **Work Distribution**: How events are routed to partitions affects load balance
 2. **Concurrency Control**: Slot-based processing within each partition
-3. **Failure Handling**: Timeouts, retries, and dead-letter queues
+3. **Failure Handling**: Timeouts, retries, and dead-letter workerPools
 4. **Backpressure**: What happens when demand exceeds capacity
 5. **Scaling**: How to add capacity without redesign
 
-The **Partitioned Slots** architecture provides the best balance of simplicity and scalability for most use cases. Combined with Cloudflare Queues for buffering, it handles high-throughput event streams while maintaining strict concurrency limits.
+The **Partitioned Slots** architecture provides the best balance of simplicity and scalability for most use cases. Combined with Cloudflare WorkerPools for debounceing, it handles high-throughput event streams while maintaining strict concurrency limits.
 
 Key insight: Don't fight against the distributed nature of DOs - embrace it by partitioning work and avoiding coordination where possible. Each partition should be fully independent, with the router being the only component that needs global awareness.

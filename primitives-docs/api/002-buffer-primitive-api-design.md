@@ -1,8 +1,8 @@
-# Buffer Primitive API Design
+# Debounce Primitive API Design
 
 ## Design Philosophy
 
-The Buffer primitive collects events over time and processes them in batches. It follows the same Effect-first patterns as Continuous:
+The Debounce primitive collects events over time and processes them in batches. It follows the same Effect-first patterns as Continuous:
 
 1. **Effect-first** - All operations are Effects, yieldable in generators
 2. **Schema-driven** - Input events and state are defined via Effect Schema
@@ -13,8 +13,8 @@ The Buffer primitive collects events over time and processes them in batches. It
 
 ## Core Concept
 
-A Buffer:
-1. Receives events via `client.buffer("name").add({ id, event })`
+A Debounce:
+1. Receives events via `client.debounce("name").add({ id, event })`
 2. Accumulates state (by default, keeps the most recent event)
 3. Fires `execute` when either:
    - `maxEvents` threshold is reached, OR
@@ -28,10 +28,10 @@ A Buffer:
 ### Definition
 
 ```ts
-import { Buffer } from "@durable-effect/primitives";
+import { Debounce } from "@durable-effect/jobs";
 import { Schema } from "effect";
 
-const webhookBuffer = Buffer.make({
+const webhookDebounce = Debounce.make({
   eventSchema: Schema.Struct({
     type: Schema.String,
     contactId: Schema.String,
@@ -46,7 +46,7 @@ const webhookBuffer = Buffer.make({
       const state = yield* ctx.state;
       const eventCount = yield* ctx.eventCount;
 
-      // Process the buffered state
+      // Process the debounceed state
       yield* sendConsolidatedNotification(state);
 
       console.log(`Processed ${eventCount} events`);
@@ -57,25 +57,25 @@ const webhookBuffer = Buffer.make({
 ### Registration & Export
 
 ```ts
-import { createDurablePrimitives } from "@durable-effect/primitives";
+import { createDurableJobs } from "@durable-effect/jobs";
 
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
-  webhookBuffer,
-  // ... other primitives
+const { Jobs, JobsClient } = createDurableJobs({
+  webhookDebounce,
+  // ... other jobs
 });
 
 // Export DO class for Cloudflare
-export { Primitives };
+export { Jobs };
 ```
 
 ### Client Usage
 
 ```ts
 // In your worker/webhook handler
-const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+const client = JobsClient.fromBinding(env.PRIMITIVES);
 
-// Add event to buffer (idempotent)
-yield* client.buffer("webhookBuffer").add({
+// Add event to debounce (idempotent)
+yield* client.debounce("webhookDebounce").add({
   id: `${contactId}-${eventId}`,  // Idempotency key
   event: {
     type: "order.shipped",
@@ -90,12 +90,12 @@ yield* client.buffer("webhookBuffer").add({
 
 ## Detailed API
 
-### `Buffer.make(config)`
+### `Debounce.make(config)`
 
-Creates a Buffer definition.
+Creates a Debounce definition.
 
 ```ts
-interface BufferConfig<
+interface DebounceConfig<
   I extends Schema.Schema.AnyNoContext,
   S extends Schema.Schema.AnyNoContext,
   E,
@@ -115,7 +115,7 @@ interface BufferConfig<
 
   /**
    * Duration to wait before flushing after first event.
-   * The buffer will execute after this duration OR when maxEvents is reached.
+   * The debounce will execute after this duration OR when maxEvents is reached.
    */
   readonly flushAfter: Duration.DurationInput;
 
@@ -127,11 +127,11 @@ interface BufferConfig<
   readonly maxEvents?: number;
 
   /**
-   * The execution effect, called when buffer flushes.
+   * The execution effect, called when debounce flushes.
    * After execution completes, state is purged.
    */
   readonly execute: (
-    ctx: BufferExecuteContext<Schema.Schema.Type<S>>
+    ctx: DebounceExecuteContext<Schema.Schema.Type<S>>
   ) => Effect.Effect<void, E, R>;
 
   /**
@@ -141,7 +141,7 @@ interface BufferConfig<
    * Default behavior: Replace state with incoming event (keep most recent).
    */
   readonly onEvent?: (
-    ctx: BufferEventContext<Schema.Schema.Type<I>, Schema.Schema.Type<S>>
+    ctx: DebounceEventContext<Schema.Schema.Type<I>, Schema.Schema.Type<S>>
   ) => Effect.Effect<Schema.Schema.Type<S>, never, R>;
 
   /**
@@ -150,17 +150,17 @@ interface BufferConfig<
    */
   readonly onError?: (
     error: E,
-    ctx: BufferExecuteContext<Schema.Schema.Type<S>>
+    ctx: DebounceExecuteContext<Schema.Schema.Type<S>>
   ) => Effect.Effect<void, never, R>;
 }
 ```
 
-### `BufferExecuteContext<S>`
+### `DebounceExecuteContext<S>`
 
 The context provided to the `execute` function.
 
 ```ts
-interface BufferExecuteContext<S> {
+interface DebounceExecuteContext<S> {
   /**
    * Get the current accumulated state.
    * Returns the validated, typed state.
@@ -168,7 +168,7 @@ interface BufferExecuteContext<S> {
   readonly state: Effect.Effect<S, never, never>;
 
   /**
-   * The total number of events that were buffered.
+   * The total number of events that were debounceed.
    * (Events may have been deduplicated or reduced via onEvent)
    */
   readonly eventCount: Effect.Effect<number, never, never>;
@@ -179,9 +179,9 @@ interface BufferExecuteContext<S> {
   readonly instanceId: string;
 
   /**
-   * Timestamp when the first event arrived (buffer started).
+   * Timestamp when the first event arrived (debounce started).
    */
-  readonly bufferStartedAt: Effect.Effect<number, never, never>;
+  readonly debounceStartedAt: Effect.Effect<number, never, never>;
 
   /**
    * Timestamp when execute was triggered.
@@ -189,18 +189,18 @@ interface BufferExecuteContext<S> {
   readonly executionStartedAt: number;
 
   /**
-   * Why the buffer was flushed.
+   * Why the debounce was flushed.
    */
   readonly flushReason: "maxEvents" | "flushAfter" | "manual";
 }
 ```
 
-### `BufferEventContext<I, S>`
+### `DebounceEventContext<I, S>`
 
 The context provided to the `onEvent` handler.
 
 ```ts
-interface BufferEventContext<I, S> {
+interface DebounceEventContext<I, S> {
   /**
    * The incoming event.
    */
@@ -208,7 +208,7 @@ interface BufferEventContext<I, S> {
 
   /**
    * The current state (null if this is the first event).
-   * Note: Uses null (not undefined) for consistency with other primitives.
+   * Note: Uses null (not undefined) for consistency with other jobs.
    */
   readonly state: S | null;
 
@@ -247,7 +247,7 @@ This is useful for scenarios where you only care about the latest state:
 ### Keep Event with Latest Timestamp
 
 ```ts
-const webhookBuffer = Buffer.make({
+const webhookDebounce = Debounce.make({
   eventSchema: WebhookEvent,
 
   flushAfter: "5 minutes",
@@ -285,7 +285,7 @@ const priorityOrder = {
   "order.placed": 1,
 } as const;
 
-const orderBuffer = Buffer.make({
+const orderDebounce = Debounce.make({
   eventSchema: OrderEvent,
 
   flushAfter: "5 minutes",
@@ -325,7 +325,7 @@ const NotificationSummary = Schema.Struct({
   lastEventAt: Schema.Number,
 });
 
-const aggregateBuffer = Buffer.make({
+const aggregateDebounce = Debounce.make({
   eventSchema: WebhookEvent,
   stateSchema: NotificationSummary,
 
@@ -373,22 +373,22 @@ const aggregateBuffer = Buffer.make({
 
 ## Client API
 
-### Getting a Buffer Client
+### Getting a Debounce Client
 
 ```ts
-const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
-const webhookClient = client.buffer("webhookBuffer");
+const client = JobsClient.fromBinding(env.PRIMITIVES);
+const webhookClient = client.debounce("webhookDebounce");
 ```
 
 ### `add(options)`
 
-Add an event to the buffer. **Idempotent** - same `id` is deduplicated.
+Add an event to the debounce. **Idempotent** - same `id` is deduplicated.
 
 ```ts
-interface BufferAddOptions<I> {
+interface DebounceAddOptions<I> {
   /**
-   * Unique identifier for this buffer instance.
-   * Events with the same instanceId go to the same buffer.
+   * Unique identifier for this debounce instance.
+   * Events with the same instanceId go to the same debounce.
    */
   readonly id: string;
 
@@ -407,7 +407,7 @@ interface BufferAddOptions<I> {
 
 // Usage
 const result = yield* webhookClient.add({
-  id: contactId,           // Buffer instance ID
+  id: contactId,           // Debounce instance ID
   event: {
     type: "order.shipped",
     contactId: contactId,
@@ -418,39 +418,39 @@ const result = yield* webhookClient.add({
 });
 
 // Returns
-interface BufferAddResult {
+interface DebounceAddResult {
   readonly instanceId: string;
   readonly eventCount: number;
   readonly willFlushAt: number | null;  // null if maxEvents will trigger first
-  readonly created: boolean;            // true if this started a new buffer
+  readonly created: boolean;            // true if this started a new debounce
 }
 ```
 
 ### `flush(id)`
 
-Manually trigger the buffer to flush immediately.
+Manually trigger the debounce to flush immediately.
 
 ```ts
 yield* webhookClient.flush(contactId);
 
 // Returns
-interface BufferFlushResult {
+interface DebounceFlushResult {
   readonly flushed: boolean;
   readonly eventCount: number;
-  readonly reason: "manual" | "empty";  // "empty" if no events buffered
+  readonly reason: "manual" | "empty";  // "empty" if no events debounceed
 }
 ```
 
 ### `status(id)`
 
-Get the current status of a buffer.
+Get the current status of a debounce.
 
 ```ts
 const status = yield* webhookClient.status(contactId);
 
-type BufferStatus =
+type DebounceStatus =
   | {
-      readonly _tag: "Buffering";
+      readonly _tag: "Debounceing";
       readonly eventCount: number;
       readonly startedAt: number;
       readonly willFlushAt: number;
@@ -461,7 +461,7 @@ type BufferStatus =
 
 ### `getState(id)`
 
-Get the current buffered state (typed by stateSchema).
+Get the current debounceed state (typed by stateSchema).
 
 ```ts
 const state = yield* webhookClient.getState(contactId);
@@ -471,13 +471,13 @@ const state = yield* webhookClient.getState(contactId);
 
 ### `clear(id)`
 
-Clear the buffer without executing (discard events).
+Clear the debounce without executing (discard events).
 
 ```ts
 yield* webhookClient.clear(contactId);
 
 // Returns
-interface BufferClearResult {
+interface DebounceClearResult {
   readonly cleared: boolean;
   readonly discardedEvents: number;
 }
@@ -490,7 +490,7 @@ interface BufferClearResult {
 ### Example 1: Webhook Event Consolidation
 
 ```ts
-import { Buffer } from "@durable-effect/primitives";
+import { Debounce } from "@durable-effect/jobs";
 import { Effect, Schema } from "effect";
 
 // Define the input event schema
@@ -517,7 +517,7 @@ const eventPriority: Record<WebhookEvent["type"], number> = {
   "order.placed": 1,
 };
 
-const webhookBuffer = Buffer.make({
+const webhookDebounce = Debounce.make({
   eventSchema: WebhookEvent,
 
   flushAfter: "5 minutes",
@@ -573,8 +573,8 @@ const webhookBuffer = Buffer.make({
     Effect.gen(function* () {
       const state = yield* ctx.state;
 
-      // Send to dead letter queue for manual processing
-      yield* sendToDeadLetter("webhook-buffer-failures", {
+      // Send to dead letter workerPool for manual processing
+      yield* sendToDeadLetter("webhook-debounce-failures", {
         state,
         error: String(error),
         instanceId: ctx.instanceId,
@@ -589,11 +589,11 @@ const webhookBuffer = Buffer.make({
 export default {
   async fetch(request: Request, env: Env) {
     const webhook = await request.json();
-    const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+    const client = JobsClient.fromBinding(env.PRIMITIVES);
 
-    // Add to buffer (idempotent by webhookId)
+    // Add to debounce (idempotent by webhookId)
     const result = await Effect.runPromise(
-      client.buffer("webhookBuffer").add({
+      client.debounce("webhookDebounce").add({
         id: webhook.contactId,
         event: {
           type: webhook.type,
@@ -607,7 +607,7 @@ export default {
     );
 
     return new Response(JSON.stringify({
-      buffered: true,
+      debounceed: true,
       eventCount: result.eventCount,
       willFlushAt: result.willFlushAt,
     }));
@@ -632,7 +632,7 @@ const AnalyticsBatch = Schema.Struct({
   firstEventAt: Schema.Number,
 });
 
-const analyticsBuffer = Buffer.make({
+const analyticsDebounce = Debounce.make({
   eventSchema: AnalyticsEvent,
   stateSchema: AnalyticsBatch,
 
@@ -680,7 +680,7 @@ const analyticsBuffer = Buffer.make({
 
 ```ts
 // Track an event (fire and forget)
-yield* client.buffer("analyticsBuffer").add({
+yield* client.debounce("analyticsDebounce").add({
   id: userId,
   event: {
     eventName: "button_clicked",
@@ -699,7 +699,7 @@ const ApiRequest = Schema.Struct({
   method: Schema.Literal("GET", "POST", "PUT", "DELETE"),
   body: Schema.NullOr(Schema.Unknown),
   requestId: Schema.String,
-  queuedAt: Schema.Number,
+  workerPooldAt: Schema.Number,
 });
 
 // Batch requests to same endpoint
@@ -708,7 +708,7 @@ const ApiBatch = Schema.Struct({
   requests: Schema.Array(ApiRequest),
 });
 
-const apiBuffer = Buffer.make({
+const apiDebounce = Debounce.make({
   eventSchema: ApiRequest,
   stateSchema: ApiBatch,
 
@@ -758,7 +758,7 @@ const apiBuffer = Buffer.make({
 | Name | Pros | Cons |
 |------|------|------|
 | `flushAfter` | Clear, describes timing | Could be confused with "flush after execute" |
-| `bufferTimeout` | Common pattern | Less clear about what happens |
+| `debounceTimeout` | Common pattern | Less clear about what happens |
 | `maxWait` | Short, clear | Doesn't mention flushing |
 | `flushDelay` | Explicit about delay | Could imply delay after trigger |
 | `collectFor` | Describes accumulation | Less common terminology |
@@ -770,7 +770,7 @@ const apiBuffer = Buffer.make({
 | Name | Pros | Cons |
 |------|------|------|
 | `maxEvents` | Clear, simple | - |
-| `maxBufferSize` | Explicit about buffer | Could imply bytes |
+| `maxDebounceSize` | Explicit about debounce | Could imply bytes |
 | `flushAt` | Describes trigger | Less clear |
 | `batchSize` | Common pattern | Could imply fixed size |
 
@@ -806,7 +806,7 @@ const MyState = Schema.Struct({
 });
 
 // 3. Types flow through the API
-const buffer = Buffer.make({
+const debounce = Debounce.make({
   eventSchema: MyEvent,
   stateSchema: MyState,
 
@@ -831,14 +831,14 @@ const buffer = Buffer.make({
 });
 
 // 4. Client add() is typed by eventSchema
-yield* client.buffer("myBuffer").add({
+yield* client.debounce("myDebounce").add({
   id: "123",
   event: { type: "click", value: 1 },
   //      ^? Must match MyEvent
 });
 
 // 5. getState() returns state type
-const state = yield* client.buffer("myBuffer").getState("123");
+const state = yield* client.debounce("myDebounce").getState("123");
 //    ^? { latestType: string; totalValue: number } | null | undefined
 // null = instance exists but no state yet, undefined = instance doesn't exist
 ```
@@ -883,9 +883,9 @@ const state = yield* client.buffer("myBuffer").getState("123");
 
 ---
 
-## Comparison: Buffer vs Continuous
+## Comparison: Debounce vs Continuous
 
-| Aspect | Buffer | Continuous |
+| Aspect | Debounce | Continuous |
 |--------|--------|------------|
 | **Trigger** | Events (external) | Schedule (internal) |
 | **Lifecycle** | Event → Accumulate → Flush → Purge | Start → Execute → Schedule → Repeat |
@@ -900,7 +900,7 @@ const state = yield* client.buffer("myBuffer").getState("123");
 
 | Feature | API |
 |---------|-----|
-| Define buffer | `Buffer.make({ eventSchema, flushAfter, execute })` |
+| Define debounce | `Debounce.make({ eventSchema, flushAfter, execute })` |
 | Custom state | `stateSchema: MyStateSchema` |
 | Event handling | `onEvent: (ctx) => Effect<State>` |
 | Max events trigger | `maxEvents: 100` |
@@ -908,11 +908,11 @@ const state = yield* client.buffer("myBuffer").getState("123");
 | Execute context - state | `yield* ctx.state` |
 | Execute context - count | `yield* ctx.eventCount` |
 | Execute context - reason | `ctx.flushReason` |
-| Client - add event | `yield* client.buffer("name").add({ id, event })` |
-| Client - manual flush | `yield* client.buffer("name").flush(id)` |
-| Client - get status | `yield* client.buffer("name").status(id)` |
-| Client - get state | `yield* client.buffer("name").getState(id)` |
-| Client - clear | `yield* client.buffer("name").clear(id)` |
+| Client - add event | `yield* client.debounce("name").add({ id, event })` |
+| Client - manual flush | `yield* client.debounce("name").flush(id)` |
+| Client - get status | `yield* client.debounce("name").status(id)` |
+| Client - get state | `yield* client.debounce("name").getState(id)` |
+| Client - clear | `yield* client.debounce("name").clear(id)` |
 
 The API prioritizes:
 - **Effect-native patterns** (generators, yieldable operations)

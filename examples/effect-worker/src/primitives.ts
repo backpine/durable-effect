@@ -1,10 +1,7 @@
 import { Effect, Schema } from "effect";
-import {
-  Continuous,
-  createDurablePrimitives,
-} from "@durable-effect/primitives";
+import { Continuous, createDurableJobs } from "@durable-effect/jobs";
 
-// 1. Define your primitive (name comes from the key in createDurablePrimitives)
+// 1. Define your job (name comes from the key in createDurableJobs)
 const tokenRefresher = Continuous.make({
   // Schema for persistent state
   stateSchema: Schema.Struct({
@@ -15,9 +12,9 @@ const tokenRefresher = Continuous.make({
   }),
 
   // Execute every 30 minutes
-  schedule: Continuous.every("45 seconds"),
+  schedule: Continuous.every("5 seconds"),
 
-  startImmediately: false,
+  startImmediately: true,
   onError: (error) => Effect.logError(error),
 
   // The function to run
@@ -45,10 +42,10 @@ const tokenRefresher = Continuous.make({
     }),
 });
 
-// 2. Create the Durable Object and Client - key becomes the primitive name
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
+// 2. Create the Durable Object and Client - key becomes the job name
+const { Jobs, JobsClient } = createDurableJobs({
   tokenRefresher,
 });
 
 // 3. Export the Durable Object class
-export { Primitives, PrimitivesClient };
+export { Jobs, JobsClient };

@@ -6,7 +6,7 @@ This document outlines how to structure the durable-effect library into composab
 
 1. **Simplicity** - No premature abstractions; Cloudflare is the target platform
 2. **Extensibility** - Easy to add new durable patterns (workflows, entities, queues, etc.)
-3. **Composability** - Core primitives shared across patterns
+3. **Composability** - Core jobs shared across patterns
 
 ---
 
@@ -29,7 +29,7 @@ Future patterns would add packages like:
 
 ### 1. `@durable-effect/core`
 
-Shared primitives across all durable patterns. Cloudflare-specific but pattern-agnostic.
+Shared jobs across all durable patterns. Cloudflare-specific but pattern-agnostic.
 
 ```
 packages/core/src/

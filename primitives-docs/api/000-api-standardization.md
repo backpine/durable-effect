@@ -1,6 +1,6 @@
-# Primitives API Standardization
+# Jobs API Standardization
 
-This document defines the standard naming conventions and patterns across all durable primitives to ensure consistency and predictability.
+This document defines the standard naming conventions and patterns across all durable jobs to ensure consistency and predictability.
 
 ---
 
@@ -8,28 +8,28 @@ This document defines the standard naming conventions and patterns across all du
 
 | Primitive | Current | Change To | Reason |
 |-----------|---------|-----------|--------|
-| Queue | `process` | `execute` | Consistent main handler name |
-| Buffer | `inputSchema` | `eventSchema` | Consistent schema naming |
-| Buffer | `currentState: S \| undefined` | `state: S \| null` | Consistent null semantics |
+| WorkerPool | `process` | `execute` | Consistent main handler name |
+| Debounce | `inputSchema` | `eventSchema` | Consistent schema naming |
+| Debounce | `currentState: S \| undefined` | `state: S \| null` | Consistent null semantics |
 | Continuous | `scheduleNext(when)` | `schedule(when)` | Shorter, matches Task |
 
 ---
 
 ## 1. Main Handler: `execute`
 
-**Standard**: All primitives use `execute` as the main execution handler.
+**Standard**: All jobs use `execute` as the main execution handler.
 
 | Primitive | Handler | Description |
 |-----------|---------|-------------|
 | Continuous | `execute(ctx)` | Called on each scheduled alarm |
-| Buffer | `execute(ctx)` | Called when buffer flushes |
-| Queue | `execute(ctx)` | Called for each event (one at a time) |
+| Debounce | `execute(ctx)` | Called when debounce flushes |
+| WorkerPool | `execute(ctx)` | Called for each event (one at a time) |
 | Task | `execute(ctx)` | Called for each event |
 
 **Rationale**: "Execute" is the universal term for "do the main work". While "process" is also valid, having one consistent name reduces cognitive load.
 
 ```ts
-// All primitives follow this pattern:
+// All jobs follow this pattern:
 Primitive.make({
   execute: (ctx) => Effect.gen(function* () {
     // Main work happens here
@@ -46,21 +46,21 @@ Primitive.make({
 | Primitive | Event Schema | State Schema | Notes |
 |-----------|-------------|--------------|-------|
 | Continuous | N/A | `stateSchema` (required) | Schedule-driven, no events |
-| Buffer | `eventSchema` | `stateSchema` (optional) | Defaults to eventSchema |
-| Queue | `eventSchema` | N/A | No persistent state |
+| Debounce | `eventSchema` | `stateSchema` (optional) | Defaults to eventSchema |
+| WorkerPool | `eventSchema` | N/A | No persistent state |
 | Task | `eventSchema` | `stateSchema` (optional) | Both optional |
 
-**Change Required**: Buffer currently uses `inputSchema` → rename to `eventSchema`.
+**Change Required**: Debounce currently uses `inputSchema` → rename to `eventSchema`.
 
 ```ts
-// Buffer - BEFORE
-Buffer.make({
+// Debounce - BEFORE
+Debounce.make({
   inputSchema: MyEvent,  // ❌ Old
   stateSchema: MyState,
 });
 
-// Buffer - AFTER
-Buffer.make({
+// Debounce - AFTER
+Debounce.make({
   eventSchema: MyEvent,  // ✅ Standard
   stateSchema: MyState,
 });
@@ -105,7 +105,7 @@ if (state === undefined) {
 }
 ```
 
-**Change Required**: Buffer's `onEvent` uses `currentState: S | undefined` → change to `state: S | null`.
+**Change Required**: Debounce's `onEvent` uses `currentState: S | undefined` → change to `state: S | null`.
 
 ---
 
@@ -145,10 +145,10 @@ readonly event: Effect.Effect<E, never, never>;
 const event = yield* ctx.event;
 ```
 
-**Exception**: Buffer's `onEvent` reducer receives event as direct value since it's a synchronous reducer:
+**Exception**: Debounce's `onEvent` reducer receives event as direct value since it's a synchronous reducer:
 
 ```ts
-// Buffer's onEvent is a special case - synchronous reducer
+// Debounce's onEvent is a special case - synchronous reducer
 onEvent: (ctx) => {
   const { event, state } = ctx;  // Direct values, not Effects
   return newState;  // Synchronous return
@@ -163,8 +163,8 @@ onEvent: (ctx) => {
 | `createdAt` | `Effect<number>` | When instance was first created |
 
 Primitive-specific:
-- Queue: `enqueuedAt: number` - when event was enqueued
-- Buffer: `bufferStartedAt: Effect<number>` - when first event arrived
+- WorkerPool: `enworkerPooldAt: number` - when event was enworkerPoold
+- Debounce: `debounceStartedAt: Effect<number>` - when first event arrived
 
 ### 4.4 Standard Count Properties
 
@@ -174,7 +174,7 @@ Primitive-specific:
 
 Primitive-specific:
 - Continuous: `runCount: Effect<number>` (same concept, different name for clarity)
-- Queue: `pendingCount: Effect<number>`, `processedCount: Effect<number>`
+- WorkerPool: `pendingCount: Effect<number>`, `processedCount: Effect<number>`
 
 ---
 
@@ -209,7 +209,7 @@ readonly schedule: (
 
 ## 6. Purge API
 
-**Standard**: Primitives with manual purge control use these methods:
+**Standard**: Jobs with manual purge control use these methods:
 
 | Method | Description | Return |
 |--------|-------------|--------|
@@ -234,11 +234,11 @@ This distinction is intentional:
 | Primitive | Handler | When Called |
 |-----------|---------|-------------|
 | Continuous | `onError` | Any error in `execute` |
-| Buffer | `onError` | Any error in `execute` |
-| Queue | `onDeadLetter` | Event fails after all retries |
+| Debounce | `onError` | Any error in `execute` |
+| WorkerPool | `onDeadLetter` | Event fails after all retries |
 | Task | `onError` | Any error in `execute` or `onAlarm` |
 
-Queue's `onDeadLetter` is semantically different - it's specifically for events that exhausted all retry attempts. This is the standard queue/messaging pattern.
+WorkerPool's `onDeadLetter` is semantically different - it's specifically for events that exhausted all retry attempts. This is the standard workerPool/messaging pattern.
 
 **Signature for onError**:
 ```ts
@@ -268,19 +268,19 @@ readonly onDeadLetter?: (
 | Primitive | Method | Rationale |
 |-----------|--------|-----------|
 | Continuous | `start({ id, input })` | Starting a process |
-| Buffer | `add({ id, event })` | Adding to a buffer |
-| Queue | `enqueue({ id, event })` | Adding to a queue |
+| Debounce | `add({ id, event })` | Adding to a debounce |
+| WorkerPool | `enworkerPool({ id, event })` | Adding to a workerPool |
 | Task | `send({ id, event })` | Sending an event |
 
 These are intentionally different because the mental model differs:
-- Buffer: You "add" items to a buffer
-- Queue: You "enqueue" jobs to a queue
+- Debounce: You "add" items to a debounce
+- WorkerPool: You "enworkerPool" jobs to a workerPool
 - Task: You "send" events to a task
 - Continuous: You "start" a recurring process
 
 ### Common Methods
 
-All primitives support:
+All jobs support:
 
 | Method | Description |
 |--------|-------------|
@@ -292,8 +292,8 @@ Primitive-specific:
 | Primitive | Methods |
 |-----------|---------|
 | Continuous | `stop(id)`, `trigger(id)` |
-| Buffer | `flush(id)`, `clear(id)` |
-| Queue | `pause()`, `resume()`, `cancel(id)`, `drain()` |
+| Debounce | `flush(id)`, `clear(id)` |
+| WorkerPool | `pause()`, `resume()`, `cancel(id)`, `drain()` |
 | Task | `trigger(id)`, `purge(id)` |
 
 ---
@@ -327,16 +327,16 @@ execute: (ctx) =>
   }),
 ```
 
-Consider adding `isFirstEvent` to Buffer if there's demand.
+Consider adding `isFirstEvent` to Debounce if there's demand.
 
 ---
 
 ## 10. Summary of Changes
 
-### Buffer Changes
+### Debounce Changes
 ```ts
 // BEFORE
-Buffer.make({
+Debounce.make({
   inputSchema: MyEvent,  // ❌
   onEvent: (ctx) => {
     const { event, currentState } = ctx;  // currentState: S | undefined ❌
@@ -345,7 +345,7 @@ Buffer.make({
 });
 
 // AFTER
-Buffer.make({
+Debounce.make({
   eventSchema: MyEvent,  // ✅
   onEvent: (ctx) => {
     const { event, state } = ctx;  // state: S | null ✅
@@ -354,15 +354,15 @@ Buffer.make({
 });
 ```
 
-### Queue Changes
+### WorkerPool Changes
 ```ts
 // BEFORE
-Queue.make({
+WorkerPool.make({
   process: (ctx) => { ... },  // ❌
 });
 
 // AFTER
-Queue.make({
+WorkerPool.make({
   execute: (ctx) => { ... },  // ✅
 });
 ```
@@ -386,7 +386,7 @@ execute: (ctx) =>
 
 ## 11. Complete Standard Context Shapes
 
-### Base Context (all primitives)
+### Base Context (all jobs)
 ```ts
 interface BaseContext {
   readonly instanceId: string;
@@ -394,7 +394,7 @@ interface BaseContext {
 }
 ```
 
-### Event-Driven Context (Buffer, Queue, Task)
+### Event-Driven Context (Debounce, WorkerPool, Task)
 ```ts
 interface EventContext<E> extends BaseContext {
   readonly event: Effect.Effect<E, never, never>;
@@ -403,7 +403,7 @@ interface EventContext<E> extends BaseContext {
 }
 ```
 
-### Stateful Context (Continuous, Buffer execute, Task)
+### Stateful Context (Continuous, Debounce execute, Task)
 ```ts
 interface StatefulContext<S> extends BaseContext {
   readonly state: Effect.Effect<S | null, never, never>;
@@ -438,9 +438,9 @@ interface PurgeableContext extends BaseContext {
 | Primitive | Contexts |
 |-----------|----------|
 | Continuous | Base + Stateful + Schedulable |
-| Buffer (execute) | Base + Stateful (read-only) |
-| Buffer (onEvent) | Special reducer context |
-| Queue | Base + Event-Driven |
+| Debounce (execute) | Base + Stateful (read-only) |
+| Debounce (onEvent) | Special reducer context |
+| WorkerPool | Base + Event-Driven |
 | Task | Base + Event-Driven + Stateful + Schedulable + Purgeable |
 
 Task is the most powerful, combining all capabilities.
@@ -449,9 +449,9 @@ Task is the most powerful, combining all capabilities.
 
 ## Migration Checklist
 
-- [ ] Buffer: Rename `inputSchema` to `eventSchema`
-- [ ] Buffer: Rename `currentState` to `state`, change `undefined` to `null`
-- [ ] Queue: Rename `process` to `execute`
+- [ ] Debounce: Rename `inputSchema` to `eventSchema`
+- [ ] Debounce: Rename `currentState` to `state`, change `undefined` to `null`
+- [ ] WorkerPool: Rename `process` to `execute`
 - [ ] Continuous: Rename `scheduleNext` to `schedule`
 - [ ] Update all documentation to reflect changes
 - [ ] Update all examples to use new names

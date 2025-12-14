@@ -1,36 +1,36 @@
-// packages/primitives/src/runtime/dispatcher.ts
+// packages/jobs/src/runtime/dispatcher.ts
 
 import { Context, Effect, Layer } from "effect";
 import { MetadataService } from "../services/metadata";
 import { ContinuousHandler } from "../handlers/continuous";
-import { UnknownPrimitiveTypeError, type PrimitiveError } from "../errors";
-import type { PrimitiveRequest, PrimitiveResponse } from "./types";
+import { UnknownJobTypeError, type JobError } from "../errors";
+import type { JobRequest, JobResponse } from "./types";
 
 // =============================================================================
 // Service Interface
 // =============================================================================
 
 /**
- * Dispatcher routes requests to primitive handlers.
+ * Dispatcher routes requests to job handlers.
  *
- * This is the central routing hub for all primitive operations:
+ * This is the central routing hub for all job operations:
  * - handle(request): Routes to the appropriate handler based on request.type
  * - handleAlarm(): Reads metadata to determine type, then routes to handler
  */
 export interface DispatcherServiceI {
   /**
-   * Handle a primitive request.
+   * Handle a job request.
    * Routes to the appropriate handler based on request.type.
    */
   readonly handle: (
-    request: PrimitiveRequest
-  ) => Effect.Effect<PrimitiveResponse, PrimitiveError>;
+    request: JobRequest
+  ) => Effect.Effect<JobResponse, JobError>;
 
   /**
    * Handle an alarm.
-   * Reads metadata to determine which primitive type to route to.
+   * Reads metadata to determine which job type to route to.
    */
-  readonly handleAlarm: () => Effect.Effect<void, PrimitiveError>;
+  readonly handleAlarm: () => Effect.Effect<void, JobError>;
 }
 
 // =============================================================================
@@ -38,7 +38,7 @@ export interface DispatcherServiceI {
 // =============================================================================
 
 export class Dispatcher extends Context.Tag(
-  "@durable-effect/primitives/Dispatcher"
+  "@durable-effect/jobs/Dispatcher"
 )<Dispatcher, DispatcherServiceI>() {}
 
 // =============================================================================
@@ -46,11 +46,11 @@ export class Dispatcher extends Context.Tag(
 // =============================================================================
 
 /**
- * Creates the dispatcher that routes to primitive handlers.
+ * Creates the dispatcher that routes to job handlers.
  *
  * Phase 3: Routes to ContinuousHandler
- * Phase 4: Add routing to BufferHandler
- * Phase 5: Add routing to QueueHandler
+ * Phase 4: Add routing to DebounceHandler
+ * Phase 5: Add routing to WorkerPoolHandler
  */
 export const DispatcherLayer = Layer.effect(
   Dispatcher,
@@ -59,25 +59,25 @@ export const DispatcherLayer = Layer.effect(
     const continuous = yield* ContinuousHandler;
 
     return {
-      handle: (request: PrimitiveRequest) =>
+      handle: (request: JobRequest) =>
         Effect.gen(function* () {
           switch (request.type) {
             case "continuous":
               return yield* continuous.handle(request);
 
-            case "buffer":
-              // TODO: Route to BufferHandler in Phase 4
+            case "debounce":
+              // TODO: Route to DebounceHandler in Phase 4
               return yield* Effect.fail(
-                new UnknownPrimitiveTypeError({
-                  type: `buffer (handler not implemented)`,
+                new UnknownJobTypeError({
+                  type: `debounce (handler not implemented)`,
                 })
               );
 
-            case "queue":
-              // TODO: Route to QueueHandler in Phase 5
+            case "workerPool":
+              // TODO: Route to WorkerPoolHandler in Phase 5
               return yield* Effect.fail(
-                new UnknownPrimitiveTypeError({
-                  type: `queue (handler not implemented)`,
+                new UnknownJobTypeError({
+                  type: `workerPool (handler not implemented)`,
                 })
               );
 
@@ -85,8 +85,8 @@ export const DispatcherLayer = Layer.effect(
               // TypeScript exhaustiveness check
               const _exhaustive: never = request;
               return yield* Effect.fail(
-                new UnknownPrimitiveTypeError({
-                  type: (request as PrimitiveRequest).type,
+                new UnknownJobTypeError({
+                  type: (request as JobRequest).type,
                 })
               );
           }
@@ -106,23 +106,23 @@ export const DispatcherLayer = Layer.effect(
               yield* continuous.handleAlarm();
               break;
 
-            case "buffer":
-              // TODO: Route to BufferHandler.handleAlarm in Phase 4
+            case "debounce":
+              // TODO: Route to DebounceHandler.handleAlarm in Phase 4
               yield* Effect.logInfo(
-                `Alarm for buffer/${meta.name} (handler not implemented)`
+                `Alarm for debounce/${meta.name} (handler not implemented)`
               );
               break;
 
-            case "queue":
-              // TODO: Route to QueueHandler.handleAlarm in Phase 5
+            case "workerPool":
+              // TODO: Route to WorkerPoolHandler.handleAlarm in Phase 5
               yield* Effect.logInfo(
-                `Alarm for queue/${meta.name} (handler not implemented)`
+                `Alarm for workerPool/${meta.name} (handler not implemented)`
               );
               break;
 
             default:
               yield* Effect.logWarning(
-                `Unknown primitive type in alarm: ${meta.type}`
+                `Unknown job type in alarm: ${meta.type}`
               );
           }
         }),

@@ -1,4 +1,4 @@
-// packages/primitives/test/services/alarm.test.ts
+// packages/jobs/test/services/alarm.test.ts
 
 import { describe, it, expect } from "vitest";
 import { Effect, Layer, Duration } from "effect";

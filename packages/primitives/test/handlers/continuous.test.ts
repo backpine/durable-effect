@@ -1,4 +1,4 @@
-// packages/primitives/test/handlers/continuous.test.ts
+// packages/jobs/test/handlers/continuous.test.ts
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { Effect, Layer, Schema, Duration } from "effect";
@@ -119,8 +119,8 @@ const createTestRegistry = (): PrimitiveRegistry => ({
     ["terminating", { ...terminatingPrimitive, name: "terminating" }],
     ["terminating-keep-state", { ...terminatingKeepStatePrimitive, name: "terminating-keep-state" }],
   ]),
-  buffer: new Map(),
-  queue: new Map(),
+  debounce: new Map(),
+  workerPool: new Map(),
 });
 
 // =============================================================================

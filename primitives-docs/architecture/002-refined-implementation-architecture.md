@@ -1,12 +1,12 @@
-# Refined Primitives Implementation Architecture
+# Refined Jobs Implementation Architecture
 
 ## The Core Insight
 
 **The Durable Object should be a thin shell that only provides storage and alarm capabilities.**
 
-The previous design (`001-implementation-architecture.md`) had the DO class implementing RPC methods for every primitive operation (`continuousStart`, `bufferAdd`, `queueEnqueue`, etc.). This couples the DO to primitive types and makes the architecture rigid.
+The previous design (`001-implementation-architecture.md`) had the DO class implementing RPC methods for every primitive operation (`continuousStart`, `debounceAdd`, `workerPoolEnworkerPool`, etc.). This couples the DO to primitive types and makes the architecture rigid.
 
-**Better approach:** Insert a **Primitives Runtime** layer between the DO and primitive handlers. This runtime:
+**Better approach:** Insert a **Jobs Runtime** layer between the DO and primitive handlers. This runtime:
 - Takes raw storage + alarm capabilities as input
 - Provides higher-level services (state management, scheduling, idempotency)
 - Routes requests to primitive handlers
@@ -19,22 +19,22 @@ The previous design (`001-implementation-architecture.md`) had the DO class impl
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              USER CODE                                       │
-│  const { Primitives, PrimitivesClient } = createDurablePrimitives({...})    │
+│  const { Jobs, JobsClient } = createDurableJobs({...})    │
 └─────────────────────────────────────────────────────────────────────────────┘
                                      │
                                      ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              CLIENT                                          │
 │                                                                              │
-│  PrimitivesClient.fromBinding(env.PRIMITIVES)                               │
+│  JobsClient.fromBinding(env.PRIMITIVES)                               │
 │    • Resolves instance ID: `{type}:{name}:{id}`                             │
 │    • Creates typed request                                                   │
 │    • Calls DO.call(request)                                                  │
 │                                                                              │
 │  Methods:                                                                    │
 │    continuous(name).start({ id, input }) → call({ type, action, ... })      │
-│    buffer(name).add({ id, event }) → call({ type, action, ... })            │
-│    queue(name).enqueue({ id, event }) → call({ type, action, ... })         │
+│    debounce(name).add({ id, event }) → call({ type, action, ... })            │
+│    workerPool(name).enworkerPool({ id, event }) → call({ type, action, ... })         │
 └─────────────────────────────────────────────────────────────────────────────┘
                                      │
                                      │ DO RPC: call(request), alarm()
@@ -42,11 +42,11 @@ The previous design (`001-implementation-architecture.md`) had the DO class impl
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     DURABLE OBJECT (Thin Shell)                              │
 │                                                                              │
-│  class DurablePrimitivesEngine extends DurableObject {                      │
-│    #runtime: PrimitivesRuntime;                                             │
+│  class DurableJobsEngine extends DurableObject {                      │
+│    #runtime: JobsRuntime;                                             │
 │                                                                              │
 │    constructor(state, env) {                                                │
-│      this.#runtime = createPrimitivesRuntime({                              │
+│      this.#runtime = createJobsRuntime({                              │
 │        doState: state,                                                       │
 │        registry: env.__REGISTRY__,                                          │
 │        tracker: env.__TRACKER_CONFIG__,                                     │
@@ -78,18 +78,18 @@ The previous design (`001-implementation-architecture.md`) had the DO class impl
 │                       PRIMITIVES RUNTIME                                     │
 │                    (The swappable abstraction layer)                         │
 │                                                                              │
-│  interface PrimitivesRuntime {                                               │
+│  interface JobsRuntime {                                               │
 │    handle(request: PrimitiveRequest): Promise<PrimitiveResponse>;           │
 │    handleAlarm(): Promise<void>;                                            │
 │    flush(): Promise<void>;                                                  │
 │  }                                                                           │
 │                                                                              │
-│  createPrimitivesRuntime(config) → PrimitivesRuntime                        │
+│  createJobsRuntime(config) → JobsRuntime                        │
 │                                                                              │
 │  Internally uses Effect and builds a layer stack:                           │
 │    ┌─────────────────────────────────────────────────────────────────────┐  │
 │    │                         Dispatcher                                   │  │
-│    │  • Parses request type (continuous/buffer/queue)                    │  │
+│    │  • Parses request type (continuous/debounce/workerPool)                    │  │
 │    │  • Routes to correct handler                                         │  │
 │    │  • handleAlarm() reads metadata to determine type, then routes      │  │
 │    └─────────────────────────────────────────────────────────────────────┘  │
@@ -99,11 +99,11 @@ The previous design (`001-implementation-architecture.md`) had the DO class impl
 │    │                    Primitive Handlers                                │  │
 │    │                                                                      │  │
 │    │  ContinuousHandler { handle(req), handleAlarm() }                   │  │
-│    │  BufferHandler { handle(req), handleAlarm() }                       │  │
-│    │  QueueHandler { handle(req), handleAlarm() }                        │  │
+│    │  DebounceHandler { handle(req), handleAlarm() }                       │  │
+│    │  WorkerPoolHandler { handle(req), handleAlarm() }                        │  │
 │    │                                                                      │  │
 │    │  Each handler knows its primitive's logic:                          │  │
-│    │    • What operations it supports (start, stop, add, enqueue, etc.)  │  │
+│    │    • What operations it supports (start, stop, add, enworkerPool, etc.)  │  │
 │    │    • How to execute user functions                                   │  │
 │    │    • When to schedule alarms                                         │  │
 │    └─────────────────────────────────────────────────────────────────────┘  │
@@ -176,7 +176,7 @@ The previous design (`001-implementation-architecture.md`) had the DO class impl
 | **Services wrap adapters** | Higher-level services (EntityStateService, AlarmService) provide Duration support, schema validation, etc. on top of raw adapters. |
 | **Handlers are independent** | Each primitive handler is self-contained. Adding a new primitive doesn't touch DO or runtime - just add a new handler. |
 | **Client does routing** | Instance ID resolution (`{type}:{name}:{id}`) happens in client, not DO. |
-| **Names from object keys** | Primitive definitions do NOT take a `name` parameter. The name is derived from the key in `createDurablePrimitives()`. |
+| **Names from object keys** | Primitive definitions do NOT take a `name` parameter. The name is derived from the key in `createDurableJobs()`. |
 
 ---
 
@@ -193,7 +193,7 @@ const tokenRefresher = Continuous.make({
 });
 
 // Name comes from object key
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
+const { Jobs, JobsClient } = createDurableJobs({
   tokenRefresher,  // ← This key IS the name
   otherPrimitive,
 });
@@ -208,10 +208,10 @@ client.continuous("tokenRefresher").start({ ... });
 3. **Type inference** - TypeScript infers available names from the object keys
 4. **Consistency** - Matches patterns in Effect ecosystem (e.g., Effect Schema, Context Tags)
 
-The `createDurablePrimitives()` factory assigns names to definitions during registration:
+The `createDurableJobs()` factory assigns names to definitions during registration:
 
 ```ts
-function createDurablePrimitives<T extends Record<string, AnyPrimitiveDefinition>>(
+function createDurableJobs<T extends Record<string, AnyPrimitiveDefinition>>(
   definitions: T
 ) {
   const registry = createPrimitiveRegistry();
@@ -235,8 +235,8 @@ The client creates typed requests, and the runtime returns typed responses:
 // Request types
 type PrimitiveRequest =
   | ContinuousRequest
-  | BufferRequest
-  | QueueRequest;
+  | DebounceRequest
+  | WorkerPoolRequest;
 
 interface ContinuousRequest {
   readonly type: "continuous";
@@ -247,8 +247,8 @@ interface ContinuousRequest {
   readonly reason?: string;  // For stop
 }
 
-interface BufferRequest {
-  readonly type: "buffer";
+interface DebounceRequest {
+  readonly type: "debounce";
   readonly action: "add" | "flush" | "clear" | "status" | "getState";
   readonly name: string;
   readonly id: string;
@@ -256,9 +256,9 @@ interface BufferRequest {
   readonly eventId?: string; // For add (idempotency)
 }
 
-interface QueueRequest {
-  readonly type: "queue";
-  readonly action: "enqueue" | "pause" | "resume" | "cancel" | "status" | "drain";
+interface WorkerPoolRequest {
+  readonly type: "workerPool";
+  readonly action: "enworkerPool" | "pause" | "resume" | "cancel" | "status" | "drain";
   readonly name: string;
   readonly instanceIndex: number;  // Client already resolved this
   readonly eventId?: string;
@@ -270,9 +270,9 @@ type PrimitiveResponse =
   | ContinuousStartResponse
   | ContinuousStopResponse
   | ContinuousStatusResponse
-  | BufferAddResponse
-  | BufferFlushResponse
-  | QueueEnqueueResponse
+  | DebounceAddResponse
+  | DebounceFlushResponse
+  | WorkerPoolEnworkerPoolResponse
   // ... etc
 ```
 
@@ -281,23 +281,23 @@ type PrimitiveResponse =
 ## Runtime Implementation
 
 ```ts
-// packages/primitives/src/runtime/runtime.ts
+// packages/jobs/src/runtime/runtime.ts
 
-interface PrimitivesRuntimeConfig {
+interface JobsRuntimeConfig {
   readonly doState: DurableObjectState;
   readonly registry: PrimitiveRegistry;
   readonly tracker?: TrackerConfig;
 }
 
-interface PrimitivesRuntime {
+interface JobsRuntime {
   readonly handle: (request: PrimitiveRequest) => Promise<PrimitiveResponse>;
   readonly handleAlarm: () => Promise<void>;
   readonly flush: () => Promise<void>;
 }
 
-export function createPrimitivesRuntime(
-  config: PrimitivesRuntimeConfig
-): PrimitivesRuntime {
+export function createJobsRuntime(
+  config: JobsRuntimeConfig
+): JobsRuntime {
   // Build the Effect layer stack
   const coreLayer = createDurableObjectRuntime(config.doState);
 
@@ -347,14 +347,14 @@ export function createPrimitivesRuntime(
 ## Dispatcher Implementation
 
 ```ts
-// packages/primitives/src/runtime/dispatcher.ts
+// packages/jobs/src/runtime/dispatcher.ts
 
 interface DispatcherService {
   readonly handle: (request: PrimitiveRequest) => Effect.Effect<PrimitiveResponse, PrimitiveError>;
   readonly handleAlarm: () => Effect.Effect<void, PrimitiveError>;
 }
 
-class Dispatcher extends Context.Tag("@durable-effect/primitives/Dispatcher")<
+class Dispatcher extends Context.Tag("@durable-effect/jobs/Dispatcher")<
   Dispatcher,
   DispatcherService
 >() {}
@@ -364,8 +364,8 @@ const DispatcherLayer = Layer.effect(
   Effect.gen(function* () {
     const metadata = yield* MetadataService;
     const continuous = yield* ContinuousHandler;
-    const buffer = yield* BufferHandler;
-    const queue = yield* QueueHandler;
+    const debounce = yield* DebounceHandler;
+    const workerPool = yield* WorkerPoolHandler;
 
     return {
       handle: (request: PrimitiveRequest) =>
@@ -373,10 +373,10 @@ const DispatcherLayer = Layer.effect(
           switch (request.type) {
             case "continuous":
               return yield* continuous.handle(request);
-            case "buffer":
-              return yield* buffer.handle(request);
-            case "queue":
-              return yield* queue.handle(request);
+            case "debounce":
+              return yield* debounce.handle(request);
+            case "workerPool":
+              return yield* workerPool.handle(request);
             default:
               return yield* Effect.fail(new UnknownPrimitiveTypeError(request));
           }
@@ -394,10 +394,10 @@ const DispatcherLayer = Layer.effect(
           switch (meta.type) {
             case "continuous":
               return yield* continuous.handleAlarm();
-            case "buffer":
-              return yield* buffer.handleAlarm();
-            case "queue":
-              return yield* queue.handleAlarm();
+            case "debounce":
+              return yield* debounce.handleAlarm();
+            case "workerPool":
+              return yield* workerPool.handleAlarm();
             default:
               // Unknown type - log and ignore
               console.warn(`Unknown primitive type in alarm: ${meta.type}`);
@@ -415,10 +415,10 @@ const DispatcherLayer = Layer.effect(
 ### MetadataService
 
 ```ts
-// packages/primitives/src/services/metadata.ts
+// packages/jobs/src/services/metadata.ts
 
 interface PrimitiveMetadata {
-  readonly type: "continuous" | "buffer" | "queue";
+  readonly type: "continuous" | "debounce" | "workerPool";
   readonly name: string;
   readonly status: PrimitiveStatus;
   readonly createdAt: number;
@@ -428,7 +428,7 @@ interface PrimitiveMetadata {
 type PrimitiveStatus =
   | "initializing"
   | "running"
-  | "buffering"
+  | "debounceing"
   | "processing"
   | "idle"
   | "paused"
@@ -450,7 +450,7 @@ interface MetadataServiceI {
   readonly delete: () => Effect.Effect<void, StorageError>;
 }
 
-class MetadataService extends Context.Tag("@durable-effect/primitives/MetadataService")<
+class MetadataService extends Context.Tag("@durable-effect/jobs/MetadataService")<
   MetadataService,
   MetadataServiceI
 >() {}
@@ -493,7 +493,7 @@ const MetadataServiceLayer = Layer.effect(
 ### EntityStateService
 
 ```ts
-// packages/primitives/src/services/entity-state.ts
+// packages/jobs/src/services/entity-state.ts
 
 interface EntityStateServiceI<S> {
   readonly get: () => Effect.Effect<S | null, StorageError>;
@@ -551,7 +551,7 @@ function createEntityStateService<S>(
 ### AlarmService
 
 ```ts
-// packages/primitives/src/services/alarm.ts
+// packages/jobs/src/services/alarm.ts
 
 interface AlarmServiceI {
   readonly schedule: (
@@ -563,7 +563,7 @@ interface AlarmServiceI {
   readonly getScheduled: () => Effect.Effect<number | undefined, SchedulerError>;
 }
 
-class AlarmService extends Context.Tag("@durable-effect/primitives/AlarmService")<
+class AlarmService extends Context.Tag("@durable-effect/jobs/AlarmService")<
   AlarmService,
   AlarmServiceI
 >() {}
@@ -604,14 +604,14 @@ const AlarmServiceLayer = Layer.effect(
 ### IdempotencyService
 
 ```ts
-// packages/primitives/src/services/idempotency.ts
+// packages/jobs/src/services/idempotency.ts
 
 interface IdempotencyServiceI {
   readonly check: (eventId: string) => Effect.Effect<boolean, StorageError>;
   readonly mark: (eventId: string) => Effect.Effect<void, StorageError>;
 }
 
-class IdempotencyService extends Context.Tag("@durable-effect/primitives/IdempotencyService")<
+class IdempotencyService extends Context.Tag("@durable-effect/jobs/IdempotencyService")<
   IdempotencyService,
   IdempotencyServiceI
 >() {}
@@ -648,14 +648,14 @@ const IdempotencyServiceLayer = Layer.effect(
 Each primitive implements a handler with `handle(request)` and `handleAlarm()`:
 
 ```ts
-// packages/primitives/src/handlers/continuous/handler.ts
+// packages/jobs/src/handlers/continuous/handler.ts
 
 interface ContinuousHandlerI {
   readonly handle: (request: ContinuousRequest) => Effect.Effect<ContinuousResponse, PrimitiveError>;
   readonly handleAlarm: () => Effect.Effect<void, PrimitiveError>;
 }
 
-class ContinuousHandler extends Context.Tag("@durable-effect/primitives/ContinuousHandler")<
+class ContinuousHandler extends Context.Tag("@durable-effect/jobs/ContinuousHandler")<
   ContinuousHandler,
   ContinuousHandlerI
 >() {}
@@ -802,7 +802,7 @@ Create `primatives/api/00X-timer-primitive-api-design.md` with:
 ### Step 2: Create Handler
 
 ```
-packages/primitives/src/handlers/timer/
+packages/jobs/src/handlers/timer/
 ├── index.ts
 ├── handler.ts      # TimerHandler with handle() and handleAlarm()
 ├── executor.ts     # TimerExecutor - runs user's execute function
@@ -812,12 +812,12 @@ packages/primitives/src/handlers/timer/
 ### Step 3: Register Handler
 
 ```ts
-// packages/primitives/src/handlers/index.ts
+// packages/jobs/src/handlers/index.ts
 export const PrimitiveHandlersLayer = (registry: PrimitiveRegistry) =>
   Layer.mergeAll(
     ContinuousHandlerLayer(registry),
-    BufferHandlerLayer(registry),
-    QueueHandlerLayer(registry),
+    DebounceHandlerLayer(registry),
+    WorkerPoolHandlerLayer(registry),
     TimerHandlerLayer(registry),  // Add new handler
   );
 ```
@@ -825,11 +825,11 @@ export const PrimitiveHandlersLayer = (registry: PrimitiveRegistry) =>
 ### Step 4: Update Dispatcher
 
 ```ts
-// packages/primitives/src/runtime/dispatcher.ts
+// packages/jobs/src/runtime/dispatcher.ts
 switch (request.type) {
   case "continuous": ...
-  case "buffer": ...
-  case "queue": ...
+  case "debounce": ...
+  case "workerPool": ...
   case "timer":                    // Add new case
     return yield* timer.handle(request);
 }
@@ -838,7 +838,7 @@ switch (request.type) {
 ### Step 5: Add Client Methods
 
 ```ts
-// packages/primitives/src/client/client.ts
+// packages/jobs/src/client/client.ts
 timer: (name: string) => ({
   start: ({ id, duration }) => {
     const instanceId = `timer:${name}:${id}`;
@@ -855,7 +855,7 @@ timer: (name: string) => ({
 }),
 ```
 
-**Notice:** The DO class is NOT modified. Adding primitives only touches:
+**Notice:** The DO class is NOT modified. Adding jobs only touches:
 - Handler code
 - Dispatcher switch cases
 - Client methods
@@ -865,9 +865,9 @@ timer: (name: string) => ({
 ## Storage Key Namespace
 
 ```ts
-// packages/primitives/src/storage-keys.ts
+// packages/jobs/src/storage-keys.ts
 export const KEYS = {
-  // Metadata (all primitives)
+  // Metadata (all jobs)
   META: "meta",
 
   // User state
@@ -879,13 +879,13 @@ export const KEYS = {
     LAST_EXECUTED_AT: "cont:lastAt",
   },
 
-  // Buffer-specific
+  // Debounce-specific
   BUFFER: {
     EVENT_COUNT: "buf:count",
     STARTED_AT: "buf:startedAt",
   },
 
-  // Queue-specific
+  // WorkerPool-specific
   QUEUE: {
     EVENTS: "q:events:",      // prefix: q:events:{eventId}
     PENDING: "q:pending",     // array of pending event IDs
@@ -909,9 +909,9 @@ The runtime is platform-agnostic, making testing straightforward:
 ```ts
 // test/helpers.ts
 import { createTestRuntime } from "@durable-effect/core";
-import { createPrimitivesRuntime } from "@durable-effect/primitives";
+import { createJobsRuntime } from "@durable-effect/jobs";
 
-export async function createTestPrimitivesRuntime(
+export async function createTestJobsRuntime(
   registry: PrimitiveRegistry
 ) {
   const { layer: coreLayer, handles } = await Effect.runPromise(
@@ -919,7 +919,7 @@ export async function createTestPrimitivesRuntime(
   );
 
   // Create runtime using test adapters
-  const runtime = createPrimitivesRuntimeFromLayer(coreLayer, registry);
+  const runtime = createJobsRuntimeFromLayer(coreLayer, registry);
 
   return {
     runtime,
@@ -930,7 +930,7 @@ export async function createTestPrimitivesRuntime(
 // test/continuous.test.ts
 describe("Continuous", () => {
   it("executes on schedule", async () => {
-    const { runtime, handles } = await createTestPrimitivesRuntime({
+    const { runtime, handles } = await createTestJobsRuntime({
       continuous: new Map([["tokenRefresher", tokenRefresherDef]]),
     });
 
@@ -968,13 +968,13 @@ describe("Continuous", () => {
 
 ### Phase 1: Runtime Foundation
 
-**Goal:** Build the runtime infrastructure without any primitives.
+**Goal:** Build the runtime infrastructure without any jobs.
 
 ```
-packages/primitives/src/
+packages/jobs/src/
 ├── runtime/
 │   ├── index.ts
-│   ├── runtime.ts          # createPrimitivesRuntime
+│   ├── runtime.ts          # createJobsRuntime
 │   ├── dispatcher.ts       # Dispatcher (empty switch for now)
 │   └── types.ts            # PrimitiveRequest, PrimitiveResponse
 ├── services/
@@ -995,20 +995,20 @@ packages/primitives/src/
 **Goal:** Build the thin DO class and client routing.
 
 ```
-packages/primitives/src/
+packages/jobs/src/
 ├── engine/
 │   ├── index.ts
-│   ├── engine.ts           # DurablePrimitivesEngine (thin shell)
+│   ├── engine.ts           # DurableJobsEngine (thin shell)
 │   └── types.ts
 ├── client/
 │   ├── index.ts
-│   ├── client.ts           # PrimitivesClient factory
+│   ├── client.ts           # JobsClient factory
 │   └── types.ts
 ├── registry/
 │   ├── index.ts
 │   ├── registry.ts         # createPrimitiveRegistry
 │   └── types.ts
-└── factory.ts              # createDurablePrimitives
+└── factory.ts              # createDurableJobs
 ```
 
 **Tests:** Integration tests with mock DO bindings.
@@ -1018,7 +1018,7 @@ packages/primitives/src/
 **Goal:** Implement first primitive handler.
 
 ```
-packages/primitives/src/
+packages/jobs/src/
 └── handlers/
     ├── index.ts
     └── continuous/
@@ -1031,12 +1031,12 @@ packages/primitives/src/
 
 **Tests:** Full lifecycle tests (start, alarm, stop, trigger).
 
-### Phase 4: Buffer Handler
+### Phase 4: Debounce Handler
 
 ```
-packages/primitives/src/
+packages/jobs/src/
 └── handlers/
-    └── buffer/
+    └── debounce/
         ├── index.ts
         ├── handler.ts
         ├── executor.ts
@@ -1046,12 +1046,12 @@ packages/primitives/src/
 
 **Tests:** Event accumulation, flush triggers, idempotency.
 
-### Phase 5: Queue Handler
+### Phase 5: WorkerPool Handler
 
 ```
-packages/primitives/src/
+packages/jobs/src/
 └── handlers/
-    └── queue/
+    └── workerPool/
         ├── index.ts
         ├── handler.ts
         ├── executor.ts
@@ -1067,18 +1067,18 @@ packages/primitives/src/
 ## File Structure
 
 ```
-packages/primitives/
+packages/jobs/
 ├── package.json
 ├── tsconfig.json
 └── src/
     ├── index.ts                  # Public exports
-    ├── factory.ts                # createDurablePrimitives
+    ├── factory.ts                # createDurableJobs
     ├── storage-keys.ts           # Centralized storage keys
     ├── errors.ts                 # Error types
     │
     ├── runtime/
     │   ├── index.ts
-    │   ├── runtime.ts            # createPrimitivesRuntime
+    │   ├── runtime.ts            # createJobsRuntime
     │   ├── dispatcher.ts         # Dispatcher service
     │   └── types.ts              # Request/Response types
     │
@@ -1091,12 +1091,12 @@ packages/primitives/
     │
     ├── engine/
     │   ├── index.ts
-    │   ├── engine.ts             # DurablePrimitivesEngine (thin!)
+    │   ├── engine.ts             # DurableJobsEngine (thin!)
     │   └── types.ts
     │
     ├── client/
     │   ├── index.ts
-    │   ├── client.ts             # PrimitivesClient factory
+    │   ├── client.ts             # JobsClient factory
     │   └── types.ts
     │
     ├── registry/
@@ -1113,25 +1113,25 @@ packages/primitives/
     │   │   ├── context.ts
     │   │   ├── definition.ts     # Continuous.make()
     │   │   └── types.ts
-    │   ├── buffer/
+    │   ├── debounce/
     │   │   ├── index.ts
     │   │   ├── handler.ts
     │   │   ├── executor.ts
     │   │   ├── context.ts
-    │   │   ├── definition.ts     # Buffer.make()
+    │   │   ├── definition.ts     # Debounce.make()
     │   │   └── types.ts
-    │   └── queue/
+    │   └── workerPool/
     │       ├── index.ts
     │       ├── handler.ts
     │       ├── executor.ts
     │       ├── context.ts
-    │       ├── definition.ts     # Queue.make()
+    │       ├── definition.ts     # WorkerPool.make()
     │       ├── backoff.ts
     │       └── types.ts
     │
     └── testing/
         ├── index.ts
-        └── helpers.ts            # createTestPrimitivesRuntime
+        └── helpers.ts            # createTestJobsRuntime
 
 test/
 ├── services/
@@ -1141,8 +1141,8 @@ test/
 │   └── idempotency.test.ts
 ├── handlers/
 │   ├── continuous.test.ts
-│   ├── buffer.test.ts
-│   └── queue.test.ts
+│   ├── debounce.test.ts
+│   └── workerPool.test.ts
 └── integration/
     └── runtime.test.ts
 ```
@@ -1155,7 +1155,7 @@ This refined architecture provides:
 
 1. **Thin DO shell** - The DO class has exactly 2 methods: `call()` and `alarm()`. It knows nothing about primitive types.
 
-2. **Swappable runtime** - The `PrimitivesRuntime` can be backed by DO storage, in-memory storage, or any other implementation. This makes testing trivial.
+2. **Swappable runtime** - The `JobsRuntime` can be backed by DO storage, in-memory storage, or any other implementation. This makes testing trivial.
 
 3. **Clean service layer** - Higher-level services (MetadataService, EntityStateService, AlarmService, IdempotencyService) provide Duration support, schema validation, etc. on top of raw adapters.
 
@@ -1165,4 +1165,4 @@ This refined architecture provides:
 
 6. **Leverages core** - All platform adapters come from `@durable-effect/core`, ensuring consistency with the workflow package.
 
-The key insight: **The DO is just a platform that provides storage + alarm. The Primitives Runtime is the abstraction layer that makes everything else possible.**
+The key insight: **The DO is just a platform that provides storage + alarm. The Jobs Runtime is the abstraction layer that makes everything else possible.**

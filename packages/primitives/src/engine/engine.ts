@@ -1,22 +1,22 @@
-// packages/primitives/src/engine/engine.ts
+// packages/jobs/src/engine/engine.ts
 
 import { DurableObject } from "cloudflare:workers";
 import {
-  createPrimitivesRuntime,
-  type PrimitivesRuntime,
+  createJobsRuntime,
+  type JobsRuntime,
 } from "../runtime/runtime";
-import type { PrimitiveRequest, PrimitiveResponse } from "../runtime/types";
+import type { JobRequest, JobResponse } from "../runtime/types";
 import type {
-  DurablePrimitivesEngineInterface,
-  PrimitivesEngineConfig,
+  DurableJobsEngineInterface,
+  JobsEngineConfig,
 } from "./types";
 
 // =============================================================================
-// Durable Primitives Engine
+// Durable Jobs Engine
 // =============================================================================
 
 /**
- * The Durable Object class for primitives.
+ * The Durable Object class for jobs.
  *
  * This is a THIN SHELL that:
  * 1. Creates the runtime in constructor
@@ -24,7 +24,7 @@ import type {
  * 3. Delegates `alarm()` to `runtime.handleAlarm()`
  * 4. Flushes events via `ctx.waitUntil()`
  *
- * The engine knows NOTHING about primitive types. It just:
+ * The engine knows NOTHING about job types. It just:
  * - Creates the runtime
  * - Delegates to runtime.handle() and runtime.handleAlarm()
  * - Flushes events
@@ -33,57 +33,57 @@ import type {
  * ```ts
  * // In your worker's wrangler.toml:
  * // [[durable_objects.bindings]]
- * // name = "PRIMITIVES"
- * // class_name = "DurablePrimitivesEngine"
+ * // name = "JOBS"
+ * // class_name = "DurableJobsEngine"
  *
- * // The engine is created via createDurablePrimitives():
- * const { Primitives } = createDurablePrimitives({
- *   primitives: { tokenRefresher, webhookBuffer, emailQueue },
+ * // The engine is created via createDurableJobs():
+ * const { Jobs } = createDurableJobs({
+ *   jobs: { tokenRefresher, webhookDebounce, emailWorkerPool },
  * });
  *
- * export { Primitives };
+ * export { Jobs };
  * ```
  */
-export class DurablePrimitivesEngine
+export class DurableJobsEngine
   extends DurableObject
-  implements DurablePrimitivesEngineInterface
+  implements DurableJobsEngineInterface
 {
   /**
-   * The runtime that handles all primitive operations.
+   * The runtime that handles all job operations.
    */
-  readonly #runtime: PrimitivesRuntime;
+  readonly #runtime: JobsRuntime;
 
   /**
-   * Create a new primitives engine instance.
+   * Create a new jobs engine instance.
    *
    * @param state - Durable Object state (provides storage + alarm)
    * @param env - Environment with config injected
    */
-  constructor(state: DurableObjectState, env: PrimitivesEngineConfig) {
+  constructor(state: DurableObjectState, env: JobsEngineConfig) {
     super(state, env);
 
-    if (!env.__PRIMITIVE_REGISTRY__) {
-      throw new Error("DurablePrimitivesEngine requires __PRIMITIVE_REGISTRY__ in env");
+    if (!env.__JOB_REGISTRY__) {
+      throw new Error("DurableJobsEngine requires __JOB_REGISTRY__ in env");
     }
 
     // Create the runtime with DO state and registry
     // The runtime handles all Effect complexity
-    this.#runtime = createPrimitivesRuntime({
+    this.#runtime = createJobsRuntime({
       doState: state,
-      registry: env.__PRIMITIVE_REGISTRY__,
+      registry: env.__JOB_REGISTRY__,
     });
   }
 
   /**
-   * Handle a primitive request.
+   * Handle a job request.
    *
-   * ONE generic RPC method - NOT one per primitive operation.
-   * The DO doesn't know about primitive types.
+   * ONE generic RPC method - NOT one per job operation.
+   * The DO doesn't know about job types.
    *
    * @param request - The typed request from the client
    * @returns The typed response
    */
-  async call(request: PrimitiveRequest): Promise<PrimitiveResponse> {
+  async call(request: JobRequest): Promise<JobResponse> {
     // Delegate to runtime
     const result = await this.#runtime.handle(request);
 
@@ -96,7 +96,7 @@ export class DurablePrimitivesEngine
   /**
    * Handle an alarm.
    *
-   * The runtime reads metadata to determine primitive type,
+   * The runtime reads metadata to determine job type,
    * then delegates to the appropriate handler.
    */
   async alarm(): Promise<void> {

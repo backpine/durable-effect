@@ -12,9 +12,9 @@ const TokenRefresher = Continuous.make("token-refresher", {
   execute: ...
 });
 
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
-  primitives: {
-    TokenRefresher,  // Wrapped in "primitives" object
+const { Jobs, JobsClient } = createDurableJobs({
+  jobs: {
+    TokenRefresher,  // Wrapped in "jobs" object
   },
 });
 ```
@@ -22,14 +22,14 @@ const { Primitives, PrimitivesClient } = createDurablePrimitives({
 This design has problems:
 1. **Redundant** - The name is specified twice (in `make()` and as the object key)
 2. **Inconsistent** - The name in `make()` could differ from the object key
-3. **Verbose** - Extra `primitives: {}` wrapper is unnecessary
+3. **Verbose** - Extra `jobs: {}` wrapper is unnecessary
 4. **Poor DX** - Refactoring a name requires changes in multiple places
 
 ---
 
 ## Target Design
 
-The name should come from the object key in `createDurablePrimitives()`:
+The name should come from the object key in `createDurableJobs()`:
 
 ```ts
 // Target (CORRECT)
@@ -46,7 +46,7 @@ const tokenRefresher = Continuous.make({
 });
 
 // Name comes from key - no wrapper object
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
+const { Jobs, JobsClient } = createDurableJobs({
   tokenRefresher,
   anotherPrimitive,
 });
@@ -86,7 +86,7 @@ interface ContinuousConfig<S, E, R> {
 // Definition with name (after registration)
 interface ContinuousDefinition<S, E, R> extends ContinuousConfig<S, E, R> {
   readonly _tag: "ContinuousDefinition";
-  readonly name: string;  // Added by createDurablePrimitives
+  readonly name: string;  // Added by createDurableJobs
 }
 ```
 
@@ -143,15 +143,15 @@ export const Continuous = {
 
 **Current:**
 ```ts
-interface CreateDurablePrimitivesOptions<T> {
-  primitives: T;  // ← Remove wrapper
+interface CreateDurableJobsOptions<T> {
+  jobs: T;  // ← Remove wrapper
   tracker?: TrackerConfig;
 }
 
-export function createDurablePrimitives<
+export function createDurableJobs<
   T extends Record<string, AnyPrimitiveDefinition>
->(options: CreateDurablePrimitivesOptions<T>) {
-  const { primitives: definitions } = options;
+>(options: CreateDurableJobsOptions<T>) {
+  const { jobs: definitions } = options;
   // ...
 }
 ```
@@ -161,18 +161,18 @@ export function createDurablePrimitives<
 // Unregistered definition types (no name)
 type AnyUnregisteredDefinition =
   | UnregisteredContinuousDefinition<any, any, any>
-  | UnregisteredBufferDefinition<any, any, any, any>
-  | UnregisteredQueueDefinition<any, any, any>;
+  | UnregisteredDebounceDefinition<any, any, any, any>
+  | UnregisteredWorkerPoolDefinition<any, any, any>;
 
-interface CreateDurablePrimitivesOptions {
+interface CreateDurableJobsOptions {
   readonly tracker?: TrackerConfig;
 }
 
-export function createDurablePrimitives<
+export function createDurableJobs<
   T extends Record<string, AnyUnregisteredDefinition>
 >(
   definitions: T,
-  options?: CreateDurablePrimitivesOptions
+  options?: CreateDurableJobsOptions
 ) {
   // Create registry
   const registry = createEmptyRegistry();
@@ -185,11 +185,11 @@ export function createDurablePrimitives<
       case "ContinuousDefinition":
         registry.continuous.set(name, registeredDef as ContinuousDefinition<any, any, any>);
         break;
-      case "BufferDefinition":
-        registry.buffer.set(name, registeredDef as BufferDefinition<any, any, any, any>);
+      case "DebounceDefinition":
+        registry.debounce.set(name, registeredDef as DebounceDefinition<any, any, any, any>);
         break;
-      case "QueueDefinition":
-        registry.queue.set(name, registeredDef as QueueDefinition<any, any, any>);
+      case "WorkerPoolDefinition":
+        registry.workerPool.set(name, registeredDef as WorkerPoolDefinition<any, any, any>);
         break;
     }
   }
@@ -207,8 +207,8 @@ export function createDurablePrimitives<
 ```ts
 interface PrimitiveRegistry {
   readonly continuous: Map<string, ContinuousDefinition<any, any, any>>;
-  readonly buffer: Map<string, BufferDefinition<any, any, any, any>>;
-  readonly queue: Map<string, QueueDefinition<any, any, any>>;
+  readonly debounce: Map<string, DebounceDefinition<any, any, any, any>>;
+  readonly workerPool: Map<string, WorkerPoolDefinition<any, any, any>>;
 }
 ```
 
@@ -218,8 +218,8 @@ interface PrimitiveRegistry {
 function createEmptyRegistry(): PrimitiveRegistry {
   return {
     continuous: new Map(),
-    buffer: new Map(),
-    queue: new Map(),
+    debounce: new Map(),
+    workerPool: new Map(),
   };
 }
 
@@ -229,13 +229,13 @@ type InferRegistryFromDefinitions<T extends Record<string, AnyUnregisteredDefini
     Extract<{ [K in keyof T]: T[K] extends UnregisteredContinuousDefinition<any, any, any> ? K : never }[keyof T], string>,
     ContinuousDefinition<any, any, any>
   >;
-  readonly buffer: Map<
-    Extract<{ [K in keyof T]: T[K] extends UnregisteredBufferDefinition<any, any, any, any> ? K : never }[keyof T], string>,
-    BufferDefinition<any, any, any, any>
+  readonly debounce: Map<
+    Extract<{ [K in keyof T]: T[K] extends UnregisteredDebounceDefinition<any, any, any, any> ? K : never }[keyof T], string>,
+    DebounceDefinition<any, any, any, any>
   >;
-  readonly queue: Map<
-    Extract<{ [K in keyof T]: T[K] extends UnregisteredQueueDefinition<any, any, any> ? K : never }[keyof T], string>,
-    QueueDefinition<any, any, any>
+  readonly workerPool: Map<
+    Extract<{ [K in keyof T]: T[K] extends UnregisteredWorkerPoolDefinition<any, any, any> ? K : never }[keyof T], string>,
+    WorkerPoolDefinition<any, any, any>
   >;
   readonly __definitions: T;
 };
@@ -295,7 +295,7 @@ User defines:
   → UnregisteredContinuousDefinition<S, E, R>  (no name)
 
 User registers:
-  createDurablePrimitives({ tokenRefresher, ... })
+  createDurableJobs({ tokenRefresher, ... })
   → Factory adds name from key
   → ContinuousDefinition<S, E, R>  (has name: "tokenRefresher")
   → Registry stores it
@@ -373,12 +373,12 @@ Flatten the API:
 
 ```ts
 // src/factory.ts
-export function createDurablePrimitives<
+export function createDurableJobs<
   T extends Record<string, AnyUnregisteredDefinition>
 >(
   definitions: T,
   options?: { tracker?: TrackerConfig }
-): CreateDurablePrimitivesResult<T> {
+): CreateDurableJobsResult<T> {
   const registry = createEmptyRegistry();
 
   // Register with names from keys
@@ -388,11 +388,11 @@ export function createDurablePrimitives<
       case "ContinuousDefinition":
         registry.continuous.set(name, registered);
         break;
-      case "BufferDefinition":
-        registry.buffer.set(name, registered);
+      case "DebounceDefinition":
+        registry.debounce.set(name, registered);
         break;
-      case "QueueDefinition":
-        registry.queue.set(name, registered);
+      case "WorkerPoolDefinition":
+        registry.workerPool.set(name, registered);
         break;
     }
   }
@@ -401,36 +401,36 @@ export function createDurablePrimitives<
 }
 ```
 
-### Step 4: Update Buffer and Queue
+### Step 4: Update Debounce and WorkerPool
 
 Apply same pattern:
 
 ```ts
-// src/definitions/buffer.ts
-export const Buffer = {
+// src/definitions/debounce.ts
+export const Debounce = {
   make: <I, S, E, R>(config: {
     stateSchema: Schema.Schema<S, unknown>;
     eventSchema: Schema.Schema<I, unknown>;
     maxEvents?: number;
     maxWait?: Duration.DurationInput;
-    execute: (ctx: BufferExecuteContext<I, S>) => Effect.Effect<void, E, R>;
-  }): UnregisteredBufferDefinition<I, S, E, R> => ({
-    _tag: "BufferDefinition",
+    execute: (ctx: DebounceExecuteContext<I, S>) => Effect.Effect<void, E, R>;
+  }): UnregisteredDebounceDefinition<I, S, E, R> => ({
+    _tag: "DebounceDefinition",
     ...config,
   }),
   // ...
 };
 
-// src/definitions/queue.ts
-export const Queue = {
+// src/definitions/workerPool.ts
+export const WorkerPool = {
   make: <E, Err, R>(config: {
     eventSchema: Schema.Schema<E, unknown>;
     concurrency?: number;
-    execute: (ctx: QueueExecuteContext<E>) => Effect.Effect<void, Err, R>;
-    retry?: QueueRetryConfig;
-    onDeadLetter?: (ctx: QueueDeadLetterContext<E, Err>) => Effect.Effect<void, never, R>;
-  }): UnregisteredQueueDefinition<E, Err, R> => ({
-    _tag: "QueueDefinition",
+    execute: (ctx: WorkerPoolExecuteContext<E>) => Effect.Effect<void, Err, R>;
+    retry?: WorkerPoolRetryConfig;
+    onDeadLetter?: (ctx: WorkerPoolDeadLetterContext<E, Err>) => Effect.Effect<void, never, R>;
+  }): UnregisteredWorkerPoolDefinition<E, Err, R> => ({
+    _tag: "WorkerPoolDefinition",
     ...config,
   }),
   // ...
@@ -469,17 +469,17 @@ const registry = {
 ### Step 6: Update Examples
 
 ```ts
-// examples/effect-worker/src/primitives.ts
+// examples/effect-worker/src/jobs.ts
 
 // Before
 const TokenRefresher = Continuous.make("token-refresher", { ... });
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
-  primitives: { TokenRefresher },
+const { Jobs, JobsClient } = createDurableJobs({
+  jobs: { TokenRefresher },
 });
 
 // After
 const tokenRefresher = Continuous.make({ ... });
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
+const { Jobs, JobsClient } = createDurableJobs({
   tokenRefresher,
 });
 ```
@@ -489,13 +489,13 @@ const { Primitives, PrimitivesClient } = createDurablePrimitives({
 ## Implementation Checklist
 
 - [ ] Add `UnregisteredContinuousDefinition` type
-- [ ] Add `UnregisteredBufferDefinition` type
-- [ ] Add `UnregisteredQueueDefinition` type
+- [ ] Add `UnregisteredDebounceDefinition` type
+- [ ] Add `UnregisteredWorkerPoolDefinition` type
 - [ ] Update `Continuous.make()` to remove name param
-- [ ] Update `Buffer.make()` to remove name param
-- [ ] Update `Queue.make()` to remove name param
-- [ ] Update `createDurablePrimitives()` signature (remove `primitives` wrapper)
-- [ ] Update `createDurablePrimitives()` to assign names from keys
+- [ ] Update `Debounce.make()` to remove name param
+- [ ] Update `WorkerPool.make()` to remove name param
+- [ ] Update `createDurableJobs()` signature (remove `jobs` wrapper)
+- [ ] Update `createDurableJobs()` to assign names from keys
 - [ ] Update `InferRegistryFromDefinitions` type helper
 - [ ] Update client type helpers (`ContinuousKeys`, etc.)
 - [ ] Update all tests

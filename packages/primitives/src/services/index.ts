@@ -1,4 +1,4 @@
-// packages/primitives/src/services/index.ts
+// packages/jobs/src/services/index.ts
 
 import { Layer } from "effect";
 
@@ -7,9 +7,9 @@ export {
   MetadataService,
   MetadataServiceLayer,
   type MetadataServiceI,
-  type PrimitiveMetadata,
-  type PrimitiveType,
-  type PrimitiveStatus,
+  type JobMetadata,
+  type JobType,
+  type JobStatus,
 } from "./metadata";
 
 // Entity State

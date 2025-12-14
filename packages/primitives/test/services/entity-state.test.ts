@@ -1,4 +1,4 @@
-// packages/primitives/test/services/entity-state.test.ts
+// packages/jobs/test/services/entity-state.test.ts
 
 import { describe, it, expect } from "vitest";
 import { Effect, Layer, Schema } from "effect";

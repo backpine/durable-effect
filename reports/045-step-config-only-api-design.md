@@ -195,16 +195,16 @@ yield* Workflow.step("Process payment", stepConfig({
 
 | File | Changes |
 |------|---------|
-| `src/primitives/step.ts` | Update signature, move `name` into config |
-| `src/primitives/index.ts` | No changes needed |
+| `src/jobs/step.ts` | Update signature, move `name` into config |
+| `src/jobs/index.ts` | No changes needed |
 | `src/index.ts` | No changes needed |
-| `test/primitives/step.test.ts` | Update all tests |
+| `test/jobs/step.test.ts` | Update all tests |
 | `examples/effect-worker/src/workflows.ts` | Update to new API |
 
 ### Step 1: Update Types
 
 ```typescript
-// src/primitives/step.ts
+// src/jobs/step.ts
 
 export interface StepConfig<A, E, R> {
   /**
@@ -232,7 +232,7 @@ export interface StepConfig<A, E, R> {
 ### Step 2: Update Function Signature
 
 ```typescript
-// src/primitives/step.ts
+// src/jobs/step.ts
 
 /**
  * Execute a durable step within a workflow.
@@ -406,7 +406,7 @@ The trade-off of slightly more verbosity for simple steps is worth the improved 
 ## Appendix: Full Implementation Diff
 
 ```typescript
-// packages/workflow/src/primitives/step.ts
+// packages/workflow/src/jobs/step.ts
 
 // BEFORE: Types
 export interface StepConfig<A, E, R> {

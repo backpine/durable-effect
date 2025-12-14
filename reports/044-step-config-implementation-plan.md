@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This document provides a complete implementation plan to replace the piped `Workflow.retry()` and `Workflow.timeout()` operators with a unified config-based `Workflow.step()` API. This is a **breaking change** that simplifies the codebase by removing two primitives and consolidating functionality into the step function.
+This document provides a complete implementation plan to replace the piped `Workflow.retry()` and `Workflow.timeout()` operators with a unified config-based `Workflow.step()` API. This is a **breaking change** that simplifies the codebase by removing two jobs and consolidating functionality into the step function.
 
 ### Key Decisions
 
@@ -16,7 +16,7 @@ This document provides a complete implementation plan to replace the piped `Work
 2. **Config-based step** - All step options in a single configuration object
 3. **Unified patterns** - Reuse existing `Backoff`, `BackoffStrategies`, `parseDuration` utilities
 4. **Schema validation deferred** - Input/output validation to be added later
-5. **Cleaner code** - Fewer primitives, simpler mental model
+5. **Cleaner code** - Fewer jobs, simpler mental model
 
 ---
 
@@ -26,21 +26,21 @@ This document provides a complete implementation plan to replace the piped `Work
 
 | File | Action | Reason |
 |------|--------|--------|
-| `src/primitives/step.ts` | **Modify** | Add config overload, integrate retry/timeout |
-| `src/primitives/retry.ts` | **Delete** | Logic moves into step.ts |
-| `src/primitives/timeout.ts` | **Delete** | Logic moves into step.ts |
-| `src/primitives/backoff.ts` | **Keep** | Shared utilities (no changes) |
-| `src/primitives/index.ts` | **Modify** | Update exports |
+| `src/jobs/step.ts` | **Modify** | Add config overload, integrate retry/timeout |
+| `src/jobs/retry.ts` | **Delete** | Logic moves into step.ts |
+| `src/jobs/timeout.ts` | **Delete** | Logic moves into step.ts |
+| `src/jobs/backoff.ts` | **Keep** | Shared utilities (no changes) |
+| `src/jobs/index.ts` | **Modify** | Update exports |
 | `src/index.ts` | **Modify** | Update exports |
-| `test/primitives/retry.test.ts` | **Delete → Merge** | Tests move to step.test.ts |
-| `test/primitives/timeout.test.ts` | **Delete → Merge** | Tests move to step.test.ts |
-| `test/primitives/step.test.ts` | **Modify** | Add config-based tests |
+| `test/jobs/retry.test.ts` | **Delete → Merge** | Tests move to step.test.ts |
+| `test/jobs/timeout.test.ts` | **Delete → Merge** | Tests move to step.test.ts |
+| `test/jobs/step.test.ts` | **Modify** | Add config-based tests |
 | `examples/effect-worker/src/workflows.ts` | **Modify** | Update to new API |
 
 ### 1.2 Current Exports to Remove
 
 ```typescript
-// From src/primitives/index.ts - TO REMOVE:
+// From src/jobs/index.ts - TO REMOVE:
 export {
   retry,                // REMOVE - becomes step config
   Backoff,              // KEEP - reexport from backoff.ts
@@ -276,7 +276,7 @@ const result = yield* Workflow.step("Long running task", {
 ### 4.1 New step.ts Structure
 
 ```typescript
-// packages/workflow/src/primitives/step.ts
+// packages/workflow/src/jobs/step.ts
 
 import { Effect, Layer, Option } from "effect";
 import { createBaseEvent } from "@durable-effect/core";
@@ -731,10 +731,10 @@ function stepWithConfig<A, E, R>(
 }
 ```
 
-### 4.2 Updated primitives/index.ts
+### 4.2 Updated jobs/index.ts
 
 ```typescript
-// packages/workflow/src/primitives/index.ts
+// packages/workflow/src/jobs/index.ts
 
 // PauseSignal
 export { PauseSignal, isPauseSignal, type PauseReason } from "./pause-signal";
@@ -778,7 +778,7 @@ export {
 ### 4.3 Updated backoff.ts (Add Backoff Export)
 
 ```typescript
-// packages/workflow/src/primitives/backoff.ts
+// packages/workflow/src/jobs/backoff.ts
 
 // ... existing code ...
 
@@ -845,7 +845,7 @@ export const Backoff = {
 ### 5.1 New step.test.ts Structure
 
 ```typescript
-// packages/workflow/test/primitives/step.test.ts
+// packages/workflow/test/jobs/step.test.ts
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { Effect, Layer } from "effect";
@@ -1206,18 +1206,18 @@ describe("Workflow.step", () => {
 
 | # | File | Action | Description |
 |---|------|--------|-------------|
-| 1 | `src/primitives/step.ts` | Modify | Add config support, integrate retry/timeout |
-| 2 | `src/primitives/backoff.ts` | Modify | Add `Backoff` helper export |
-| 3 | `src/primitives/retry.ts` | Delete | Logic moved to step.ts |
-| 4 | `src/primitives/timeout.ts` | Delete | Logic moved to step.ts |
-| 5 | `src/primitives/index.ts` | Modify | Update exports |
+| 1 | `src/jobs/step.ts` | Modify | Add config support, integrate retry/timeout |
+| 2 | `src/jobs/backoff.ts` | Modify | Add `Backoff` helper export |
+| 3 | `src/jobs/retry.ts` | Delete | Logic moved to step.ts |
+| 4 | `src/jobs/timeout.ts` | Delete | Logic moved to step.ts |
+| 5 | `src/jobs/index.ts` | Modify | Update exports |
 | 6 | `src/index.ts` | Modify | Update exports |
-| 7 | `test/primitives/step.test.ts` | Modify | Add config tests, merge retry/timeout tests |
-| 8 | `test/primitives/retry.test.ts` | Delete | Tests moved to step.test.ts |
-| 9 | `test/primitives/timeout.test.ts` | Delete | Tests moved to step.test.ts |
+| 7 | `test/jobs/step.test.ts` | Modify | Add config tests, merge retry/timeout tests |
+| 8 | `test/jobs/retry.test.ts` | Delete | Tests moved to step.test.ts |
+| 9 | `test/jobs/timeout.test.ts` | Delete | Tests moved to step.test.ts |
 | 10 | `examples/effect-worker/src/workflows.ts` | Modify | Update to new API |
 | 11 | `README.md` | Modify | Update examples |
-| 12 | `ARCHITECTURE.md` | Modify | Update primitives section |
+| 12 | `ARCHITECTURE.md` | Modify | Update jobs section |
 
 ### 6.2 Export Changes
 
@@ -1258,7 +1258,7 @@ Phase 2: Core Implementation
 Phase 3: Cleanup
 ├── 3.1 Delete retry.ts
 ├── 3.2 Delete timeout.ts
-├── 3.3 Update primitives/index.ts exports
+├── 3.3 Update jobs/index.ts exports
 └── 3.4 Update src/index.ts exports
 
 Phase 4: Tests
@@ -1358,7 +1358,7 @@ yield* Workflow.step("payment", {
 1. **Single implementation** - Retry/timeout logic in one place
 2. **Fewer edge cases** - No pipe ordering bugs
 3. **Easier testing** - Unified test structure
-4. **Cleaner architecture** - Fewer primitives to maintain
+4. **Cleaner architecture** - Fewer jobs to maintain
 
 ---
 

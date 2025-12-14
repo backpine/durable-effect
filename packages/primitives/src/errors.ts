@@ -1,4 +1,4 @@
-// packages/primitives/src/errors.ts
+// packages/jobs/src/errors.ts
 
 import { Data } from "effect";
 
@@ -6,16 +6,16 @@ import { Data } from "effect";
 export { StorageError, SchedulerError } from "@durable-effect/core";
 
 /**
- * Primitive type not found in registry.
+ * Job type not found in registry.
  */
-export class PrimitiveNotFoundError extends Data.TaggedError(
-  "PrimitiveNotFoundError"
+export class JobNotFoundError extends Data.TaggedError(
+  "JobNotFoundError"
 )<{
   readonly type: string;
   readonly name: string;
 }> {
   get message(): string {
-    return `Primitive not found: ${this.type}/${this.name}`;
+    return `Job not found: ${this.type}/${this.name}`;
   }
 }
 
@@ -61,18 +61,18 @@ export class ValidationError extends Data.TaggedError("ValidationError")<{
  * Execution of user function failed.
  */
 export class ExecutionError extends Data.TaggedError("ExecutionError")<{
-  readonly primitiveType: string;
-  readonly primitiveName: string;
+  readonly jobType: string;
+  readonly jobName: string;
   readonly instanceId: string;
   readonly cause: unknown;
 }> {
   get message(): string {
-    return `Execution failed for ${this.primitiveType}/${this.primitiveName} (${this.instanceId})`;
+    return `Execution failed for ${this.jobType}/${this.jobName} (${this.instanceId})`;
   }
 }
 
 /**
- * Retry attempts exhausted (Queue primitive).
+ * Retry attempts exhausted (WorkerPool job).
  */
 export class RetryExhaustedError extends Data.TaggedError(
   "RetryExhaustedError"
@@ -87,15 +87,15 @@ export class RetryExhaustedError extends Data.TaggedError(
 }
 
 /**
- * Unknown primitive type in request.
+ * Unknown job type in request.
  */
-export class UnknownPrimitiveTypeError extends Data.TaggedError(
-  "UnknownPrimitiveTypeError"
+export class UnknownJobTypeError extends Data.TaggedError(
+  "UnknownJobTypeError"
 )<{
   readonly type: string;
 }> {
   get message(): string {
-    return `Unknown primitive type: ${this.type}`;
+    return `Unknown job type: ${this.type}`;
   }
 }
 
@@ -113,7 +113,7 @@ export class DuplicateEventError extends Data.TaggedError(
 }
 
 /**
- * Signal that the primitive should terminate.
+ * Signal that the job should terminate.
  *
  * Not a true error - used to short-circuit execution from within
  * the execute function via ctx.terminate().
@@ -134,16 +134,16 @@ import type {
 } from "@durable-effect/core";
 
 /**
- * Union of all primitive errors.
+ * Union of all job errors.
  */
-export type PrimitiveError =
+export type JobError =
   | CoreStorageError
   | CoreSchedulerError
-  | PrimitiveNotFoundError
+  | JobNotFoundError
   | InstanceNotFoundError
   | InvalidStateError
   | ValidationError
   | ExecutionError
   | RetryExhaustedError
-  | UnknownPrimitiveTypeError
+  | UnknownJobTypeError
   | DuplicateEventError;

@@ -1,11 +1,11 @@
-// packages/primitives/src/storage-keys.ts
+// packages/jobs/src/storage-keys.ts
 
 /**
- * Centralized storage key constants for all primitives.
+ * Centralized storage key constants for all jobs.
  * Using a single namespace ensures no collisions and makes debugging easier.
  */
 export const KEYS = {
-  // Metadata (all primitives)
+  // Metadata (all jobs)
   META: "meta",
 
   // User state (schema-validated)
@@ -17,20 +17,20 @@ export const KEYS = {
     LAST_EXECUTED_AT: "cont:lastAt",
   },
 
-  // Buffer-specific
-  BUFFER: {
-    EVENT_COUNT: "buf:count",
-    STARTED_AT: "buf:startedAt",
+  // Debounce-specific
+  DEBOUNCE: {
+    EVENT_COUNT: "deb:count",
+    STARTED_AT: "deb:startedAt",
   },
 
-  // Queue-specific
-  QUEUE: {
-    EVENTS: "q:events:", // prefix: q:events:{eventId}
-    PENDING: "q:pending", // array of pending event IDs
-    PROCESSED: "q:processed",
-    CURRENT: "q:current",
-    ATTEMPT: "q:attempt",
-    PAUSED: "q:paused",
+  // WorkerPool-specific
+  WORKER_POOL: {
+    EVENTS: "wp:events:", // prefix: wp:events:{eventId}
+    PENDING: "wp:pending", // array of pending event IDs
+    PROCESSED: "wp:processed",
+    CURRENT: "wp:current",
+    ATTEMPT: "wp:attempt",
+    PAUSED: "wp:paused",
   },
 
   // Idempotency

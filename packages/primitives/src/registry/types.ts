@@ -1,4 +1,4 @@
-// packages/primitives/src/registry/types.ts
+// packages/jobs/src/registry/types.ts
 
 import type { Schema } from "effect";
 import type { Effect, Duration } from "effect";
@@ -8,7 +8,7 @@ import type { Effect, Duration } from "effect";
 // =============================================================================
 
 /**
- * Schedule for continuous primitives.
+ * Schedule for continuous jobs.
  */
 export type ContinuousSchedule =
   | { readonly _tag: "Every"; readonly interval: Duration.DurationInput }
@@ -19,9 +19,9 @@ export type ContinuousSchedule =
 // =============================================================================
 
 /**
- * Unregistered continuous primitive definition.
+ * Unregistered continuous job definition.
  * Created by Continuous.make() - does not have a name yet.
- * Name is assigned when registered via createDurablePrimitives().
+ * Name is assigned when registered via createDurableJobs().
  */
 export interface UnregisteredContinuousDefinition<
   S = unknown,
@@ -40,29 +40,29 @@ export interface UnregisteredContinuousDefinition<
 }
 
 /**
- * Unregistered buffer primitive definition.
- * Created by Buffer.make() - does not have a name yet.
+ * Unregistered debounce job definition.
+ * Created by Debounce.make() - does not have a name yet.
  */
-export interface UnregisteredBufferDefinition<
+export interface UnregisteredDebounceDefinition<
   I = unknown,
   S = unknown,
   E = unknown,
   R = never,
 > {
-  readonly _tag: "BufferDefinition";
+  readonly _tag: "DebounceDefinition";
   readonly eventSchema: Schema.Schema<I, any, never>;
   readonly stateSchema?: Schema.Schema<S, any, never>;
   readonly flushAfter: Duration.DurationInput;
   readonly maxEvents?: number;
-  execute(ctx: BufferExecuteContext<S>): Effect.Effect<void, E, R>;
-  onEvent?(ctx: BufferEventContext<I, S>): S;
-  onError?(error: E, ctx: BufferExecuteContext<S>): Effect.Effect<void, never, R>;
+  execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, E, R>;
+  onEvent?(ctx: DebounceEventContext<I, S>): S;
+  onError?(error: E, ctx: DebounceExecuteContext<S>): Effect.Effect<void, never, R>;
 }
 
 /**
- * Retry configuration for queue primitives.
+ * Retry configuration for workerPool jobs.
  */
-export interface QueueRetryConfig {
+export interface WorkerPoolRetryConfig {
   readonly maxAttempts: number;
   readonly initialDelay: Duration.DurationInput;
   readonly maxDelay?: Duration.DurationInput;
@@ -70,37 +70,37 @@ export interface QueueRetryConfig {
 }
 
 /**
- * Unregistered queue primitive definition.
- * Created by Queue.make() - does not have a name yet.
+ * Unregistered workerPool job definition.
+ * Created by WorkerPool.make() - does not have a name yet.
  */
-export interface UnregisteredQueueDefinition<
+export interface UnregisteredWorkerPoolDefinition<
   E = unknown,
   Err = unknown,
   R = never,
 > {
-  readonly _tag: "QueueDefinition";
+  readonly _tag: "WorkerPoolDefinition";
   readonly eventSchema: Schema.Schema<E, any, never>;
   readonly concurrency: number;
-  readonly retry?: QueueRetryConfig;
-  execute(ctx: QueueExecuteContext<E>): Effect.Effect<void, Err, R>;
-  onDeadLetter?(event: E, error: Err, ctx: QueueDeadLetterContext): Effect.Effect<void, never, R>;
-  onEmpty?(ctx: QueueEmptyContext): Effect.Effect<void, never, R>;
+  readonly retry?: WorkerPoolRetryConfig;
+  execute(ctx: WorkerPoolExecuteContext<E>): Effect.Effect<void, Err, R>;
+  onDeadLetter?(event: E, error: Err, ctx: WorkerPoolDeadLetterContext): Effect.Effect<void, never, R>;
+  onEmpty?(ctx: WorkerPoolEmptyContext): Effect.Effect<void, never, R>;
 }
 
 /**
- * Union of all unregistered primitive definition types.
+ * Union of all unregistered job definition types.
  */
 export type AnyUnregisteredDefinition =
   | UnregisteredContinuousDefinition<any, any, any>
-  | UnregisteredBufferDefinition<any, any, any, any>
-  | UnregisteredQueueDefinition<any, any, any>;
+  | UnregisteredDebounceDefinition<any, any, any, any>
+  | UnregisteredWorkerPoolDefinition<any, any, any>;
 
 // =============================================================================
 // Registered Definition Types (with name - stored in registry)
 // =============================================================================
 
 /**
- * Continuous primitive definition with name (after registration).
+ * Continuous job definition with name (after registration).
  */
 export interface ContinuousDefinition<
   S = unknown,
@@ -111,42 +111,42 @@ export interface ContinuousDefinition<
 }
 
 /**
- * Buffer primitive definition with name (after registration).
+ * Debounce job definition with name (after registration).
  */
-export interface BufferDefinition<
+export interface DebounceDefinition<
   I = unknown,
   S = unknown,
   E = unknown,
   R = never,
-> extends UnregisteredBufferDefinition<I, S, E, R> {
+> extends UnregisteredDebounceDefinition<I, S, E, R> {
   readonly name: string;
 }
 
 /**
- * Queue primitive definition with name (after registration).
+ * WorkerPool job definition with name (after registration).
  */
-export interface QueueDefinition<
+export interface WorkerPoolDefinition<
   E = unknown,
   Err = unknown,
   R = never,
-> extends UnregisteredQueueDefinition<E, Err, R> {
+> extends UnregisteredWorkerPoolDefinition<E, Err, R> {
   readonly name: string;
 }
 
 /**
- * Union of all registered primitive definition types.
+ * Union of all registered job definition types.
  */
-export type AnyPrimitiveDefinition =
+export type AnyJobDefinition =
   | ContinuousDefinition<any, any, any>
-  | BufferDefinition<any, any, any, any>
-  | QueueDefinition<any, any, any>;
+  | DebounceDefinition<any, any, any, any>
+  | WorkerPoolDefinition<any, any, any>;
 
 // =============================================================================
 // Context Types (provided to user functions)
 // =============================================================================
 
 /**
- * Options for terminating a continuous primitive.
+ * Options for terminating a continuous job.
  */
 export interface TerminateOptions {
   /** Optional reason for termination (stored in metadata) */
@@ -156,7 +156,7 @@ export interface TerminateOptions {
 }
 
 /**
- * Context provided to continuous primitive execute function.
+ * Context provided to continuous job execute function.
  */
 export interface ContinuousContext<S> {
   /** Current state value (synchronous access) */
@@ -165,17 +165,17 @@ export interface ContinuousContext<S> {
   readonly setState: (state: S) => void;
   /** Update state via transformation function */
   readonly updateState: (fn: (current: S) => S) => void;
-  /** The unique instance ID for this primitive instance */
+  /** The unique instance ID for this job instance */
   readonly instanceId: string;
   /** The number of times execute has been called (1-indexed) */
   readonly runCount: number;
-  /** The name of this primitive (as registered) */
-  readonly primitiveName: string;
+  /** The name of this job (as registered) */
+  readonly jobName: string;
 
   /**
-   * Terminate this primitive instance.
+   * Terminate this job instance.
    *
-   * When called, the primitive will:
+   * When called, the job will:
    * 1. Cancel any scheduled alarm
    * 2. Update status to "stopped" or "terminated"
    * 3. Optionally purge all state from storage
@@ -198,56 +198,56 @@ export interface ContinuousContext<S> {
 }
 
 /**
- * Context provided to buffer primitive execute function.
+ * Context provided to debounce job execute function.
  */
-export interface BufferExecuteContext<S> {
+export interface DebounceExecuteContext<S> {
   readonly state: S;
   readonly eventCount: number;
   readonly instanceId: string;
-  readonly primitiveName: string;
+  readonly jobName: string;
 }
 
 /**
- * Context provided to buffer primitive onEvent function.
+ * Context provided to debounce job onEvent function.
  */
-export interface BufferEventContext<I, S> {
+export interface DebounceEventContext<I, S> {
   readonly event: I;
   readonly currentState: S | null;
   readonly eventCount: number;
   readonly instanceId: string;
-  readonly primitiveName: string;
+  readonly jobName: string;
 }
 
 /**
- * Context provided to queue primitive execute function.
+ * Context provided to workerPool job execute function.
  */
-export interface QueueExecuteContext<E> {
+export interface WorkerPoolExecuteContext<E> {
   readonly event: E;
   readonly eventId: string;
   readonly attempt: number;
   readonly instanceId: string;
   readonly instanceIndex: number;
-  readonly primitiveName: string;
+  readonly jobName: string;
 }
 
 /**
- * Context provided to queue primitive onDeadLetter function.
+ * Context provided to workerPool job onDeadLetter function.
  */
-export interface QueueDeadLetterContext {
+export interface WorkerPoolDeadLetterContext {
   readonly eventId: string;
   readonly attempts: number;
   readonly instanceId: string;
   readonly instanceIndex: number;
-  readonly primitiveName: string;
+  readonly jobName: string;
 }
 
 /**
- * Context provided to queue primitive onEmpty function.
+ * Context provided to workerPool job onEmpty function.
  */
-export interface QueueEmptyContext {
+export interface WorkerPoolEmptyContext {
   readonly instanceId: string;
   readonly instanceIndex: number;
-  readonly primitiveName: string;
+  readonly jobName: string;
   readonly processedCount: number;
 }
 
@@ -256,20 +256,20 @@ export interface QueueEmptyContext {
 // =============================================================================
 
 /**
- * Registry of primitive definitions.
+ * Registry of job definitions.
  *
- * Organized by primitive type for efficient lookup.
+ * Organized by job type for efficient lookup.
  */
-export interface PrimitiveRegistry {
+export interface JobRegistry {
   readonly continuous: Map<string, ContinuousDefinition<any, any, any>>;
-  readonly buffer: Map<string, BufferDefinition<any, any, any, any>>;
-  readonly queue: Map<string, QueueDefinition<any, any, any>>;
+  readonly debounce: Map<string, DebounceDefinition<any, any, any, any>>;
+  readonly workerPool: Map<string, WorkerPoolDefinition<any, any, any>>;
 }
 
 /**
  * Type helper to extract the registry type from a definitions object.
  */
-export type InferRegistry<T extends Record<string, AnyPrimitiveDefinition>> = {
+export type InferRegistry<T extends Record<string, AnyJobDefinition>> = {
   continuous: {
     [K in keyof T as T[K] extends ContinuousDefinition<any, any, any>
       ? K
@@ -277,18 +277,18 @@ export type InferRegistry<T extends Record<string, AnyPrimitiveDefinition>> = {
       ? ContinuousDefinition<S, E, R>
       : never;
   };
-  buffer: {
-    [K in keyof T as T[K] extends BufferDefinition<any, any, any, any>
+  debounce: {
+    [K in keyof T as T[K] extends DebounceDefinition<any, any, any, any>
       ? K
-      : never]: T[K] extends BufferDefinition<infer I, infer S, infer E, infer R>
-      ? BufferDefinition<I, S, E, R>
+      : never]: T[K] extends DebounceDefinition<infer I, infer S, infer E, infer R>
+      ? DebounceDefinition<I, S, E, R>
       : never;
   };
-  queue: {
-    [K in keyof T as T[K] extends QueueDefinition<any, any, any>
+  workerPool: {
+    [K in keyof T as T[K] extends WorkerPoolDefinition<any, any, any>
       ? K
-      : never]: T[K] extends QueueDefinition<infer E, infer Err, infer R>
-      ? QueueDefinition<E, Err, R>
+      : never]: T[K] extends WorkerPoolDefinition<infer E, infer Err, infer R>
+      ? WorkerPoolDefinition<E, Err, R>
       : never;
   };
 };

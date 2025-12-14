@@ -1,4 +1,4 @@
-// packages/primitives/test/services/idempotency.test.ts
+// packages/jobs/test/services/idempotency.test.ts
 
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";

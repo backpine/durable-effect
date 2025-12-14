@@ -1,8 +1,8 @@
-# Primitives Architecture Design Report
+# Jobs Architecture Design Report
 
 **Date**: 2024-12-08
-**Package**: `@durable-effect/primitives`
-**Focus**: Layer design for Continuous and Buffer primitives
+**Package**: `@durable-effect/jobs`
+**Focus**: Layer design for Continuous and Debounce jobs
 
 ---
 
@@ -10,12 +10,12 @@
 
 This report addresses the architectural challenge of designing a unified interface layer that:
 
-1. **Bridges** multiple primitive types (Continuous, Buffer, Queue, etc.) to a durable compute engine
+1. **Bridges** multiple primitive types (Continuous, Debounce, WorkerPool, etc.) to a durable compute engine
 2. **One entity per DO instance** - each DO instance runs exactly one primitive, addressed by key
 3. **Abstracts** the underlying platform (Cloudflare DO today, potentially others later)
 4. **Dynamically dispatches** to the correct handler based on primitive type at call time
 
-The key insight is that while the workflow package has a **single state machine** with deterministic replay, primitives have **multiple execution patterns** that require a **handler-based dispatch architecture**. However, like workflows, **each DO instance manages exactly one primitive entity** - the key/ID determines which instance you're talking to.
+The key insight is that while the workflow package has a **single state machine** with deterministic replay, jobs have **multiple execution patterns** that require a **handler-based dispatch architecture**. However, like workflows, **each DO instance manages exactly one primitive entity** - the key/ID determines which instance you're talking to.
 
 ---
 
@@ -27,7 +27,7 @@ The key insight is that while the workflow package has a **single state machine*
 - [Layer Hierarchy](#layer-hierarchy)
 - [Primitive Handler Interface](#primitive-handler-interface)
 - [Entity Dispatch System](#entity-dispatch-system)
-- [Concrete Examples: Continuous & Buffer](#concrete-examples-continuous--buffer)
+- [Concrete Examples: Continuous & Debounce](#concrete-examples-continuous--debounce)
 - [State Management Strategy](#state-management-strategy)
 - [Alarm Routing Strategy](#alarm-routing-strategy)
 - [Alternative Approaches Considered](#alternative-approaches-considered)
@@ -37,9 +37,9 @@ The key insight is that while the workflow package has a **single state machine*
 
 ## Problem Analysis
 
-### Workflow vs Primitives: Key Differences
+### Workflow vs Jobs: Key Differences
 
-| Aspect | Workflow | Primitives |
+| Aspect | Workflow | Jobs |
 |--------|----------|------------|
 | State Machine | Single, well-defined lifecycle | Multiple primitive-specific lifecycles |
 | Execution Model | Deterministic replay | Event-driven, pattern-specific |
@@ -50,17 +50,17 @@ The key insight is that while the workflow package has a **single state machine*
 
 ### The Core Challenge
 
-Both workflow and primitives follow the **one entity per DO instance** pattern. The key is addressed by the instance ID:
+Both workflow and jobs follow the **one entity per DO instance** pattern. The key is addressed by the instance ID:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    createDurablePrimitives()                        │
+│                    createDurableJobs()                        │
 │                                                                     │
 │  Registers:                                                         │
 │    - tokenRefresher: Continuous.make(...)                          │
-│    - eventBuffer: Buffer.make(...)                                 │
+│    - eventDebounce: Debounce.make(...)                                 │
 │                                                                     │
-│  Produces: Single DO class "Primitives"                            │
+│  Produces: Single DO class "Jobs"                            │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -76,8 +76,8 @@ Both workflow and primitives follow the **one entity per DO instance** pattern. 
 │                                                                     │
 │  Instance: "contact-sync-org-456"                                  │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Type: Buffer (eventBuffer)                                  │   │
-│  │  State: Buffering (5 items)                                  │   │
+│  │  Type: Debounce (eventDebounce)                                  │   │
+│  │  State: Debounceing (5 items)                                  │   │
 │  │  Next Alarm: +3 seconds (flush deadline)                     │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
@@ -117,7 +117,7 @@ primitive:config  → { interval: "59m" }    # Definition config
 
 Each handler type defines its own alarm behavior:
 - **Continuous**: Interval-based, always schedules next alarm
-- **Buffer**: Deadline-based, schedules when first item arrives, clears on flush
+- **Debounce**: Deadline-based, schedules when first item arrives, clears on flush
 
 The handler's `onAlarm` returns the next alarm time (or undefined to clear).
 
@@ -133,7 +133,7 @@ client.tokenRefresher("user-123").start({ tokens })
 
 // Later call - must be same primitive type
 client.tokenRefresher("user-123").refresh()  // ✓ OK
-client.eventBuffer("user-123").add(item)     // ✗ Error: instance is tokenRefresher
+client.eventDebounce("user-123").add(item)     // ✗ Error: instance is tokenRefresher
 ```
 
 **Rationale**: Matches workflow pattern where instance ID is tied to one workflow.
@@ -144,7 +144,7 @@ client.eventBuffer("user-123").add(item)     // ✗ Error: instance is tokenRefr
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        DurablePrimitivesEngine                               │
+│                        DurableJobsEngine                               │
 │                     (extends DurableObject)                                  │
 │                     One instance per entity key                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
@@ -161,9 +161,9 @@ client.eventBuffer("user-123").add(item)     // ✗ Error: instance is tokenRefr
 │           │                 │                 │                            │
 │           ▼                 ▼                 ▼                            │
 │  ┌────────────────┐ ┌────────────────┐ ┌────────────────┐                  │
-│  │ContinuousHandler│ │ BufferHandler  │ │ QueueHandler   │                  │
+│  │ContinuousHandler│ │ DebounceHandler  │ │ WorkerPoolHandler   │                  │
 │  │                │ │                │ │                │                  │
-│  │ - start()     │ │ - add()        │ │ - enqueue()    │                  │
+│  │ - start()     │ │ - add()        │ │ - enworkerPool()    │                  │
 │  │ - stop()      │ │ - flush()      │ │ - process()    │                  │
 │  │ - onAlarm()   │ │ - onAlarm()    │ │ - onAlarm()    │                  │
 │  └────────────────┘ └────────────────┘ └────────────────┘                  │
@@ -191,7 +191,7 @@ client.eventBuffer("user-123").add(item)     // ✗ Error: instance is tokenRefr
 
 The structure mirrors the workflow package closely:
 
-| Workflow | Primitives |
+| Workflow | Jobs |
 |----------|------------|
 | `WorkflowOrchestrator` | `PrimitiveDispatcher` |
 | `WorkflowExecutor` | `PrimitiveHandler` (per type) |
@@ -253,7 +253,7 @@ class PrimitiveContext extends Context.Tag("PrimitiveContext")<
   {
     readonly instanceId: string;                  // DO instance key
     readonly primitiveName: string | undefined;   // Set after initialization
-    readonly primitiveType: string | undefined;   // "continuous" | "buffer" | etc.
+    readonly primitiveType: string | undefined;   // "continuous" | "debounce" | etc.
     readonly storage: StorageAdapterService;      // Direct access, primitive:* namespace
     readonly scheduleAlarm: (time: number) => Effect<void>;
     readonly cancelAlarm: () => Effect<void>;
@@ -391,7 +391,7 @@ interface PrimitiveHandler<
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│             DurablePrimitivesEngine (instance: "user-123")      │
+│             DurableJobsEngine (instance: "user-123")      │
 │                                                                 │
 │  RPC method: dispatch("tokenRefresher", "start", [...args])     │
 └─────────────────────────────────┬───────────────────────────────┘
@@ -488,7 +488,7 @@ interface PrimitiveHandler<
 
 ---
 
-## Concrete Examples: Continuous & Buffer
+## Concrete Examples: Continuous & Debounce
 
 ### Continuous Handler
 
@@ -679,11 +679,11 @@ const ContinuousHandler: PrimitiveHandler<
 };
 ```
 
-### Buffer Handler
+### Debounce Handler
 
 ```typescript
 /**
- * Buffer primitive - collects items and flushes on deadline or capacity.
+ * Debounce primitive - collects items and flushes on deadline or capacity.
  *
  * Use cases:
  * - Debouncing writes
@@ -691,29 +691,29 @@ const ContinuousHandler: PrimitiveHandler<
  * - Coalescing notifications
  */
 
-interface BufferConfig {
+interface DebounceConfig {
   readonly maxItems: number;
   readonly maxWait: Duration;
   readonly flushOnEveryAdd?: boolean;  // Reset timer on each add
 }
 
-interface BufferState<T = unknown> {
-  readonly status: "idle" | "buffering" | "flushing";
+interface DebounceState<T = unknown> {
+  readonly status: "idle" | "debounceing" | "flushing";
   readonly items: ReadonlyArray<T>;
   readonly firstItemAt?: number;
   readonly flushAt?: number;
 }
 
-const BufferHandler: PrimitiveHandler<
-  BufferConfig,
-  BufferState,
+const DebounceHandler: PrimitiveHandler<
+  DebounceConfig,
+  DebounceState,
   {
-    add: <T>(item: T) => { buffered: number };
+    add: <T>(item: T) => { debounceed: number };
     flush: () => { flushed: number };
     clear: () => void;
   }
 > = {
-  type: "buffer",
+  type: "debounce",
 
   configSchema: Schema.Struct({
     maxItems: Schema.Number.pipe(Schema.greaterThan(0)),
@@ -722,7 +722,7 @@ const BufferHandler: PrimitiveHandler<
   }),
 
   stateSchema: Schema.Struct({
-    status: Schema.Literal("idle", "buffering", "flushing"),
+    status: Schema.Literal("idle", "debounceing", "flushing"),
     items: Schema.Array(Schema.Unknown),
     firstItemAt: Schema.optional(Schema.Number),
     flushAt: Schema.optional(Schema.Number),
@@ -759,13 +759,13 @@ const BufferHandler: PrimitiveHandler<
 
       yield* flushCallback([...state.items]).pipe(
         Effect.catchAll((error) =>
-          Effect.logError("Buffer flush failed", { error })
+          Effect.logError("Debounce flush failed", { error })
         ),
       );
 
       // Emit event
       yield* emitEvent({
-        type: "buffer.flushed",
+        type: "debounce.flushed",
         entityId: ctx.entityId,
         itemCount: state.items.length,
         reason: "deadline",
@@ -778,7 +778,7 @@ const BufferHandler: PrimitiveHandler<
           firstItemAt: undefined,
           flushAt: undefined,
         },
-        // No next alarm - buffer is empty
+        // No next alarm - debounce is empty
       };
     }),
 
@@ -801,12 +801,12 @@ const BufferHandler: PrimitiveHandler<
 
           yield* flushCallback(newItems).pipe(
             Effect.catchAll((error) =>
-              Effect.logError("Buffer flush failed", { error })
+              Effect.logError("Debounce flush failed", { error })
             ),
           );
 
           yield* emitEvent({
-            type: "buffer.flushed",
+            type: "debounce.flushed",
             entityId: ctx.entityId,
             itemCount: newItems.length,
             reason: "capacity",
@@ -819,12 +819,12 @@ const BufferHandler: PrimitiveHandler<
               firstItemAt: undefined,
               flushAt: undefined,
             },
-            result: { buffered: 0 },
-            // No next alarm - buffer is empty
+            result: { debounceed: 0 },
+            // No next alarm - debounce is empty
           };
         }
 
-        // Buffer the item
+        // Debounce the item
         const maxWaitMs = parseDuration(config.maxWait);
         const flushAt = config.flushOnEveryAdd
           ? now + maxWaitMs  // Reset deadline on each add
@@ -832,12 +832,12 @@ const BufferHandler: PrimitiveHandler<
 
         return {
           newState: {
-            status: "buffering",
+            status: "debounceing",
             items: newItems,
             firstItemAt,
             flushAt,
           },
-          result: { buffered: newItems.length },
+          result: { debounceed: newItems.length },
           nextAlarm: flushAt,
         };
       }),
@@ -859,12 +859,12 @@ const BufferHandler: PrimitiveHandler<
 
         yield* flushCallback([...state.items]).pipe(
           Effect.catchAll((error) =>
-            Effect.logError("Buffer flush failed", { error })
+            Effect.logError("Debounce flush failed", { error })
           ),
         );
 
         yield* emitEvent({
-          type: "buffer.flushed",
+          type: "debounce.flushed",
           entityId: ctx.entityId,
           itemCount: state.items.length,
           reason: "manual",
@@ -878,14 +878,14 @@ const BufferHandler: PrimitiveHandler<
             flushAt: undefined,
           },
           result: { flushed: state.items.length },
-          // No next alarm - buffer is empty
+          // No next alarm - debounce is empty
         };
       }),
 
     clear: (state, _config) =>
       Effect.gen(function* () {
         yield* emitEvent({
-          type: "buffer.cleared",
+          type: "debounce.cleared",
           entityId: (yield* PrimitiveContext).entityId,
           itemCount: state.items.length,
         });
@@ -921,7 +921,7 @@ Storage Keys (per DO instance):
 ├── primitive:state      → { status: "running" }  # Handler-specific state
 ├── primitive:meta       → { createdAt, updatedAt }
 ├── primitive:execute    → (serialized effect)    # For Continuous
-└── primitive:flush      → (serialized callback)  # For Buffer
+└── primitive:flush      → (serialized callback)  # For Debounce
 ```
 
 Compare to workflow:
@@ -936,7 +936,7 @@ workflow:completedSteps  → ["fetch", "validate"]
 
 ```typescript
 interface PrimitiveMeta {
-  readonly type: string;              // "continuous" | "buffer" | etc.
+  readonly type: string;              // "continuous" | "debounce" | etc.
   readonly name: string;              // Definition name
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -955,7 +955,7 @@ Since each instance has its own storage, we don't need scoping:
 // In workflow
 storage.get(`workflow:${key}`)
 
-// In primitives - same pattern
+// In jobs - same pattern
 storage.get(`primitive:${key}`)
 
 // Both are already scoped by the DO instance
@@ -1012,15 +1012,15 @@ Each handler type has its own alarm semantics:
 | Handler | Alarm Pattern | Next Alarm |
 |---------|---------------|------------|
 | Continuous | Fixed interval | `now + interval` |
-| Buffer | Deadline from first item | `firstItemAt + maxWait` |
-| Queue | Process next item | `now + processingDelay` |
+| Debounce | Deadline from first item | `firstItemAt + maxWait` |
+| WorkerPool | Process next item | `now + processingDelay` |
 | Semaphore | Window reset | `windowStart + windowDuration` |
 
 ```typescript
 // Continuous: Always schedules next
 onAlarm: () => ({ newState, nextAlarm: now + interval })
 
-// Buffer: Only schedules when items present
+// Debounce: Only schedules when items present
 onAlarm: () => {
   flush(items);
   return { newState: { items: [] }, nextAlarm: undefined };
@@ -1046,7 +1046,7 @@ return {
 - Potential memory sharing
 
 **Cons**:
-- Complex alarm coordination (priority queue for single alarm)
+- Complex alarm coordination (priority workerPool for single alarm)
 - State namespace collision risk
 - Harder to reason about
 - No real benefit since DOs are cheap
@@ -1055,7 +1055,7 @@ return {
 
 ### Alternative 2: Type-Specific DO Classes (Rejected)
 
-**Approach**: One DO class per primitive type (ContinuousDO, BufferDO).
+**Approach**: One DO class per primitive type (ContinuousDO, DebounceDO).
 
 **Pros**:
 - Simpler per-type implementation
@@ -1063,14 +1063,14 @@ return {
 
 **Cons**:
 - User must export multiple DO classes
-- Can't have a single `Primitives` binding
+- Can't have a single `Jobs` binding
 - Duplicated adapter code
 
-**Why rejected**: The goal is a single `Primitives` export like `Workflows`.
+**Why rejected**: The goal is a single `Jobs` export like `Workflows`.
 
 ### Alternative 3: External Scheduler (Rejected)
 
-**Approach**: Use an external scheduling service (e.g., Cloudflare Queues) instead of DO alarms.
+**Approach**: Use an external scheduling service (e.g., Cloudflare WorkerPools) instead of DO alarms.
 
 **Pros**:
 - More flexible scheduling
@@ -1090,7 +1090,7 @@ return {
 - Simple alarm handling (one alarm = one handler.onAlarm)
 - DO instances are cheap and isolated
 - Handler dispatch on first call, stored in instance state
-- Single `Primitives` export for all primitive types
+- Single `Jobs` export for all primitive types
 
 ---
 
@@ -1144,7 +1144,7 @@ return {
 │      - Error states                                  │
 │      - Actions: start(), stop(), trigger()          │
 ├──────────────────────────────────────────────────────┤
-│  3.2 Buffer Handler                                 │
+│  3.2 Debounce Handler                                 │
 │      - Item accumulation                             │
 │      - Deadline and capacity triggers                │
 │      - Flush callbacks                               │
@@ -1156,14 +1156,14 @@ return {
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  4.1 createDurablePrimitives() factory              │
+│  4.1 createDurableJobs() factory              │
 │      - Layer assembly (like createDurableWorkflows) │
 │      - DO class generation                           │
-│      - Single export: { Primitives, PrimitiveClient }│
+│      - Single export: { Jobs, PrimitiveClient }│
 ├──────────────────────────────────────────────────────┤
 │  4.2 PrimitiveClient                                │
 │      - client.tokenRefresher(key).start()           │
-│      - client.eventBuffer(key).add(item)            │
+│      - client.eventDebounce(key).add(item)            │
 │      - Type-safe per-primitive methods               │
 ├──────────────────────────────────────────────────────┤
 │  4.3 Testing utilities                              │
@@ -1176,18 +1176,18 @@ return {
 
 ## Summary
 
-The proposed architecture mirrors the workflow package with key adaptations for event-driven primitives:
+The proposed architecture mirrors the workflow package with key adaptations for event-driven jobs:
 
 ### Core Principles
 
 1. **One entity per DO instance** - Same pattern as workflows, addressed by key
-2. **Handler-based dispatch** - Each primitive type (Continuous, Buffer) implements a standard interface
+2. **Handler-based dispatch** - Each primitive type (Continuous, Debounce) implements a standard interface
 3. **Type bound on first call** - Instance becomes a specific primitive type when initialized
 4. **Simple alarm handling** - One alarm per instance, handler decides next alarm
 
 ### Comparison with Workflow
 
-| Aspect | Workflow | Primitives |
+| Aspect | Workflow | Jobs |
 |--------|----------|------------|
 | Instance scope | One workflow per DO | One primitive per DO |
 | Type selection | `call.workflow` | `call.primitive` |
@@ -1197,7 +1197,7 @@ The proposed architecture mirrors the workflow package with key adaptations for 
 
 ### Benefits
 
-- **Familiar pattern**: Users who know workflows will understand primitives
+- **Familiar pattern**: Users who know workflows will understand jobs
 - **Shared infrastructure**: Reuse RuntimeLayer from workflow/core
 - **Simple mental model**: One instance = one primitive
 - **Type-safe client**: `client.tokenRefresher(key).start()` with full inference
@@ -1205,4 +1205,4 @@ The proposed architecture mirrors the workflow package with key adaptations for 
 
 ### Key Insight
 
-While workflows have a **linear execution model** (start → steps → pause → resume → complete), primitives have an **event-driven model** (initialize → actions/alarms → actions/alarms → destroy). The handler pattern accommodates different event semantics while maintaining the one-entity-per-DO simplicity.
+While workflows have a **linear execution model** (start → steps → pause → resume → complete), jobs have an **event-driven model** (initialize → actions/alarms → actions/alarms → destroy). The handler pattern accommodates different event semantics while maintaining the one-entity-per-DO simplicity.

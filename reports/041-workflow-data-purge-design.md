@@ -231,7 +231,7 @@ const PURGE_KEYS = {
 **File:** `src/purge/config.ts`
 
 ```typescript
-import { parseDuration } from "../primitives/backoff";
+import { parseDuration } from "../jobs/backoff";
 
 /**
  * Internal parsed purge configuration.

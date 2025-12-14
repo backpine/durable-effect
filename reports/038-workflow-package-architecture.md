@@ -24,7 +24,7 @@ packages/
 └── workflow/                # Main workflow engine
     └── src/
         ├── engine.ts        # DurableObject class (MONOLITH)
-        ├── workflow.ts      # Workflow primitives (step, sleep, retry)
+        ├── workflow.ts      # Workflow jobs (step, sleep, retry)
         ├── transitions.ts   # Status + event emission
         ├── types.ts         # Type definitions
         ├── errors.ts        # Error types
@@ -184,7 +184,7 @@ type WorkflowTransition =
 2. **Direct storage coupling**: Takes `DurableObjectStorage` directly
 3. **No recovery transitions**: Missing `Recover` transition type
 
-#### Layer 3: Workflow Primitives (workflow.ts) - 834 lines
+#### Layer 3: Workflow Jobs (workflow.ts) - 834 lines
 
 | Primitive | Purpose | Dependencies |
 |-----------|---------|--------------|
@@ -194,7 +194,7 @@ type WorkflowTransition =
 | `timeout()` | Step deadline tracking | StepContext, WorkflowContext |
 
 **Problems:**
-1. **Mixed concerns**: Orchestration logic in primitives
+1. **Mixed concerns**: Orchestration logic in jobs
 2. **Direct storage access**: Through ExecutionContext.storage
 3. **Complex state tracking**: `step()` has 7 phases
 
@@ -328,7 +328,7 @@ step:{name}:meta:{key}   # any
 | **Monolithic engine** | Hard to maintain/test | engine.ts |
 | **Direct storage coupling** | Tight runtime binding | everywhere |
 | **No state machine** | Invalid transitions possible | transitions.ts |
-| **Mixed orchestration** | Logic in primitives | workflow.ts |
+| **Mixed orchestration** | Logic in jobs | workflow.ts |
 
 ---
 

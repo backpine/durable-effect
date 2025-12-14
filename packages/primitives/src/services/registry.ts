@@ -1,19 +1,19 @@
-// packages/primitives/src/services/registry.ts
+// packages/jobs/src/services/registry.ts
 
 import { Context, Layer } from "effect";
-import type { PrimitiveRegistry } from "../registry/types";
+import type { JobRegistry } from "../registry/types";
 
 // =============================================================================
 // Service Interface
 // =============================================================================
 
 /**
- * Registry service provides access to primitive definitions.
+ * Registry service provides access to job definitions.
  *
  * This is injected via Layer so handlers can look up definitions.
  */
 export interface RegistryServiceI {
-  readonly registry: PrimitiveRegistry;
+  readonly registry: JobRegistry;
 }
 
 // =============================================================================
@@ -21,7 +21,7 @@ export interface RegistryServiceI {
 // =============================================================================
 
 export class RegistryService extends Context.Tag(
-  "@durable-effect/primitives/RegistryService"
+  "@durable-effect/jobs/RegistryService"
 )<RegistryService, RegistryServiceI>() {}
 
 // =============================================================================
@@ -32,7 +32,7 @@ export class RegistryService extends Context.Tag(
  * Create a Registry service layer from a registry.
  */
 export function RegistryServiceLayer(
-  registry: PrimitiveRegistry
+  registry: JobRegistry
 ): Layer.Layer<RegistryService> {
   return Layer.succeed(RegistryService, { registry });
 }

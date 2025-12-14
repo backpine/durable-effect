@@ -15,8 +15,8 @@
         "class_name": "Workflows",
       },
       {
-        "name": "PRIMITIVES",
-        "class_name": "Primitives",
+        "name": "JOBS",
+        "class_name": "Jobs",
       },
     ],
   },
@@ -25,7 +25,7 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["Workflows", "Primitives"],
+      "new_classes": ["Workflows", "Jobs"],
     },
   ],
 }

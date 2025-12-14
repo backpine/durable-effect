@@ -1,6 +1,6 @@
 # Core Package Extraction Plan
 
-This document outlines a comprehensive plan for extracting shared components from `@durable-effect/workflow` into `@durable-effect/core` to enable code reuse with the new `@durable-effect/primitives` package.
+This document outlines a comprehensive plan for extracting shared components from `@durable-effect/workflow` into `@durable-effect/core` to enable code reuse with the new `@durable-effect/jobs` package.
 
 ---
 
@@ -12,19 +12,19 @@ This document outlines a comprehensive plan for extracting shared components fro
 |---------|---------|-------------|
 | `@durable-effect/core` | Minimal shared abstractions | PauseSignal, Events, ExecutionContext |
 | `@durable-effect/workflow` | Workflow engine | Adapters, errors, tracker, backoff |
-| `@durable-effect/primitives` | (new) Primitive engine | Will share adapters, errors, tracker |
+| `@durable-effect/jobs` | (new) Primitive engine | Will share adapters, errors, tracker |
 
 ### Target State
 
 | Package | Purpose | Contents |
 |---------|---------|----------|
 | `@durable-effect/core` | **All shared infrastructure** | Adapters, errors, tracker, testing, backoff |
-| `@durable-effect/workflow` | Workflow-specific logic | Orchestrator, executor, state machine, primitives |
-| `@durable-effect/primitives` | Primitive-specific logic | Type-specific executors, orchestrators |
+| `@durable-effect/workflow` | Workflow-specific logic | Orchestrator, executor, state machine, jobs |
+| `@durable-effect/jobs` | Primitive-specific logic | Type-specific executors, orchestrators |
 
 ### Benefits
 
-1. **No Circular Dependencies** - Core has no dependencies on workflow or primitives
+1. **No Circular Dependencies** - Core has no dependencies on workflow or jobs
 2. **Single Source of Truth** - Adapter interfaces defined once
 3. **Consistent Patterns** - Same error types, tracking, testing across packages
 4. **Easier Maintenance** - Changes to adapters propagate automatically
@@ -35,7 +35,7 @@ This document outlines a comprehensive plan for extracting shared components fro
 
 ### 2.1 Adapter Interfaces (HIGH PRIORITY)
 
-These are the platform abstraction interfaces used by both workflow and primitives.
+These are the platform abstraction interfaces used by both workflow and jobs.
 
 | Source File | Target Location | Dependencies |
 |-------------|-----------------|--------------|
@@ -114,8 +114,8 @@ Shared error types used across packages.
 
 | Error Type | Current Location | Used By |
 |------------|------------------|---------|
-| `StorageError` | `workflow/src/errors.ts` | Workflow, Primitives |
-| `SchedulerError` | `workflow/src/errors.ts` | Workflow, Primitives |
+| `StorageError` | `workflow/src/errors.ts` | Workflow, Jobs |
+| `SchedulerError` | `workflow/src/errors.ts` | Workflow, Jobs |
 
 **Note:** Keep these in core. Other errors remain package-specific:
 - `InvalidTransitionError` → workflow-specific (state machine)
@@ -160,7 +160,7 @@ The tracker pattern is reusable, but event types are package-specific.
 | `emitEvent` helper | **Yes** | Generic helper |
 | `flushEvents` helper | **Yes** | Generic helper |
 | `createHttpBatchTracker` | **Yes** | Transport is generic |
-| Event schemas/types | **No** | Workflow has its own, Primitives has its own |
+| Event schemas/types | **No** | Workflow has its own, Jobs has its own |
 | `NoopTrackerLayer` | **Yes** | Disabled tracking |
 
 **Generic EventTracker Interface:**
@@ -422,16 +422,16 @@ packages/core/src/
 3. Keep exported for backwards compatibility
 4. Remove in next major version
 
-### Phase 8: Create Primitives Package Using Core (New)
+### Phase 8: Create Jobs Package Using Core (New)
 
-**Goal:** New primitives package imports from core.
+**Goal:** New jobs package imports from core.
 
 **Tasks:**
-1. Create `packages/primitives/` directory
+1. Create `packages/jobs/` directory
 2. Import adapters from `@durable-effect/core`
 3. Import errors from `@durable-effect/core`
 4. Import testing utilities from `@durable-effect/core`
-5. Create primitives-specific components (orchestrators, executors)
+5. Create jobs-specific components (orchestrators, executors)
 
 ---
 
@@ -579,7 +579,7 @@ export {
     ┌────┴────┐
     ▼         ▼
 ┌──────────┐ ┌──────────┐
-│ workflow │ │primitives│
+│ workflow │ │jobs│
 │          │ │          │
 │-orches-  │ │-executors│
 │ trator   │ │-orchest- │
@@ -619,7 +619,7 @@ export {
 1. Import paths change from `../errors` to `@durable-effect/core`
 2. Some files become thin re-exports
 
-### For primitives Package (New)
+### For jobs Package (New)
 
 No breaking changes - it's a new package that imports from core from the start.
 
@@ -636,7 +636,7 @@ No breaking changes - it's a new package that imports from core from the start.
 | 5 | Copy backoff | Low | None |
 | 6 | Update workflow imports | Medium | Phases 2-5 |
 | 7 | Deprecate ExecutionContext | Low | Phase 2 |
-| 8 | Create primitives | Low | Phases 2-5 |
+| 8 | Create jobs | Low | Phases 2-5 |
 
 **Recommended Approach:**
 - Phases 1-5 can be done in a single PR (additive, non-breaking)
@@ -648,10 +648,10 @@ No breaking changes - it's a new package that imports from core from the start.
 
 ## 9. Success Criteria
 
-1. **No Circular Dependencies** - `core` has no dependencies on `workflow` or `primitives`
+1. **No Circular Dependencies** - `core` has no dependencies on `workflow` or `jobs`
 2. **All Tests Pass** - Workflow tests continue to pass after migration
 3. **No Public API Changes** - External users see no difference
-4. **Primitives Works** - New primitives package can import from core
+4. **Jobs Works** - New jobs package can import from core
 5. **Single Source of Truth** - No duplicate adapter code between packages
 
 ---
@@ -661,10 +661,10 @@ No breaking changes - it's a new package that imports from core from the start.
 1. **Event Schema Location** - Should workflow-specific events stay in core or move to workflow?
    - **Recommendation:** Keep in core for backwards compatibility, but namespace clearly
 
-2. **PauseSignal Location** - Is this workflow-specific or could primitives use it?
+2. **PauseSignal Location** - Is this workflow-specific or could jobs use it?
    - **Recommendation:** Keep in core, it's a general pause signal pattern
 
-3. **Version Sync** - Should core, workflow, and primitives share a version number?
+3. **Version Sync** - Should core, workflow, and jobs share a version number?
    - **Recommendation:** Yes, use monorepo versioning
 
 4. **Tracker Generics** - How generic should the tracker interface be?

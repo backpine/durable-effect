@@ -5,7 +5,7 @@
 This document provides a detailed design and implementation for an **HTTP batch-based event tracker service** for `@durable-effect/workflow`. The service collects workflow events into a queue and sends them in batches to an external tracking service via HTTP POST.
 
 **Key Principles:**
-- **Pure Effect** - Queue-based batching using Effect primitives
+- **Pure Effect** - Queue-based batching using Effect jobs
 - **Safe** - Tracker failures never impact workflow execution
 - **Optional** - Zero overhead when not configured (uses `Effect.serviceOption`)
 - **Configurable** - User controls batch size (`maxSize`) and buffer time (`maxWaitMs`)

@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This report evaluates the feasibility of implementing a `WorkflowScope` forbidden context tag to prevent workflow primitives (`step`, `sleep`, `retry`) from being nested inside a step's effect. After thorough analysis of the codebase and TypeScript's type system behavior, **Option 1 is feasible with some caveats**.
+This report evaluates the feasibility of implementing a `WorkflowScope` forbidden context tag to prevent workflow jobs (`step`, `sleep`, `retry`) from being nested inside a step's effect. After thorough analysis of the codebase and TypeScript's type system behavior, **Option 1 is feasible with some caveats**.
 
 ## Current State Analysis
 
@@ -64,7 +64,7 @@ const stepCtx = yield* StepContext;  // ← REQUIRES StepContext
 const workflowCtx = yield* WorkflowContext;
 ```
 
-This means `retry` and `timeout` already fail at runtime if used outside a step. The WorkflowScope pattern would add **compile-time** enforcement for `step` and `sleep` primitives.
+This means `retry` and `timeout` already fail at runtime if used outside a step. The WorkflowScope pattern would add **compile-time** enforcement for `step` and `sleep` jobs.
 
 ## Type System Analysis
 
@@ -131,7 +131,7 @@ Trace:
 import { Context } from "effect";
 
 /**
- * WorkflowScope is required by workflow primitives (step, sleep).
+ * WorkflowScope is required by workflow jobs (step, sleep).
  * This scope is NOT available inside a step's effect, preventing nesting.
  *
  * @internal This is a compile-time guard, not a runtime service.
@@ -250,7 +250,7 @@ export {
 
 **File:** `packages/workflow/test/mocks/contexts.ts`
 
-The test harness needs to provide `WorkflowScope` when testing workflow-level primitives.
+The test harness needs to provide `WorkflowScope` when testing workflow-level jobs.
 
 ```typescript
 import { WorkflowScope } from "@/services/workflow-scope";
@@ -270,7 +270,7 @@ export function runWithWorkflowScope<T, E>(
 
 ### 1. **Composability with User Effects**
 
-Users who create helper functions that internally use workflow primitives will get the correct error:
+Users who create helper functions that internally use workflow jobs will get the correct error:
 
 ```typescript
 // User's helper function
@@ -305,7 +305,7 @@ This is reasonably clear but could be improved with documentation.
 
 ### 4. **Backward Compatibility**
 
-**Breaking change**: Any existing code that accidentally nests workflow primitives inside steps will now fail to compile. This is intentional and desirable - it surfaces bugs.
+**Breaking change**: Any existing code that accidentally nests workflow jobs inside steps will now fail to compile. This is intentional and desirable - it surfaces bugs.
 
 ### 5. **Effect's Context Union Behavior**
 
@@ -337,7 +337,7 @@ The `ForbidWorkflowScope<R>` correctly handles this - if ANY yielded effect requ
 
 ## Edge Cases to Test
 
-### 1. **Nested Workflow Primitives (Should Fail)**
+### 1. **Nested Workflow Jobs (Should Fail)**
 
 ```typescript
 // Should produce compile error
@@ -361,7 +361,7 @@ Workflow.step("fetch", Effect.gen(function* () {
 }));
 ```
 
-### 3. **Workflow Primitives at Workflow Level (Should Pass)**
+### 3. **Workflow Jobs at Workflow Level (Should Pass)**
 
 ```typescript
 // Should compile fine
@@ -403,7 +403,7 @@ A type-level test file was created at `packages/workflow/test/type-tests/workflo
 - Regular effects inside step
 - Effects with custom services inside step (e.g., `MyService`)
 - `Effect.sleep` (standard library) inside step
-- Workflow primitives at workflow level
+- Workflow jobs at workflow level
 
 **Failing cases (correctly rejected with `@ts-expect-error`):**
 - `Workflow.sleep("1 second")` inside step - **Correctly rejected**

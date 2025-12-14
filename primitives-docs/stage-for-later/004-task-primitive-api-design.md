@@ -7,7 +7,7 @@ The Task primitive is the most fundamental and powerful primitive. It provides r
 1. **Effect-first** - All operations are Effects, yieldable in generators
 2. **Schema-driven** - Events are defined via Effect Schema for validation
 3. **Idempotent by default** - Client operations use IDs to ensure exactly-once semantics
-4. **Full power** - Direct access to schedule, state, and purge primitives
+4. **Full power** - Direct access to schedule, state, and purge jobs
 
 ---
 
@@ -18,13 +18,13 @@ A Task:
 2. Calls `execute` with full context (schedule, state, purge)
 3. User decides everything: when to run next, what state to keep, when to purge
 
-**Key distinction from other primitives:**
+**Key distinction from other jobs:**
 - Continuous: Schedule-driven, state persists between executions
-- Buffer: Event-driven, state purged after flush
-- Queue: Event-driven, one-at-a-time processing
+- Debounce: Event-driven, state purged after flush
+- WorkerPool: Event-driven, one-at-a-time processing
 - **Task: Event-driven, full manual control**
 
-The Task is a building block—you could implement Buffer, Queue, or Continuous using Task.
+The Task is a building block—you could implement Debounce, WorkerPool, or Continuous using Task.
 
 ---
 
@@ -33,7 +33,7 @@ The Task is a building block—you could implement Buffer, Queue, or Continuous 
 ### Definition
 
 ```ts
-import { Task } from "@durable-effect/primitives";
+import { Task } from "@durable-effect/jobs";
 import { Schema } from "effect";
 
 const orderProcessor = Task.make({
@@ -81,22 +81,22 @@ const orderProcessor = Task.make({
 ### Registration & Export
 
 ```ts
-import { createDurablePrimitives } from "@durable-effect/primitives";
+import { createDurableJobs } from "@durable-effect/jobs";
 
-const { Primitives, PrimitivesClient } = createDurablePrimitives({
+const { Jobs, JobsClient } = createDurableJobs({
   orderProcessor,
-  // ... other primitives
+  // ... other jobs
 });
 
 // Export DO class for Cloudflare
-export { Primitives };
+export { Jobs };
 ```
 
 ### Client Usage
 
 ```ts
 // In your worker/handler
-const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+const client = JobsClient.fromBinding(env.PRIMITIVES);
 
 // Send event (idempotent)
 yield* client.task("orderProcessor").send({
@@ -458,7 +458,7 @@ execute: (ctx) =>
 ### Getting a Task Client
 
 ```ts
-const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+const client = JobsClient.fromBinding(env.PRIMITIVES);
 const orderClient = client.task("orderProcessor");
 ```
 
@@ -570,7 +570,7 @@ interface TaskPurgeResult {
 Full control over order state, with scheduled reminders and cleanup.
 
 ```ts
-import { Task } from "@durable-effect/primitives";
+import { Task } from "@durable-effect/jobs";
 import { Effect, Schema, Duration } from "effect";
 
 const OrderEvent = Schema.Union(
@@ -760,7 +760,7 @@ const orderManager = Task.make({
 **Usage:**
 
 ```ts
-const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+const client = JobsClient.fromBinding(env.PRIMITIVES);
 const orders = client.task("orderManager");
 
 // Create order
@@ -1126,9 +1126,9 @@ const subscriptionManager = Task.make({
 
 ---
 
-## Comparison: Task vs Other Primitives
+## Comparison: Task vs Other Jobs
 
-| Aspect | Task | Continuous | Buffer | Queue |
+| Aspect | Task | Continuous | Debounce | WorkerPool |
 |--------|------|------------|--------|-------|
 | **Trigger** | Events | Schedule | Events | Events |
 | **State control** | Full manual | Automatic persist | Automatic purge | Per-event |
@@ -1148,12 +1148,12 @@ Use Task when you need:
 2. **Complex state machines** - Multiple event types, conditional transitions
 3. **Custom scheduling logic** - Dynamic schedules based on state
 4. **Mixed patterns** - Sometimes batch, sometimes immediate, sometimes scheduled
-5. **Building custom primitives** - Task is the foundation
+5. **Building custom jobs** - Task is the foundation
 
-Use other primitives when:
+Use other jobs when:
 - **Continuous**: You just need periodic execution with persisted state
-- **Buffer**: You want to batch events and flush periodically
-- **Queue**: You want ordered processing with retry/dead-letter handling
+- **Debounce**: You want to batch events and flush periodically
+- **WorkerPool**: You want ordered processing with retry/dead-letter handling
 
 ---
 

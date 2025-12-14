@@ -1,29 +1,29 @@
-// packages/primitives/src/factory.ts
+// packages/jobs/src/factory.ts
 
 import { Context } from "effect";
 import { DurableObject } from "cloudflare:workers";
-import { DurablePrimitivesEngine, type PrimitivesEngineConfig } from "./engine";
+import { DurableJobsEngine, type JobsEngineConfig } from "./engine";
 import {
-  createPrimitiveRegistry,
+  createJobRegistry,
   type AnyUnregisteredDefinition,
-  type PrimitiveRegistry,
+  type JobRegistry,
   type UnregisteredContinuousDefinition,
-  type UnregisteredBufferDefinition,
-  type UnregisteredQueueDefinition,
+  type UnregisteredDebounceDefinition,
+  type UnregisteredWorkerPoolDefinition,
   type ContinuousDefinition,
-  type BufferDefinition,
-  type QueueDefinition,
+  type DebounceDefinition,
+  type WorkerPoolDefinition,
 } from "./registry";
 import {
-  createPrimitivesClient,
-  type PrimitivesClient,
-  type PrimitivesClientFactory,
+  createJobsClient,
+  type JobsClient,
+  type JobsClientFactory,
 } from "./client";
 
 /**
- * Result of creating durable primitives.
+ * Result of creating durable jobs.
  */
-export interface CreateDurablePrimitivesResult<
+export interface CreateDurableJobsResult<
   T extends Record<string, AnyUnregisteredDefinition>,
 > {
   /**
@@ -32,28 +32,28 @@ export interface CreateDurablePrimitivesResult<
    * @example
    * ```ts
    * // Export in worker entry point
-   * export { Primitives };
+   * export { Jobs };
    * ```
    */
-  readonly Primitives: typeof DurablePrimitivesEngine;
+  readonly Jobs: typeof DurableJobsEngine;
 
   /**
    * Factory for creating typed clients.
    *
    * @example
    * ```ts
-   * const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+   * const client = JobsClient.fromBinding(env.JOBS);
    * await client.continuous("tokenRefresher").start({ id: "user-123", input: {...} });
    * ```
    */
-  readonly PrimitivesClient: PrimitivesClientFactory<
+  readonly JobsClient: JobsClientFactory<
     InferRegistryFromDefinitions<T>
   >;
 
   /**
-   * The primitive registry (for advanced use cases).
+   * The job registry (for advanced use cases).
    */
-  readonly registry: PrimitiveRegistry;
+  readonly registry: JobRegistry;
 }
 
 /**
@@ -70,19 +70,19 @@ export type InferRegistryFromDefinitions<
     >,
     ContinuousDefinition<any, any, any>
   >;
-  readonly buffer: Map<
+  readonly debounce: Map<
     Extract<
-      { [K in keyof T]: T[K] extends UnregisteredBufferDefinition<any, any, any, any> ? K : never }[keyof T],
+      { [K in keyof T]: T[K] extends UnregisteredDebounceDefinition<any, any, any, any> ? K : never }[keyof T],
       string
     >,
-    BufferDefinition<any, any, any, any>
+    DebounceDefinition<any, any, any, any>
   >;
-  readonly queue: Map<
+  readonly workerPool: Map<
     Extract<
-      { [K in keyof T]: T[K] extends UnregisteredQueueDefinition<any, any, any> ? K : never }[keyof T],
+      { [K in keyof T]: T[K] extends UnregisteredWorkerPoolDefinition<any, any, any> ? K : never }[keyof T],
       string
     >,
-    QueueDefinition<any, any, any>
+    WorkerPoolDefinition<any, any, any>
   >;
   /** Original definitions object for type inference */
   readonly __definitions: T;
@@ -93,22 +93,22 @@ export type InferRegistryFromDefinitions<
 // =============================================================================
 
 /**
- * Create a Durable Primitives engine for a set of primitives.
+ * Create a Durable Jobs engine for a set of jobs.
  *
- * This is the main factory function for creating production primitives engines.
+ * This is the main factory function for creating production jobs engines.
  * It returns:
- * - `Primitives`: The Durable Object class to export
- * - `PrimitivesClient`: Factory for creating typed clients
- * - `registry`: The primitive registry (for advanced use cases)
+ * - `Jobs`: The Durable Object class to export
+ * - `JobsClient`: Factory for creating typed clients
+ * - `registry`: The job registry (for advanced use cases)
  *
- * @param definitions - Object of primitive definitions (keys become primitive names)
+ * @param definitions - Object of job definitions (keys become job names)
  *
  * @example
  * ```ts
  * import { Schema } from "effect";
- * import { createDurablePrimitives, Continuous, Buffer, Queue } from "@durable-effect/primitives";
+ * import { createDurableJobs, Continuous, Debounce, WorkerPool } from "@durable-effect/jobs";
  *
- * // Define primitives
+ * // Define jobs
  * const tokenRefresher = Continuous.make({
  *   stateSchema: Schema.Struct({
  *     accessToken: Schema.String,
@@ -122,20 +122,20 @@ export type InferRegistryFromDefinitions<
  *   }),
  * });
  *
- * // Create engine and client - keys become primitive names
- * const { Primitives, PrimitivesClient } = createDurablePrimitives({
+ * // Create engine and client - keys become job names
+ * const { Jobs, JobsClient } = createDurableJobs({
  *   tokenRefresher,
  * });
  *
  * // Export for Cloudflare
- * export { Primitives };
+ * export { Jobs };
  *
  * // Use client in worker
  * export default {
  *   async fetch(request: Request, env: Env): Promise<Response> {
- *     const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
+ *     const client = JobsClient.fromBinding(env.JOBS);
  *
- *     // Start continuous primitive - name comes from object key
+ *     // Start continuous job - name comes from object key
  *     yield* client.continuous("tokenRefresher").start({
  *       id: "user-123",
  *       input: { accessToken: "", refreshToken: "rt_abc", expiresAt: 0 },
@@ -146,21 +146,21 @@ export type InferRegistryFromDefinitions<
  * };
  * ```
  */
-export function createDurablePrimitives<
+export function createDurableJobs<
   const T extends Record<string, AnyUnregisteredDefinition>,
 >(
   definitions: T
-): CreateDurablePrimitivesResult<T> {
+): CreateDurableJobsResult<T> {
   // Create registry from definitions
-  const registry = createPrimitiveRegistry(definitions);
+  const registry = createJobRegistry(definitions);
 
   // Create bound DO class with registry and config injected
-  class BoundPrimitivesEngine extends DurablePrimitivesEngine {
+  class BoundJobsEngine extends DurableJobsEngine {
     constructor(state: DurableObjectState, env: unknown) {
       // Inject registry and tracker config into environment
-      const enrichedEnv: PrimitivesEngineConfig = {
+      const enrichedEnv: JobsEngineConfig = {
         ...(env as object),
-        __PRIMITIVE_REGISTRY__: registry,
+        __JOB_REGISTRY__: registry,
       };
 
       super(state, enrichedEnv);
@@ -169,24 +169,24 @@ export function createDurablePrimitives<
 
   // Create Effect Tag for the client
   const ClientTag = Context.GenericTag<
-    PrimitivesClient<InferRegistryFromDefinitions<T>>
-  >("@durable-effect/primitives/Client");
+    JobsClient<InferRegistryFromDefinitions<T>>
+  >("@durable-effect/jobs/Client");
 
   // Create client factory
   // Cast the registry to include the type-level __definitions property
   const typedRegistry = registry as unknown as InferRegistryFromDefinitions<T>;
 
-  const PrimitivesClientFactory: PrimitivesClientFactory<
+  const JobsClientFactory: JobsClientFactory<
     InferRegistryFromDefinitions<T>
   > = {
     fromBinding: (binding: DurableObjectNamespace) =>
-      createPrimitivesClient(binding, typedRegistry),
+      createJobsClient(binding, typedRegistry),
     Tag: ClientTag,
   };
 
   return {
-    Primitives: BoundPrimitivesEngine as typeof DurablePrimitivesEngine,
-    PrimitivesClient: PrimitivesClientFactory,
+    Jobs: BoundJobsEngine as typeof DurableJobsEngine,
+    JobsClient: JobsClientFactory,
     registry,
   };
 }

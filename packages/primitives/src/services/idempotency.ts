@@ -1,4 +1,4 @@
-// packages/primitives/src/services/idempotency.ts
+// packages/jobs/src/services/idempotency.ts
 
 import { Context, Effect, Layer } from "effect";
 import {
@@ -26,7 +26,7 @@ interface IdempotencyRecord {
 /**
  * IdempotencyService tracks processed events for deduplication.
  *
- * Used by Buffer and Queue primitives to ensure exactly-once semantics.
+ * Used by Debounce and WorkerPool jobs to ensure exactly-once semantics.
  * Events are identified by a user-provided eventId.
  */
 export interface IdempotencyServiceI {
@@ -60,7 +60,7 @@ export interface IdempotencyServiceI {
 // =============================================================================
 
 export class IdempotencyService extends Context.Tag(
-  "@durable-effect/primitives/IdempotencyService"
+  "@durable-effect/jobs/IdempotencyService"
 )<IdempotencyService, IdempotencyServiceI>() {}
 
 // =============================================================================

@@ -1,22 +1,22 @@
-// packages/primitives/src/engine/types.ts
+// packages/jobs/src/engine/types.ts
 
-import type { PrimitiveRequest, PrimitiveResponse } from "../runtime/types";
-import type { PrimitiveRegistry } from "../registry/types";
+import type { JobRequest, JobResponse } from "../runtime/types";
+import type { JobRegistry } from "../registry/types";
 
 // =============================================================================
 // Engine Configuration
 // =============================================================================
 
 /**
- * Configuration for the primitives engine.
+ * Configuration for the jobs engine.
  *
  * This is passed to the engine via the Cloudflare environment binding.
  */
-export interface PrimitivesEngineConfig {
+export interface JobsEngineConfig {
   /**
-   * The primitive registry containing all registered primitives.
+   * The job registry containing all registered jobs.
    */
-  readonly __PRIMITIVE_REGISTRY__: PrimitiveRegistry;
+  readonly __JOB_REGISTRY__: JobRegistry;
 }
 
 // =============================================================================
@@ -24,28 +24,28 @@ export interface PrimitivesEngineConfig {
 // =============================================================================
 
 /**
- * The Durable Object interface for the primitives engine.
+ * The Durable Object interface for the jobs engine.
  *
  * This is a thin shell that delegates all operations to the runtime.
  * It has ONE generic RPC method `call()` and `alarm()` - nothing else.
  */
-export interface DurablePrimitivesEngineInterface {
+export interface DurableJobsEngineInterface {
   /**
-   * Handle a primitive request.
+   * Handle a job request.
    *
-   * This is the ONLY RPC method for primitives. The client sends typed
+   * This is the ONLY RPC method for jobs. The client sends typed
    * requests and receives typed responses. The engine doesn't know
-   * about specific primitive operations - it just delegates to the runtime.
+   * about specific job operations - it just delegates to the runtime.
    *
-   * @param request - The primitive request to handle
-   * @returns The response from the primitive handler
+   * @param request - The job request to handle
+   * @returns The response from the job handler
    */
-  call(request: PrimitiveRequest): Promise<PrimitiveResponse>;
+  call(request: JobRequest): Promise<JobResponse>;
 
   /**
    * Handle an alarm.
    *
-   * The alarm handler reads metadata to determine which primitive type
+   * The alarm handler reads metadata to determine which job type
    * owns this instance, then delegates to the appropriate handler.
    */
   alarm(): Promise<void>;
@@ -56,15 +56,15 @@ export interface DurablePrimitivesEngineInterface {
 // =============================================================================
 
 /**
- * Type helper for Cloudflare worker environment with primitives binding.
+ * Type helper for Cloudflare worker environment with jobs binding.
  *
  * @example
  * ```ts
- * interface Env extends PrimitivesEnv<"PRIMITIVES"> {
+ * interface Env extends JobsEnv<"JOBS"> {
  *   // Other bindings...
  * }
  * ```
  */
-export type PrimitivesEnv<BindingName extends string = "PRIMITIVES"> = {
+export type JobsEnv<BindingName extends string = "JOBS"> = {
   [K in BindingName]: DurableObjectNamespace;
 };

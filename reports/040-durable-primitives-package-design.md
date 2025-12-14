@@ -1,4 +1,4 @@
-# Report 040: Durable Primitives Package Design
+# Report 040: Durable Jobs Package Design
 
 ## Overview
 
@@ -19,7 +19,7 @@ Design proposal for a new package that consolidates common durable compute patte
 
 | Rank | Name | Rationale |
 |------|------|-----------|
-| **1** | `@durable-effect/primitives` | Clear parallel to "workflow", indicates building blocks, implies composability |
+| **1** | `@durable-effect/jobs` | Clear parallel to "workflow", indicates building blocks, implies composability |
 | **2** | `@durable-effect/actors` | Aligns with actor model (stateful entities processing messages), widely understood pattern |
 | **3** | `@durable-effect/services` | Implies long-running, stateful services - matches the continuous/queue use cases well |
 
@@ -41,13 +41,13 @@ Design proposal for a new package that consolidates common durable compute patte
 | `@durable-effect/objects` | Too Cloudflare-specific |
 | `@durable-effect/durable` | Redundant with package scope |
 
-### Recommendation: `@durable-effect/primitives`
+### Recommendation: `@durable-effect/jobs`
 
 **Why:**
-- Clear relationship to `@durable-effect/workflow` (workflows use primitives)
-- "Primitives" suggests composable building blocks
+- Clear relationship to `@durable-effect/workflow` (workflows use jobs)
+- "Jobs" suggests composable building blocks
 - Doesn't conflict with existing terminology
-- Works well in imports: `import { Buffer, Queue } from "@durable-effect/primitives"`
+- Works well in imports: `import { Buffer, Queue } from "@durable-effect/jobs"`
 
 ---
 
@@ -58,10 +58,10 @@ The key design goal is a **single Durable Object** that hosts multiple primitive
 ### Factory Pattern (Matching Workflow)
 
 ```typescript
-import { createDurablePrimitives, Buffer, Queue, Semaphore, Continuous } from "@durable-effect/primitives";
+import { createDurableJobs, Buffer, Queue, Semaphore, Continuous } from "@durable-effect/jobs";
 
-// Define all primitives in one registry
-const { Primitives, PrimitiveClient } = createDurablePrimitives({
+// Define all jobs in one registry
+const { Jobs, PrimitiveClient } = createDurableJobs({
   // Continuous processes
   tokenRefresher: Continuous.make({
     interval: "30 minutes",
@@ -90,7 +90,7 @@ const { Primitives, PrimitiveClient } = createDurablePrimitives({
 });
 
 // Export single DO class
-export { Primitives };
+export { Jobs };
 ```
 
 ### Wrangler Config
@@ -98,7 +98,7 @@ export { Primitives };
 ```toml
 [[durable_objects.bindings]]
 name = "PRIMITIVES"
-class_name = "Primitives"
+class_name = "Jobs"
 ```
 
 ### Client Usage
@@ -390,7 +390,7 @@ async alarm() {
 
 ## Instance Keying Strategy
 
-Different primitives need different keying strategies:
+Different jobs need different keying strategies:
 
 | Primitive | Key Strategy | Example |
 |-----------|--------------|---------|
@@ -413,21 +413,21 @@ const continuousId = env.PRIMITIVES.idFromName(`continuous:${name}:${instanceKey
 
 ## Comparison with Workflow Package
 
-| Aspect | @durable-effect/workflow | @durable-effect/primitives |
+| Aspect | @durable-effect/workflow | @durable-effect/jobs |
 |--------|-------------------------|---------------------------|
 | Purpose | Step-by-step processes | Stateful behaviors |
 | Execution | Run-to-completion with pauses | Continuous/reactive |
 | State | Workflow progress + step results | Primitive-specific state |
 | Triggering | Explicit start | Events/timers/external calls |
-| Composition | Steps within workflows | Primitives are independent |
+| Composition | Steps within workflows | Jobs are independent |
 | Recovery | Resume from last step | Primitive-specific recovery |
 
 ---
 
 ## Next Steps
 
-1. **Validate naming**: Confirm `@durable-effect/primitives` or choose alternative
-2. **Prioritize primitives**: Start with Buffer + Queue (most common), add Semaphore + Continuous later
+1. **Validate naming**: Confirm `@durable-effect/jobs` or choose alternative
+2. **Prioritize jobs**: Start with Buffer + Queue (most common), add Semaphore + Continuous later
 3. **Prototype Buffer**: Simplest primitive, validates the engine architecture
 4. **Define event schema**: Standardize events across all primitive types
 5. **Design testing utilities**: In-memory implementations for each primitive type

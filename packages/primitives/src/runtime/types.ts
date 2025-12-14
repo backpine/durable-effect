@@ -1,21 +1,21 @@
-// packages/primitives/src/runtime/types.ts
+// packages/jobs/src/runtime/types.ts
 
-import type { PrimitiveStatus } from "../services/metadata";
+import type { JobStatus } from "../services/metadata";
 
 // =============================================================================
 // Request Types
 // =============================================================================
 
 /**
- * Union of all primitive request types.
+ * Union of all job request types.
  */
-export type PrimitiveRequest =
+export type JobRequest =
   | ContinuousRequest
-  | BufferRequest
-  | QueueRequest;
+  | DebounceRequest
+  | WorkerPoolRequest;
 
 /**
- * Continuous primitive request.
+ * Continuous job request.
  */
 export interface ContinuousRequest {
   readonly type: "continuous";
@@ -27,10 +27,10 @@ export interface ContinuousRequest {
 }
 
 /**
- * Buffer primitive request.
+ * Debounce job request.
  */
-export interface BufferRequest {
-  readonly type: "buffer";
+export interface DebounceRequest {
+  readonly type: "debounce";
   readonly action: "add" | "flush" | "clear" | "status" | "getState";
   readonly name: string;
   readonly id: string;
@@ -39,10 +39,10 @@ export interface BufferRequest {
 }
 
 /**
- * Queue primitive request.
+ * WorkerPool job request.
  */
-export interface QueueRequest {
-  readonly type: "queue";
+export interface WorkerPoolRequest {
+  readonly type: "workerPool";
   readonly action:
     | "enqueue"
     | "pause"
@@ -63,25 +63,25 @@ export interface QueueRequest {
 // =============================================================================
 
 /**
- * Union of all primitive response types.
+ * Union of all job response types.
  */
-export type PrimitiveResponse =
+export type JobResponse =
   | ContinuousStartResponse
   | ContinuousStopResponse
   | ContinuousTriggerResponse
   | ContinuousStatusResponse
   | ContinuousGetStateResponse
-  | BufferAddResponse
-  | BufferFlushResponse
-  | BufferClearResponse
-  | BufferStatusResponse
-  | BufferGetStateResponse
-  | QueueEnqueueResponse
-  | QueuePauseResponse
-  | QueueResumeResponse
-  | QueueCancelResponse
-  | QueueStatusResponse
-  | QueueDrainResponse;
+  | DebounceAddResponse
+  | DebounceFlushResponse
+  | DebounceClearResponse
+  | DebounceStatusResponse
+  | DebounceGetStateResponse
+  | WorkerPoolEnqueueResponse
+  | WorkerPoolPauseResponse
+  | WorkerPoolResumeResponse
+  | WorkerPoolCancelResponse
+  | WorkerPoolStatusResponse
+  | WorkerPoolDrainResponse;
 
 // -----------------------------------------------------------------------------
 // Continuous Responses
@@ -91,7 +91,7 @@ export interface ContinuousStartResponse {
   readonly _type: "continuous.start";
   readonly instanceId: string;
   readonly created: boolean;
-  readonly status: PrimitiveStatus;
+  readonly status: JobStatus;
 }
 
 export interface ContinuousStopResponse {
@@ -103,13 +103,13 @@ export interface ContinuousStopResponse {
 export interface ContinuousTriggerResponse {
   readonly _type: "continuous.trigger";
   readonly triggered: boolean;
-  /** True if the primitive terminated during this trigger */
+  /** True if the job terminated during this trigger */
   readonly terminated?: boolean;
 }
 
 export interface ContinuousStatusResponse {
   readonly _type: "continuous.status";
-  readonly status: PrimitiveStatus | "not_found";
+  readonly status: JobStatus | "not_found";
   readonly nextRunAt?: number;
   readonly runCount?: number;
   /** Reason for stopping/terminating (if applicable) */
@@ -122,11 +122,11 @@ export interface ContinuousGetStateResponse {
 }
 
 // -----------------------------------------------------------------------------
-// Buffer Responses
+// Debounce Responses
 // -----------------------------------------------------------------------------
 
-export interface BufferAddResponse {
-  readonly _type: "buffer.add";
+export interface DebounceAddResponse {
+  readonly _type: "debounce.add";
   readonly instanceId: string;
   readonly eventCount: number;
   readonly willFlushAt: number | null;
@@ -134,38 +134,38 @@ export interface BufferAddResponse {
   readonly duplicate: boolean;
 }
 
-export interface BufferFlushResponse {
-  readonly _type: "buffer.flush";
+export interface DebounceFlushResponse {
+  readonly _type: "debounce.flush";
   readonly flushed: boolean;
   readonly eventCount: number;
   readonly reason: "manual" | "empty";
 }
 
-export interface BufferClearResponse {
-  readonly _type: "buffer.clear";
+export interface DebounceClearResponse {
+  readonly _type: "debounce.clear";
   readonly cleared: boolean;
   readonly discardedEvents: number;
 }
 
-export interface BufferStatusResponse {
-  readonly _type: "buffer.status";
-  readonly status: "buffering" | "idle" | "not_found";
+export interface DebounceStatusResponse {
+  readonly _type: "debounce.status";
+  readonly status: "debouncing" | "idle" | "not_found";
   readonly eventCount?: number;
   readonly startedAt?: number;
   readonly willFlushAt?: number;
 }
 
-export interface BufferGetStateResponse {
-  readonly _type: "buffer.getState";
+export interface DebounceGetStateResponse {
+  readonly _type: "debounce.getState";
   readonly state: unknown | null;
 }
 
 // -----------------------------------------------------------------------------
-// Queue Responses
+// WorkerPool Responses
 // -----------------------------------------------------------------------------
 
-export interface QueueEnqueueResponse {
-  readonly _type: "queue.enqueue";
+export interface WorkerPoolEnqueueResponse {
+  readonly _type: "workerPool.enqueue";
   readonly eventId: string;
   readonly instanceId: string;
   readonly instanceIndex: number;
@@ -174,31 +174,31 @@ export interface QueueEnqueueResponse {
   readonly duplicate: boolean;
 }
 
-export interface QueuePauseResponse {
-  readonly _type: "queue.pause";
+export interface WorkerPoolPauseResponse {
+  readonly _type: "workerPool.pause";
   readonly paused: boolean;
 }
 
-export interface QueueResumeResponse {
-  readonly _type: "queue.resume";
+export interface WorkerPoolResumeResponse {
+  readonly _type: "workerPool.resume";
   readonly resumed: boolean;
 }
 
-export interface QueueCancelResponse {
-  readonly _type: "queue.cancel";
+export interface WorkerPoolCancelResponse {
+  readonly _type: "workerPool.cancel";
   readonly cancelled: boolean;
   readonly reason: "cancelled" | "not_found" | "already_processing" | "already_completed";
 }
 
-export interface QueueStatusResponse {
-  readonly _type: "queue.status";
+export interface WorkerPoolStatusResponse {
+  readonly _type: "workerPool.status";
   readonly status: "processing" | "idle" | "paused" | "not_found";
   readonly pendingCount?: number;
   readonly processedCount?: number;
   readonly currentEventId?: string | null;
 }
 
-export interface QueueDrainResponse {
-  readonly _type: "queue.drain";
+export interface WorkerPoolDrainResponse {
+  readonly _type: "workerPool.drain";
   readonly drained: boolean;
 }
