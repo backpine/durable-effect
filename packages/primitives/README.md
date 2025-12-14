@@ -255,7 +255,7 @@ const result = await client.continuous("tokenRefresher").getState("user-123");
 Handle errors gracefully without failing the execution:
 
 ```ts
-const ResilientPrimitive = Continuous.make("resilient", {
+const resilientPrimitive = Continuous.make({
   stateSchema: Schema.Struct({
     data: Schema.String,
     errorCount: Schema.Number,
@@ -296,7 +296,7 @@ class RefreshError extends Data.TaggedError("RefreshError")<{
   readonly reason: string;
 }> {}
 
-const TypedPrimitive = Continuous.make("typed-errors", {
+const typedPrimitive = Continuous.make({
   stateSchema: Schema.Struct({ token: Schema.String }),
   schedule: Continuous.every("1 hour"),
 
@@ -327,14 +327,14 @@ import { Effect, Schema } from "effect";
 import { createTestRuntime, NoopTrackerLayer } from "@durable-effect/core";
 import { createPrimitivesRuntimeFromLayer } from "@durable-effect/primitives";
 
-describe("TokenRefresher", () => {
+describe("tokenRefresher", () => {
   it("refreshes token on schedule", async () => {
     // Create test runtime with time control
     const { layer, time, handles } = createTestRuntime("test-instance", 1000000);
 
-    // Create registry
+    // Create registry (manually add name for test registry)
     const registry = {
-      continuous: new Map([["token-refresher", TokenRefresher]]),
+      continuous: new Map([["tokenRefresher", { ...tokenRefresher, name: "tokenRefresher" }]]),
       buffer: new Map(),
       queue: new Map(),
     };
@@ -346,7 +346,7 @@ describe("TokenRefresher", () => {
     await runtime.handle({
       type: "continuous",
       action: "start",
-      name: "token-refresher",
+      name: "tokenRefresher",
       id: "test-user",
       input: { accessToken: "", refreshToken: "rt_test", expiresAt: 0 },
     });
@@ -361,7 +361,7 @@ describe("TokenRefresher", () => {
     const result = await runtime.handle({
       type: "continuous",
       action: "getState",
-      name: "token-refresher",
+      name: "tokenRefresher",
       id: "test-user",
     });
 
@@ -375,7 +375,7 @@ describe("TokenRefresher", () => {
 ### Daily Report Generator
 
 ```ts
-const DailyReport = Continuous.make("daily-report", {
+const dailyReport = Continuous.make({
   stateSchema: Schema.Struct({
     lastReportDate: Schema.NullOr(Schema.String),
     totalReports: Schema.Number,
@@ -399,7 +399,7 @@ const DailyReport = Continuous.make("daily-report", {
 ### Health Check Monitor
 
 ```ts
-const HealthCheck = Continuous.make("health-check", {
+const healthCheck = Continuous.make({
   stateSchema: Schema.Struct({
     status: Schema.Literal("healthy", "degraded", "down"),
     lastCheck: Schema.Number,
@@ -427,7 +427,7 @@ const HealthCheck = Continuous.make("health-check", {
 ### Cache Warmer
 
 ```ts
-const CacheWarmer = Continuous.make("cache-warmer", {
+const cacheWarmer = Continuous.make({
   stateSchema: Schema.Struct({
     lastWarmTime: Schema.Number,
     itemsWarmed: Schema.Number,
