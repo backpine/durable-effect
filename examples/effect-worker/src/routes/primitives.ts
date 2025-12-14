@@ -12,7 +12,7 @@ export const startRefreshTokens: RouteEffect<Response> = Effect.gen(
 
     yield* Effect.log(`Starting workflow for order ${orderId}`);
 
-    const res = yield* client.continuous("TokenRefresher").start({
+    const res = yield* client.continuous("tokenRefresher").start({
       id: orderId,
       input: {
         accessToken: "example_access_token",
@@ -46,7 +46,7 @@ export const stopRefreshTokens: RouteEffect<Response> = Effect.gen(
 
     yield* Effect.log(`Starting workflow for order ${id}`);
 
-    const res = yield* client.continuous("TokenRefresher").stop(id);
+    const res = yield* client.continuous("tokenRefresher").stop(id);
 
     return c.json({
       success: true,

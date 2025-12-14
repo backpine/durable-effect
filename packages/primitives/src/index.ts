@@ -134,14 +134,19 @@ export {
   getQueueDefinition,
   getPrimitiveDefinition,
   getAllPrimitiveNames,
-  // Types
+  // Types - Unregistered (what users create)
+  type UnregisteredContinuousDefinition,
+  type UnregisteredBufferDefinition,
+  type UnregisteredQueueDefinition,
+  type AnyUnregisteredDefinition,
+  // Types - Registered (with name)
   type ContinuousSchedule,
-  type PrimitiveDefinitionBase,
   type ContinuousDefinition,
   type BufferDefinition,
   type QueueDefinition,
   type QueueRetryConfig,
   type AnyPrimitiveDefinition,
+  // Types - Context
   type ContinuousContext,
   type TerminateOptions,
   type BufferExecuteContext,
@@ -149,6 +154,7 @@ export {
   type QueueExecuteContext,
   type QueueDeadLetterContext,
   type QueueEmptyContext,
+  // Types - Registry
   type PrimitiveRegistry,
   type InferRegistry,
 } from "./registry";

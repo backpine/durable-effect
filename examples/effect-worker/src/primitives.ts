@@ -4,8 +4,8 @@ import {
   createDurablePrimitives,
 } from "@durable-effect/primitives";
 
-// 1. Define your primitive
-const TokenRefresher = Continuous.make("token-refresher", {
+// 1. Define your primitive (name comes from the key in createDurablePrimitives)
+const tokenRefresher = Continuous.make({
   // Schema for persistent state
   stateSchema: Schema.Struct({
     accessToken: Schema.String,
@@ -35,10 +35,6 @@ const TokenRefresher = Continuous.make("token-refresher", {
       }
       yield* Effect.log(`setting the state`);
 
-      // if (ctx.runCount > 5) {
-      //   yield* ctx.updateState
-      // }
-
       // Update state (persisted automatically)
       ctx.setState({
         accessToken: ctx.state.accessToken,
@@ -49,11 +45,9 @@ const TokenRefresher = Continuous.make("token-refresher", {
     }),
 });
 
-// 2. Create the Durable Object and Client
+// 2. Create the Durable Object and Client - key becomes the primitive name
 const { Primitives, PrimitivesClient } = createDurablePrimitives({
-  primitives: {
-    TokenRefresher,
-  },
+  tokenRefresher,
 });
 
 // 3. Export the Durable Object class

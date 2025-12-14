@@ -12,8 +12,12 @@ export {
 export type {
   // Schedule types
   ContinuousSchedule,
-  // Definition types
-  PrimitiveDefinitionBase,
+  // Unregistered definition types (what user creates)
+  UnregisteredContinuousDefinition,
+  UnregisteredBufferDefinition,
+  UnregisteredQueueDefinition,
+  AnyUnregisteredDefinition,
+  // Registered definition types (with name)
   ContinuousDefinition,
   BufferDefinition,
   QueueDefinition,

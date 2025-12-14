@@ -27,7 +27,7 @@ type CounterState = typeof CounterState.Type;
 const executionLog: Array<{ instanceId: string; runCount: number; state: CounterState }> = [];
 const errorLog: Array<{ instanceId: string; error: unknown }> = [];
 
-const CounterPrimitive = Continuous.make("counter", {
+const counterPrimitive = Continuous.make({
   stateSchema: CounterState,
   schedule: Continuous.every("30 minutes"),
   execute: (ctx) =>
@@ -44,7 +44,7 @@ const CounterPrimitive = Continuous.make("counter", {
     }),
 });
 
-const FailingPrimitive = Continuous.make("failing", {
+const failingPrimitive = Continuous.make({
   stateSchema: CounterState,
   schedule: Continuous.every("1 hour"),
   execute: () => Effect.fail(new Error("Intentional test failure")),
@@ -54,7 +54,7 @@ const FailingPrimitive = Continuous.make("failing", {
     }),
 });
 
-const NoImmediateStartPrimitive = Continuous.make("no-immediate", {
+const noImmediateStartPrimitive = Continuous.make({
   stateSchema: CounterState,
   schedule: Continuous.every("1 hour"),
   startImmediately: false,
@@ -77,7 +77,7 @@ type TerminatingState = typeof TerminatingState.Type;
 
 const terminateLog: Array<{ reason?: string; purgeState: boolean }> = [];
 
-const TerminatingPrimitive = Continuous.make("terminating", {
+const terminatingPrimitive = Continuous.make({
   stateSchema: TerminatingState,
   schedule: Continuous.every("10 minutes"),
   execute: (ctx) =>
@@ -97,7 +97,7 @@ const TerminatingPrimitive = Continuous.make("terminating", {
     }),
 });
 
-const TerminatingKeepStatePrimitive = Continuous.make("terminating-keep-state", {
+const terminatingKeepStatePrimitive = Continuous.make({
   stateSchema: TerminatingState,
   schedule: Continuous.every("10 minutes"),
   execute: (ctx) =>
@@ -110,14 +110,14 @@ const TerminatingKeepStatePrimitive = Continuous.make("terminating-keep-state", 
     }),
 });
 
-// Create test registry
+// Create test registry (manually adding names since we're not using createPrimitiveRegistry)
 const createTestRegistry = (): PrimitiveRegistry => ({
   continuous: new Map([
-    ["counter", CounterPrimitive],
-    ["failing", FailingPrimitive],
-    ["no-immediate", NoImmediateStartPrimitive],
-    ["terminating", TerminatingPrimitive],
-    ["terminating-keep-state", TerminatingKeepStatePrimitive],
+    ["counter", { ...counterPrimitive, name: "counter" }],
+    ["failing", { ...failingPrimitive, name: "failing" }],
+    ["no-immediate", { ...noImmediateStartPrimitive, name: "no-immediate" }],
+    ["terminating", { ...terminatingPrimitive, name: "terminating" }],
+    ["terminating-keep-state", { ...terminatingKeepStatePrimitive, name: "terminating-keep-state" }],
   ]),
   buffer: new Map(),
   queue: new Map(),

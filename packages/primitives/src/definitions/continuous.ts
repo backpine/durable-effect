@@ -2,7 +2,7 @@
 
 import { Duration, type Effect, type Schema } from "effect";
 import type {
-  ContinuousDefinition,
+  UnregisteredContinuousDefinition,
   ContinuousSchedule,
   ContinuousContext,
 } from "../registry/types";
@@ -13,7 +13,6 @@ import type {
 
 /**
  * Input config for creating a continuous primitive definition.
- * The `name` field is provided at the call site of `Continuous.make()`.
  */
 export interface ContinuousMakeConfig<S, E, R> {
   /**
@@ -53,7 +52,7 @@ export interface ContinuousMakeConfig<S, E, R> {
  * import { Continuous } from "@durable-effect/primitives";
  * import { Schema } from "effect";
  *
- * const DailyReport = Continuous.make("daily-report", {
+ * const dailyReport = Continuous.make({
  *   stateSchema: Schema.Struct({
  *     lastReportDate: Schema.DateFromSelf,
  *     totalReports: Schema.Number,
@@ -69,22 +68,25 @@ export interface ContinuousMakeConfig<S, E, R> {
  *       }));
  *     }),
  * });
+ *
+ * // Register with createDurablePrimitives - name comes from key
+ * const { Primitives } = createDurablePrimitives({ dailyReport });
  * ```
  */
 export const Continuous = {
   /**
    * Create a continuous primitive definition.
    *
-   * @param name - Unique name for this primitive (used for routing)
+   * The name is NOT provided here - it comes from the key when you
+   * register the primitive via createDurablePrimitives().
+   *
    * @param config - Configuration for the primitive
-   * @returns A ContinuousDefinition that can be registered
+   * @returns An UnregisteredContinuousDefinition that can be registered
    */
   make: <S, E = never, R = never>(
-    name: string,
     config: ContinuousMakeConfig<S, E, R>
-  ): ContinuousDefinition<S, E, R> => ({
-    _tag: "continuous",
-    name,
+  ): UnregisteredContinuousDefinition<S, E, R> => ({
+    _tag: "ContinuousDefinition",
     stateSchema: config.stateSchema,
     schedule: config.schedule,
     startImmediately: config.startImmediately,

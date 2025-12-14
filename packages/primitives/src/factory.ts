@@ -9,8 +9,11 @@ import {
 } from "./engine";
 import {
   createPrimitiveRegistry,
-  type AnyPrimitiveDefinition,
+  type AnyUnregisteredDefinition,
   type PrimitiveRegistry,
+  type UnregisteredContinuousDefinition,
+  type UnregisteredBufferDefinition,
+  type UnregisteredQueueDefinition,
   type ContinuousDefinition,
   type BufferDefinition,
   type QueueDefinition,
@@ -26,18 +29,9 @@ import {
 // =============================================================================
 
 /**
- * Options for creating durable primitives.
+ * Options for creating durable primitives (optional configuration).
  */
-export interface CreateDurablePrimitivesOptions<
-  T extends Record<string, AnyPrimitiveDefinition>,
-> {
-  /**
-   * The primitive definitions to register.
-   *
-   * Keys become the primitive names used for lookup.
-   */
-  readonly primitives: T;
-
+export interface CreateDurablePrimitivesOptions {
   /**
    * Optional tracking configuration.
    */
@@ -53,7 +47,7 @@ export interface CreateDurablePrimitivesOptions<
  * Result of creating durable primitives.
  */
 export interface CreateDurablePrimitivesResult<
-  T extends Record<string, AnyPrimitiveDefinition>,
+  T extends Record<string, AnyUnregisteredDefinition>,
 > {
   /**
    * The Durable Object class to export for Cloudflare.
@@ -90,25 +84,25 @@ export interface CreateDurablePrimitivesResult<
  * Preserves the literal keys for autocomplete support.
  */
 export type InferRegistryFromDefinitions<
-  T extends Record<string, AnyPrimitiveDefinition>,
+  T extends Record<string, AnyUnregisteredDefinition>,
 > = {
   readonly continuous: Map<
     Extract<
-      { [K in keyof T]: T[K] extends ContinuousDefinition<any, any, any> ? K : never }[keyof T],
+      { [K in keyof T]: T[K] extends UnregisteredContinuousDefinition<any, any, any> ? K : never }[keyof T],
       string
     >,
     ContinuousDefinition<any, any, any>
   >;
   readonly buffer: Map<
     Extract<
-      { [K in keyof T]: T[K] extends BufferDefinition<any, any, any, any> ? K : never }[keyof T],
+      { [K in keyof T]: T[K] extends UnregisteredBufferDefinition<any, any, any, any> ? K : never }[keyof T],
       string
     >,
     BufferDefinition<any, any, any, any>
   >;
   readonly queue: Map<
     Extract<
-      { [K in keyof T]: T[K] extends QueueDefinition<any, any, any> ? K : never }[keyof T],
+      { [K in keyof T]: T[K] extends UnregisteredQueueDefinition<any, any, any> ? K : never }[keyof T],
       string
     >,
     QueueDefinition<any, any, any>
@@ -130,6 +124,9 @@ export type InferRegistryFromDefinitions<
  * - `PrimitivesClient`: Factory for creating typed clients
  * - `registry`: The primitive registry (for advanced use cases)
  *
+ * @param definitions - Object of primitive definitions (keys become primitive names)
+ * @param options - Optional configuration for tracking, etc.
+ *
  * @example
  * ```ts
  * import { Schema } from "effect";
@@ -142,52 +139,30 @@ export type InferRegistryFromDefinitions<
  *     refreshToken: Schema.String,
  *     expiresAt: Schema.Number,
  *   }),
- *   schedule: { _tag: "Every", interval: "30 minutes" },
+ *   schedule: Continuous.every("30 minutes"),
  *   execute: (ctx) => Effect.gen(function* () {
  *     // Refresh token logic
  *     ctx.setState({ ...ctx.state, accessToken: "new_token" });
  *   }),
  * });
  *
- * const webhookBuffer = Buffer.make({
- *   eventSchema: Schema.Struct({
- *     type: Schema.String,
- *     data: Schema.Unknown,
- *   }),
- *   flushAfter: "5 minutes",
- *   maxEvents: 100,
- *   execute: (ctx) => Effect.gen(function* () {
- *     // Batch process events
- *     yield* sendWebhooks(ctx.state);
- *   }),
- * });
- *
- * const emailQueue = Queue.make({
- *   eventSchema: Schema.Struct({
- *     to: Schema.String,
- *     template: Schema.String,
- *   }),
- *   concurrency: 5,
- *   execute: (ctx) => Effect.gen(function* () {
- *     // Send email
- *     yield* sendEmail(ctx.event);
- *   }),
- * });
- *
- * // Create engine and client
+ * // Create engine and client - keys become primitive names
  * const { Primitives, PrimitivesClient } = createDurablePrimitives({
- *   primitives: {
- *     tokenRefresher,
- *     webhookBuffer,
- *     emailQueue,
- *   },
- *   tracking: {
- *     enabled: true,
- *     endpoint: "https://events.example.com/ingest",
- *     env: "production",
- *     serviceKey: "my-service",
- *   },
+ *   tokenRefresher,
  * });
+ *
+ * // With tracking options
+ * const { Primitives, PrimitivesClient } = createDurablePrimitives(
+ *   { tokenRefresher },
+ *   {
+ *     tracking: {
+ *       enabled: true,
+ *       endpoint: "https://events.example.com/ingest",
+ *       env: "production",
+ *       serviceKey: "my-service",
+ *     },
+ *   }
+ * );
  *
  * // Export for Cloudflare
  * export { Primitives };
@@ -197,22 +172,10 @@ export type InferRegistryFromDefinitions<
  *   async fetch(request: Request, env: Env): Promise<Response> {
  *     const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
  *
- *     // Start continuous primitive
- *     await client.continuous("tokenRefresher").start({
+ *     // Start continuous primitive - name comes from object key
+ *     yield* client.continuous("tokenRefresher").start({
  *       id: "user-123",
  *       input: { accessToken: "", refreshToken: "rt_abc", expiresAt: 0 },
- *     });
- *
- *     // Add to buffer
- *     await client.buffer("webhookBuffer").add({
- *       id: "contact-456",
- *       event: { type: "contact.updated", data: { email: "new@example.com" } },
- *     });
- *
- *     // Enqueue for processing
- *     await client.queue("emailQueue").enqueue({
- *       id: "email-789",
- *       event: { to: "user@example.com", template: "welcome" },
  *     });
  *
  *     return new Response("OK");
@@ -221,15 +184,16 @@ export type InferRegistryFromDefinitions<
  * ```
  */
 export function createDurablePrimitives<
-  const T extends Record<string, AnyPrimitiveDefinition>,
+  const T extends Record<string, AnyUnregisteredDefinition>,
 >(
-  options: CreateDurablePrimitivesOptions<T>
+  definitions: T,
+  options?: CreateDurablePrimitivesOptions
 ): CreateDurablePrimitivesResult<T> {
   // Create registry from definitions
-  const registry = createPrimitiveRegistry(options.primitives);
+  const registry = createPrimitiveRegistry(definitions);
 
   // Create tracker config if provided
-  const trackerConfig: TrackerConfig | undefined = options.tracking
+  const trackerConfig: TrackerConfig | undefined = options?.tracking
     ? {
         enabled: options.tracking.enabled,
         endpoint: options.tracking.endpoint,

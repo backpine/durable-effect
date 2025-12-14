@@ -3,9 +3,9 @@
 import type { Context, Effect } from "effect";
 import type {
   PrimitiveRegistry,
-  ContinuousDefinition,
-  BufferDefinition,
-  QueueDefinition,
+  UnregisteredContinuousDefinition,
+  UnregisteredBufferDefinition,
+  UnregisteredQueueDefinition,
 } from "../registry/types";
 import type {
   ContinuousStartResponse,
@@ -248,7 +248,7 @@ export type ContinuousKeys<R extends PrimitiveRegistry> =
     ? R["__definitions"] extends Record<string, unknown>
       ? Extract<
           {
-            [K in keyof R["__definitions"]]: R["__definitions"][K] extends ContinuousDefinition<
+            [K in keyof R["__definitions"]]: R["__definitions"][K] extends UnregisteredContinuousDefinition<
               any,
               any,
               any
@@ -273,7 +273,7 @@ export type BufferKeys<R extends PrimitiveRegistry> =
     ? R["__definitions"] extends Record<string, unknown>
       ? Extract<
           {
-            [K in keyof R["__definitions"]]: R["__definitions"][K] extends BufferDefinition<
+            [K in keyof R["__definitions"]]: R["__definitions"][K] extends UnregisteredBufferDefinition<
               any,
               any,
               any,
@@ -299,7 +299,7 @@ export type QueueKeys<R extends PrimitiveRegistry> =
     ? R["__definitions"] extends Record<string, unknown>
       ? Extract<
           {
-            [K in keyof R["__definitions"]]: R["__definitions"][K] extends QueueDefinition<
+            [K in keyof R["__definitions"]]: R["__definitions"][K] extends UnregisteredQueueDefinition<
               any,
               any,
               any
@@ -323,7 +323,7 @@ export type ContinuousStateType<R extends PrimitiveRegistry, K extends string> =
   R extends RegistryWithDefinitions
     ? R["__definitions"] extends Record<string, unknown>
       ? K extends keyof R["__definitions"]
-        ? R["__definitions"][K] extends ContinuousDefinition<infer S, any, any>
+        ? R["__definitions"][K] extends UnregisteredContinuousDefinition<infer S, any, any>
           ? S
           : unknown
         : unknown
@@ -337,7 +337,7 @@ export type BufferEventType<R extends PrimitiveRegistry, K extends string> =
   R extends RegistryWithDefinitions
     ? R["__definitions"] extends Record<string, unknown>
       ? K extends keyof R["__definitions"]
-        ? R["__definitions"][K] extends BufferDefinition<
+        ? R["__definitions"][K] extends UnregisteredBufferDefinition<
             infer I,
             any,
             any,
@@ -356,7 +356,7 @@ export type BufferStateType<R extends PrimitiveRegistry, K extends string> =
   R extends RegistryWithDefinitions
     ? R["__definitions"] extends Record<string, unknown>
       ? K extends keyof R["__definitions"]
-        ? R["__definitions"][K] extends BufferDefinition<
+        ? R["__definitions"][K] extends UnregisteredBufferDefinition<
             any,
             infer S,
             any,
@@ -375,7 +375,7 @@ export type QueueEventType<R extends PrimitiveRegistry, K extends string> =
   R extends RegistryWithDefinitions
     ? R["__definitions"] extends Record<string, unknown>
       ? K extends keyof R["__definitions"]
-        ? R["__definitions"][K] extends QueueDefinition<infer E, any, any>
+        ? R["__definitions"][K] extends UnregisteredQueueDefinition<infer E, any, any>
           ? E
           : unknown
         : unknown

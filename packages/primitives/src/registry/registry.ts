@@ -1,6 +1,7 @@
 // packages/primitives/src/registry/registry.ts
 
 import type {
+  AnyUnregisteredDefinition,
   AnyPrimitiveDefinition,
   BufferDefinition,
   ContinuousDefinition,
@@ -30,7 +31,7 @@ import type {
  * ```
  */
 export function createPrimitiveRegistry<
-  T extends Record<string, AnyPrimitiveDefinition>,
+  T extends Record<string, AnyUnregisteredDefinition>,
 >(definitions: T): PrimitiveRegistry {
   const registry: PrimitiveRegistry = {
     continuous: new Map<string, ContinuousDefinition<any, any, any>>(),
@@ -43,19 +44,19 @@ export function createPrimitiveRegistry<
     const withName = { ...def, name };
 
     switch (def._tag) {
-      case "continuous":
+      case "ContinuousDefinition":
         registry.continuous.set(
           name,
           withName as ContinuousDefinition<any, any, any>
         );
         break;
-      case "buffer":
+      case "BufferDefinition":
         registry.buffer.set(
           name,
           withName as BufferDefinition<any, any, any, any>
         );
         break;
-      case "queue":
+      case "QueueDefinition":
         registry.queue.set(name, withName as QueueDefinition<any, any, any>);
         break;
     }

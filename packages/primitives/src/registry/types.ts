@@ -15,28 +15,20 @@ export type ContinuousSchedule =
   | { readonly _tag: "Cron"; readonly expression: string };
 
 // =============================================================================
-// Definition Types
+// Unregistered Definition Types (what user creates - no name)
 // =============================================================================
 
 /**
- * Base definition shape shared by all primitives.
+ * Unregistered continuous primitive definition.
+ * Created by Continuous.make() - does not have a name yet.
+ * Name is assigned when registered via createDurablePrimitives().
  */
-export interface PrimitiveDefinitionBase {
-  readonly _tag: "continuous" | "buffer" | "queue";
-  readonly name: string;
-}
-
-/**
- * Continuous primitive definition.
- *
- * Continuous primitives execute a function on a schedule.
- */
-export interface ContinuousDefinition<
+export interface UnregisteredContinuousDefinition<
   S = unknown,
   E = unknown,
   R = never,
-> extends PrimitiveDefinitionBase {
-  readonly _tag: "continuous";
+> {
+  readonly _tag: "ContinuousDefinition";
   /** Schema for state - encoded type can be anything (typically same as S for simple schemas) */
   readonly stateSchema: Schema.Schema<S, any, never>;
   readonly schedule: ContinuousSchedule;
@@ -48,17 +40,16 @@ export interface ContinuousDefinition<
 }
 
 /**
- * Buffer primitive definition.
- *
- * Buffer primitives accumulate events and flush on a schedule or threshold.
+ * Unregistered buffer primitive definition.
+ * Created by Buffer.make() - does not have a name yet.
  */
-export interface BufferDefinition<
+export interface UnregisteredBufferDefinition<
   I = unknown,
   S = unknown,
   E = unknown,
   R = never,
-> extends PrimitiveDefinitionBase {
-  readonly _tag: "buffer";
+> {
+  readonly _tag: "BufferDefinition";
   readonly eventSchema: Schema.Schema<I, any, never>;
   readonly stateSchema?: Schema.Schema<S, any, never>;
   readonly flushAfter: Duration.DurationInput;
@@ -79,16 +70,15 @@ export interface QueueRetryConfig {
 }
 
 /**
- * Queue primitive definition.
- *
- * Queue primitives process events one at a time with retry support.
+ * Unregistered queue primitive definition.
+ * Created by Queue.make() - does not have a name yet.
  */
-export interface QueueDefinition<
+export interface UnregisteredQueueDefinition<
   E = unknown,
   Err = unknown,
   R = never,
-> extends PrimitiveDefinitionBase {
-  readonly _tag: "queue";
+> {
+  readonly _tag: "QueueDefinition";
   readonly eventSchema: Schema.Schema<E, any, never>;
   readonly concurrency: number;
   readonly retry?: QueueRetryConfig;
@@ -98,7 +88,53 @@ export interface QueueDefinition<
 }
 
 /**
- * Union of all primitive definition types.
+ * Union of all unregistered primitive definition types.
+ */
+export type AnyUnregisteredDefinition =
+  | UnregisteredContinuousDefinition<any, any, any>
+  | UnregisteredBufferDefinition<any, any, any, any>
+  | UnregisteredQueueDefinition<any, any, any>;
+
+// =============================================================================
+// Registered Definition Types (with name - stored in registry)
+// =============================================================================
+
+/**
+ * Continuous primitive definition with name (after registration).
+ */
+export interface ContinuousDefinition<
+  S = unknown,
+  E = unknown,
+  R = never,
+> extends UnregisteredContinuousDefinition<S, E, R> {
+  readonly name: string;
+}
+
+/**
+ * Buffer primitive definition with name (after registration).
+ */
+export interface BufferDefinition<
+  I = unknown,
+  S = unknown,
+  E = unknown,
+  R = never,
+> extends UnregisteredBufferDefinition<I, S, E, R> {
+  readonly name: string;
+}
+
+/**
+ * Queue primitive definition with name (after registration).
+ */
+export interface QueueDefinition<
+  E = unknown,
+  Err = unknown,
+  R = never,
+> extends UnregisteredQueueDefinition<E, Err, R> {
+  readonly name: string;
+}
+
+/**
+ * Union of all registered primitive definition types.
  */
 export type AnyPrimitiveDefinition =
   | ContinuousDefinition<any, any, any>

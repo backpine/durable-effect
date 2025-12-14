@@ -28,8 +28,8 @@ The Continuous primitive executes a function on a recurring schedule. Perfect fo
 import { Effect, Schema } from "effect";
 import { Continuous, createDurablePrimitives } from "@durable-effect/primitives";
 
-// 1. Define your primitive
-const TokenRefresher = Continuous.make("token-refresher", {
+// 1. Define your primitive (name comes from the object key in step 2)
+const tokenRefresher = Continuous.make({
   // Schema for persistent state
   stateSchema: Schema.Struct({
     accessToken: Schema.String,
@@ -60,9 +60,9 @@ const TokenRefresher = Continuous.make("token-refresher", {
     }),
 });
 
-// 2. Create the Durable Object and Client
+// 2. Create the Durable Object and Client - keys become primitive names
 const { Primitives, PrimitivesClient } = createDurablePrimitives({
-  primitives: { TokenRefresher },
+  tokenRefresher,
 });
 
 // 3. Export the Durable Object class
@@ -73,8 +73,8 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const client = PrimitivesClient.fromBinding(env.PRIMITIVES);
 
-    // Start a token refresher for a user
-    await client.continuous("token-refresher").start({
+    // Start a token refresher for a user (name matches the key from step 2)
+    await client.continuous("tokenRefresher").start({
       id: "user-123",
       input: {
         accessToken: "",
@@ -102,15 +102,21 @@ new_classes = ["Primitives"]
 
 ## API Reference
 
-### `Continuous.make(name, config)`
+### `Continuous.make(config)`
 
-Creates a continuous primitive definition.
+Creates a continuous primitive definition. The name is assigned when you register
+the primitive via `createDurablePrimitives()` - the object key becomes the name.
 
 ```ts
-const MyPrimitive = Continuous.make("my-primitive", {
+const myPrimitive = Continuous.make({
   stateSchema: Schema.Struct({ ... }),
   schedule: Continuous.every("1 hour"),
   execute: (ctx) => Effect.succeed(undefined),
+});
+
+// Name "myPrimitive" comes from the key
+const { Primitives, PrimitivesClient } = createDurablePrimitives({
+  myPrimitive,
 });
 ```
 
@@ -118,7 +124,6 @@ const MyPrimitive = Continuous.make("my-primitive", {
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `name` | `string` | Unique name for this primitive (used for routing) |
 | `config.stateSchema` | `Schema.Schema<S>` | Effect Schema for validating and serializing state |
 | `config.schedule` | `ContinuousSchedule` | When to execute (see Schedules below) |
 | `config.startImmediately` | `boolean` | Execute immediately on start (default: `true`) |
@@ -186,7 +191,7 @@ interface ContinuousContext<S> {
 Start a continuous primitive instance.
 
 ```ts
-const result = await client.continuous("token-refresher").start({
+const result = await client.continuous("tokenRefresher").start({
   id: "user-123",           // Unique instance ID
   input: { ... },           // Initial state (must match stateSchema)
 });
@@ -202,7 +207,7 @@ If the instance already exists, returns `{ created: false }` with current status
 Stop a running instance.
 
 ```ts
-const result = await client.continuous("token-refresher").stop("user-123", {
+const result = await client.continuous("tokenRefresher").stop("user-123", {
   reason: "User logged out",  // Optional reason
 });
 
@@ -215,7 +220,7 @@ const result = await client.continuous("token-refresher").stop("user-123", {
 Manually trigger immediate execution (bypasses schedule).
 
 ```ts
-const result = await client.continuous("token-refresher").trigger("user-123");
+const result = await client.continuous("tokenRefresher").trigger("user-123");
 
 // Result:
 // { _type: "continuous.trigger", triggered: boolean }
@@ -226,7 +231,7 @@ const result = await client.continuous("token-refresher").trigger("user-123");
 Get current status of an instance.
 
 ```ts
-const result = await client.continuous("token-refresher").status("user-123");
+const result = await client.continuous("tokenRefresher").status("user-123");
 
 // Result:
 // { _type: "continuous.status", status: string, runCount: number, nextRunAt?: number }
@@ -237,7 +242,7 @@ const result = await client.continuous("token-refresher").status("user-123");
 Get current state of an instance.
 
 ```ts
-const result = await client.continuous("token-refresher").getState("user-123");
+const result = await client.continuous("tokenRefresher").getState("user-123");
 
 // Result:
 // { _type: "continuous.getState", state: S | null }

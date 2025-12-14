@@ -11,9 +11,9 @@ import {
   getAllPrimitiveNames,
 } from "../src/registry";
 import type {
-  ContinuousDefinition,
-  BufferDefinition,
-  QueueDefinition,
+  UnregisteredContinuousDefinition,
+  UnregisteredBufferDefinition,
+  UnregisteredQueueDefinition,
 } from "../src/registry/types";
 
 // =============================================================================
@@ -26,13 +26,12 @@ const TokenState = Schema.Struct({
   expiresAt: Schema.Number,
 });
 
-const testContinuous: ContinuousDefinition<
+const testContinuous: UnregisteredContinuousDefinition<
   typeof TokenState.Type,
   never,
   never
 > = {
-  _tag: "continuous",
-  name: "tokenRefresher",
+  _tag: "ContinuousDefinition",
   stateSchema: TokenState,
   schedule: { _tag: "Every", interval: "30 minutes" },
   startImmediately: true,
@@ -44,14 +43,13 @@ const WebhookEvent = Schema.Struct({
   data: Schema.Unknown,
 });
 
-const testBuffer: BufferDefinition<
+const testBuffer: UnregisteredBufferDefinition<
   typeof WebhookEvent.Type,
   { events: Array<typeof WebhookEvent.Type> },
   never,
   never
 > = {
-  _tag: "buffer",
-  name: "webhookBuffer",
+  _tag: "BufferDefinition",
   eventSchema: WebhookEvent,
   flushAfter: "5 minutes",
   maxEvents: 100,
@@ -63,9 +61,8 @@ const EmailEvent = Schema.Struct({
   template: Schema.String,
 });
 
-const testQueue: QueueDefinition<typeof EmailEvent.Type, Error, never> = {
-  _tag: "queue",
-  name: "emailQueue",
+const testQueue: UnregisteredQueueDefinition<typeof EmailEvent.Type, Error, never> = {
+  _tag: "QueueDefinition",
   eventSchema: EmailEvent,
   concurrency: 5,
   execute: () => Effect.void,
@@ -97,7 +94,7 @@ describe("createPrimitiveRegistry", () => {
     expect(registry.continuous.has("tokenRefresher")).toBe(true);
 
     const def = registry.continuous.get("tokenRefresher");
-    expect(def?._tag).toBe("continuous");
+    expect(def?._tag).toBe("ContinuousDefinition");
     expect(def?.name).toBe("tokenRefresher");
     expect(def?.schedule._tag).toBe("Every");
   });
@@ -111,7 +108,7 @@ describe("createPrimitiveRegistry", () => {
     expect(registry.buffer.has("webhookBuffer")).toBe(true);
 
     const def = registry.buffer.get("webhookBuffer");
-    expect(def?._tag).toBe("buffer");
+    expect(def?._tag).toBe("BufferDefinition");
     expect(def?.name).toBe("webhookBuffer");
     expect(def?.maxEvents).toBe(100);
   });
@@ -125,7 +122,7 @@ describe("createPrimitiveRegistry", () => {
     expect(registry.queue.has("emailQueue")).toBe(true);
 
     const def = registry.queue.get("emailQueue");
-    expect(def?._tag).toBe("queue");
+    expect(def?._tag).toBe("QueueDefinition");
     expect(def?.name).toBe("emailQueue");
     expect(def?.concurrency).toBe(5);
   });
@@ -165,7 +162,7 @@ describe("getContinuousDefinition", () => {
   it("returns definition when found", () => {
     const def = getContinuousDefinition(registry, "tokenRefresher");
     expect(def).toBeDefined();
-    expect(def?._tag).toBe("continuous");
+    expect(def?._tag).toBe("ContinuousDefinition");
     expect(def?.name).toBe("tokenRefresher");
   });
 
@@ -183,7 +180,7 @@ describe("getBufferDefinition", () => {
   it("returns definition when found", () => {
     const def = getBufferDefinition(registry, "webhookBuffer");
     expect(def).toBeDefined();
-    expect(def?._tag).toBe("buffer");
+    expect(def?._tag).toBe("BufferDefinition");
     expect(def?.name).toBe("webhookBuffer");
   });
 
@@ -201,7 +198,7 @@ describe("getQueueDefinition", () => {
   it("returns definition when found", () => {
     const def = getQueueDefinition(registry, "emailQueue");
     expect(def).toBeDefined();
-    expect(def?._tag).toBe("queue");
+    expect(def?._tag).toBe("QueueDefinition");
     expect(def?.name).toBe("emailQueue");
   });
 
@@ -220,17 +217,17 @@ describe("getPrimitiveDefinition", () => {
 
   it("returns continuous definition by type", () => {
     const def = getPrimitiveDefinition(registry, "continuous", "tokenRefresher");
-    expect(def?._tag).toBe("continuous");
+    expect(def?._tag).toBe("ContinuousDefinition");
   });
 
   it("returns buffer definition by type", () => {
     const def = getPrimitiveDefinition(registry, "buffer", "webhookBuffer");
-    expect(def?._tag).toBe("buffer");
+    expect(def?._tag).toBe("BufferDefinition");
   });
 
   it("returns queue definition by type", () => {
     const def = getPrimitiveDefinition(registry, "queue", "emailQueue");
-    expect(def?._tag).toBe("queue");
+    expect(def?._tag).toBe("QueueDefinition");
   });
 
   it("returns undefined for wrong type", () => {
@@ -264,9 +261,8 @@ describe("getAllPrimitiveNames", () => {
   });
 
   it("handles multiple definitions per type", () => {
-    const secondContinuous: ContinuousDefinition<unknown, never, never> = {
-      _tag: "continuous",
-      name: "healthCheck",
+    const secondContinuous: UnregisteredContinuousDefinition<unknown, never, never> = {
+      _tag: "ContinuousDefinition",
       stateSchema: Schema.Unknown,
       schedule: { _tag: "Every", interval: "1 minute" },
       execute: () => Effect.void,

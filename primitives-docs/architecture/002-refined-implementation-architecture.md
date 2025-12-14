@@ -176,6 +176,54 @@ The previous design (`001-implementation-architecture.md`) had the DO class impl
 | **Services wrap adapters** | Higher-level services (EntityStateService, AlarmService) provide Duration support, schema validation, etc. on top of raw adapters. |
 | **Handlers are independent** | Each primitive handler is self-contained. Adding a new primitive doesn't touch DO or runtime - just add a new handler. |
 | **Client does routing** | Instance ID resolution (`{type}:{name}:{id}`) happens in client, not DO. |
+| **Names from object keys** | Primitive definitions do NOT take a `name` parameter. The name is derived from the key in `createDurablePrimitives()`. |
+
+---
+
+## Naming Convention
+
+**Critical:** Primitive definitions are anonymous - they do NOT include their own name.
+
+```ts
+// CORRECT: No name in definition
+const tokenRefresher = Continuous.make({
+  stateSchema: Schema.Struct({ ... }),
+  schedule: Continuous.every("30 minutes"),
+  execute: (ctx) => Effect.gen(function* () { ... }),
+});
+
+// Name comes from object key
+const { Primitives, PrimitivesClient } = createDurablePrimitives({
+  tokenRefresher,  // ← This key IS the name
+  otherPrimitive,
+});
+
+// Client uses the same key
+client.continuous("tokenRefresher").start({ ... });
+```
+
+**Why this design:**
+1. **DRY** - The name isn't duplicated between definition and registration
+2. **Refactoring** - Rename the variable, the name changes everywhere
+3. **Type inference** - TypeScript infers available names from the object keys
+4. **Consistency** - Matches patterns in Effect ecosystem (e.g., Effect Schema, Context Tags)
+
+The `createDurablePrimitives()` factory assigns names to definitions during registration:
+
+```ts
+function createDurablePrimitives<T extends Record<string, AnyPrimitiveDefinition>>(
+  definitions: T
+) {
+  const registry = createPrimitiveRegistry();
+
+  for (const [name, definition] of Object.entries(definitions)) {
+    // Name is assigned here from the object key
+    registry.register({ ...definition, name });
+  }
+
+  // ...
+}
+```
 
 ---
 
