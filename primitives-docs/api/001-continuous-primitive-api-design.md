@@ -136,58 +136,126 @@ The context provided to the `execute` function.
 ```ts
 interface ContinuousContext<S> {
   /**
-   * Get the current state.
-   * Returns the validated, typed state.
+   * Current state value (synchronous access).
    */
-  readonly state: Effect.Effect<S, never, never>;
+  readonly state: S;
 
   /**
-   * Update the state for the next execution.
-   * State is persisted immediately.
+   * Replace the entire state.
+   * State is marked dirty and persisted after execution completes.
    */
-  readonly setState: (state: S) => Effect.Effect<void, never, never>;
+  readonly setState: (state: S) => void;
 
   /**
-   * Partially update state (merged with current).
+   * Update state via transformation function.
+   * State is marked dirty and persisted after execution completes.
    */
-  readonly updateState: (
-    updater: (current: S) => Partial<S>
-  ) => Effect.Effect<void, never, never>;
+  readonly updateState: (fn: (current: S) => S) => void;
 
   /**
-   * Override the next scheduled execution time.
-   * Accepts Duration or timestamp.
-   */
-  readonly schedule: (
-    when: Duration.DurationInput | number
-  ) => Effect.Effect<void, never, never>;
-
-  /**
-   * Stop the continuous process permanently.
-   * Purges all state and cancels future alarms.
-   */
-  readonly stop: (reason?: string) => Effect.Effect<never, never, never>;
-
-  /**
-   * The number of times this process has executed (1-indexed).
-   */
-  readonly runCount: Effect.Effect<number, never, never>;
-
-  /**
-   * The instance ID.
+   * The unique instance ID for this primitive instance.
    */
   readonly instanceId: string;
 
   /**
-   * Timestamp when this execution started.
+   * The number of times execute has been called (1-indexed).
    */
-  readonly executionStartedAt: number;
+  readonly runCount: number;
 
   /**
-   * Timestamp when this process was first started.
+   * The name of this primitive (as registered).
    */
-  readonly createdAt: Effect.Effect<number, never, never>;
+  readonly primitiveName: string;
+
+  // -------------------------------------------------------------------------
+  // Lifecycle Control (NEW)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Terminate this primitive instance.
+   *
+   * Options:
+   * - `purgeState: true` (default) - Delete all stored state
+   * - `purgeState: false` - Keep state for potential restart
+   * - `reason` - Optional reason for termination (stored in metadata)
+   *
+   * When called, the primitive will:
+   * 1. Cancel any scheduled alarm
+   * 2. Update status to "stopped" (or "terminated" if purging)
+   * 3. Optionally purge all state from storage
+   * 4. Short-circuit the current execution (no further code runs)
+   *
+   * @example
+   * ```ts
+   * execute: (ctx) => Effect.gen(function* () {
+   *   if (ctx.state.failureCount > 10) {
+   *     // Terminate and purge - too many failures
+   *     return yield* ctx.terminate({
+   *       reason: "Too many failures",
+   *       purgeState: true
+   *     });
+   *   }
+   *
+   *   if (ctx.state.expiresAt < Date.now()) {
+   *     // Stop but keep state for debugging
+   *     return yield* ctx.terminate({
+   *       reason: "Token expired",
+   *       purgeState: false
+   *     });
+   *   }
+   * })
+   * ```
+   */
+  readonly terminate: (options?: {
+    readonly reason?: string;
+    readonly purgeState?: boolean; // default: true
+  }) => Effect.Effect<never, never, never>;
+
+  // -------------------------------------------------------------------------
+  // Schedule Control (Future Enhancement)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Override the next scheduled execution time.
+   * Accepts Duration or absolute timestamp.
+   *
+   * @example
+   * ```ts
+   * // Schedule next run in 5 minutes
+   * yield* ctx.reschedule("5 minutes");
+   *
+   * // Schedule at specific time
+   * yield* ctx.reschedule(Date.now() + 3600000);
+   * ```
+   */
+  readonly reschedule?: (
+    when: Duration.DurationInput | number
+  ) => Effect.Effect<void, never, never>;
 }
+```
+
+#### Terminate Behavior
+
+The `terminate` method provides graceful shutdown from within the execute function:
+
+| Option | Behavior |
+|--------|----------|
+| `purgeState: true` (default) | Deletes all state keys, sets status to "terminated" |
+| `purgeState: false` | Keeps state intact, sets status to "stopped" |
+
+**Important**: `terminate()` returns `Effect<never>` - it short-circuits execution. After calling terminate, no further code in the execute function will run. Always use `return yield* ctx.terminate(...)`.
+
+```ts
+// CORRECT - return the terminate effect
+if (shouldStop) {
+  return yield* ctx.terminate({ reason: "Done" });
+}
+
+// INCORRECT - terminate won't stop execution without return
+if (shouldStop) {
+  yield* ctx.terminate({ reason: "Done" }); // Code below still runs!
+}
+doMoreWork(); // This will execute!
 ```
 
 ### Schedule Configuration
@@ -368,7 +436,7 @@ const tokenRefresher = Continuous.make({
       );
 
       if (result.error === "token_revoked") {
-        yield* ctx.stop("Token was revoked by user");
+        return yield* ctx.terminate({ reason: "Token was revoked by user" });
       }
 
       // Update state
@@ -395,7 +463,10 @@ const tokenRefresher = Continuous.make({
       yield* ctx.updateState((s) => ({ failureCount: failures }));
 
       if (failures >= 5) {
-        yield* ctx.stop("Too many consecutive failures");
+        return yield* ctx.terminate({
+          reason: "Too many consecutive failures",
+          purgeState: false // Keep state for debugging
+        });
       }
 
       // Exponential backoff on failure
@@ -466,7 +537,7 @@ const dripCampaign = Continuous.make({
 
       // Check if campaign is complete
       if (state.stage === "complete") {
-        yield* ctx.stop("Campaign completed");
+        return yield* ctx.terminate({ reason: "Campaign completed" });
       }
 
       // Check if user has interacted recently (pause campaign)
@@ -485,7 +556,7 @@ const dripCampaign = Continuous.make({
       // Advance to next stage
       const config = stageConfig[state.stage];
       if (!config) {
-        yield* ctx.stop("Campaign completed");
+        return yield* ctx.terminate({ reason: "Campaign completed" });
       }
 
       yield* ctx.setState({
@@ -696,9 +767,9 @@ Continuous.make({
         errorCount: (s.errorCount ?? 0) + 1,
       }));
 
-      // Can choose to stop on certain errors
+      // Can choose to terminate on certain errors
       if (error._tag === "FatalError") {
-        yield* ctx.stop("Fatal error occurred");
+        return yield* ctx.terminate({ reason: "Fatal error occurred" });
       }
 
       // Can adjust schedule for retry
@@ -724,11 +795,13 @@ If `onError` is not provided:
 | Schedule - interval | `Continuous.every("30 minutes")` |
 | Schedule - cron | `Continuous.cron("0 * * * *")` |
 | Run on start | `startImmediately: true` (default) |
-| Get state | `yield* ctx.state` |
-| Update state | `yield* ctx.setState(newState)` |
-| Override schedule | `yield* ctx.schedule(duration)` |
-| Stop process | `yield* ctx.stop("reason")` |
-| Get run count | `yield* ctx.runCount` |
+| Get state | `ctx.state` |
+| Update state | `ctx.setState(newState)` |
+| Transform state | `ctx.updateState((s) => ({ ...s, count: s.count + 1 }))` |
+| Terminate (purge) | `return yield* ctx.terminate({ reason: "..." })` |
+| Terminate (keep state) | `return yield* ctx.terminate({ reason: "...", purgeState: false })` |
+| Override schedule | `yield* ctx.reschedule(duration)` (future) |
+| Get run count | `ctx.runCount` |
 | Client - start | `yield* client.continuous("name").start({ id, input })` |
 | Client - stop | `yield* client.continuous("name").stop(id)` |
 | Client - status | `yield* client.continuous("name").status(id)` |
