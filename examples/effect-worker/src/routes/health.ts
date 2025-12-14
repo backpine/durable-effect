@@ -1,12 +1,15 @@
 import { Effect } from "effect";
 import { HonoCtx, type RouteEffect } from "../adapter";
 
+let count = 0;
+
 /**
  * GET /health - Basic health check
  */
 export const getHealth: RouteEffect<Response> = Effect.gen(function* () {
+  count += 1;
   const c = yield* HonoCtx;
-  return c.text("OK", 200);
+  return c.text(count.toString(), 200);
 });
 
 /**

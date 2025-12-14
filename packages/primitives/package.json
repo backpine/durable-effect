@@ -1,6 +1,6 @@
 {
-  "name": "@durable-effect/primatives",
-  "version": "0.0.1",
+  "name": "@durable-effect/primitives",
+  "version": "0.0.1-next.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,9 +24,11 @@
     "@durable-effect/core": "workspace:*"
   },
   "peerDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
     "effect": "catalog:",
     "vitest": "^2.1.0"
   }

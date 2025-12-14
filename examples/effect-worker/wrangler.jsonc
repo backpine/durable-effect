@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "effect-worker",
+  "name": "effect-worker-2",
   "main": "src/index.ts",
   "compatibility_date": "2025-11-28",
   "observability": {
@@ -14,6 +14,10 @@
         "name": "WORKFLOWS",
         "class_name": "Workflows",
       },
+      {
+        "name": "PRIMITIVES",
+        "class_name": "Primitives",
+      },
     ],
   },
 
@@ -21,14 +25,7 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["Workflows"],
-    },
-    {
-      "tag": "v2",
-    },
-    {
-      "tag": "v3",
-      "deleted_classes": ["PulseTracker"],
+      "new_classes": ["Workflows", "Primitives"],
     },
   ],
 }
