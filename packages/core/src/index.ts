@@ -137,6 +137,22 @@ export {
   type InMemoryRuntimeHandles,
 } from "./testing";
 
+// Retry utilities
+export {
+  // Types
+  type BackoffStrategy,
+  type DurationInput,
+  type RetryDelay,
+  type BaseRetryConfig,
+  // Backoff utilities
+  BackoffStrategies,
+  Backoff,
+  calculateBackoffDelay,
+  addJitter,
+  parseDuration,
+  resolveDelay,
+} from "./retry";
+
 // Services (DEPRECATED - use RuntimeAdapter instead)
 export {
   ExecutionContext,

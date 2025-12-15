@@ -6,7 +6,7 @@ The Debounce primitive collects events over time and processes them in batches. 
 
 1. **Effect-first** - All operations are Effects, yieldable in generators
 2. **Schema-driven** - Input events and state are defined via Effect Schema
-3. **Idempotent by default** - Client operations use IDs to ensure exactly-once semantics
+3. **Idempotent by default** - The `id` serves as both instance identifier and idempotency key
 4. **Minimal boilerplate** - Simple default behavior with powerful customization options
 
 ---
@@ -74,9 +74,9 @@ export { Jobs };
 // In your worker/webhook handler
 const client = JobsClient.fromBinding(env.PRIMITIVES);
 
-// Add event to debounce (idempotent)
+// Add event to debounce (idempotent by id)
 yield* client.debounce("webhookDebounce").add({
-  id: `${contactId}-${eventId}`,  // Idempotency key
+  id: `${contactId}-${webhookId}`,  // Instance + idempotency combined
   event: {
     type: "order.shipped",
     contactId: contactId,
@@ -382,13 +382,13 @@ const webhookClient = client.debounce("webhookDebounce");
 
 ### `add(options)`
 
-Add an event to the debounce. **Idempotent** - same `id` is deduplicated.
+Add an event to the debounce. The `id` serves as both the instance identifier and idempotency key - duplicate calls with the same `id` are safely ignored.
 
 ```ts
 interface DebounceAddOptions<I> {
   /**
    * Unique identifier for this debounce instance.
-   * Events with the same instanceId go to the same debounce.
+   * Also serves as the idempotency key - duplicate adds with the same id are ignored.
    */
   readonly id: string;
 
@@ -396,25 +396,17 @@ interface DebounceAddOptions<I> {
    * The event to add. Must match eventSchema.
    */
   readonly event: I;
-
-  /**
-   * Optional idempotency key for this specific event.
-   * If provided, duplicate events with the same key are ignored.
-   * @default undefined (no event-level deduplication)
-   */
-  readonly eventId?: string;
 }
 
 // Usage
 const result = yield* webhookClient.add({
-  id: contactId,           // Debounce instance ID
+  id: `${contactId}-${webhookId}`,  // Instance ID + idempotency key combined
   event: {
     type: "order.shipped",
     contactId: contactId,
     data: payload,
     occurredAt: Date.now(),
   },
-  eventId: webhookId,      // Optional: deduplicate this specific event
 });
 
 // Returns
@@ -591,10 +583,10 @@ export default {
     const webhook = await request.json();
     const client = JobsClient.fromBinding(env.PRIMITIVES);
 
-    // Add to debounce (idempotent by webhookId)
+    // Add to debounce - id combines contact + webhook for idempotency
     const result = await Effect.runPromise(
       client.debounce("webhookDebounce").add({
-        id: webhook.contactId,
+        id: `${webhook.contactId}-${webhook.id}`,  // Idempotent by webhook ID
         event: {
           type: webhook.type,
           contactId: webhook.contactId,
@@ -602,7 +594,6 @@ export default {
           data: webhook.data,
           occurredAt: webhook.timestamp,
         },
-        eventId: webhook.id,  // Webhook providers often send duplicates
       })
     );
 
@@ -908,7 +899,7 @@ const state = yield* client.debounce("myDebounce").getState("123");
 | Execute context - state | `yield* ctx.state` |
 | Execute context - count | `yield* ctx.eventCount` |
 | Execute context - reason | `ctx.flushReason` |
-| Client - add event | `yield* client.debounce("name").add({ id, event })` |
+| Client - add event | `yield* client.debounce("name").add({ id, event })` (id is idempotency key) |
 | Client - manual flush | `yield* client.debounce("name").flush(id)` |
 | Client - get status | `yield* client.debounce("name").status(id)` |
 | Client - get state | `yield* client.debounce("name").getState(id)` |
@@ -917,6 +908,6 @@ const state = yield* client.debounce("myDebounce").getState("123");
 The API prioritizes:
 - **Effect-native patterns** (generators, yieldable operations)
 - **Type safety** (Schema-driven, full inference)
-- **Idempotency** (ID-based operations, event deduplication)
+- **Idempotency** (ID serves as both instance identifier and idempotency key)
 - **Sensible defaults** (keep most recent, automatic purge)
 - **Flexibility** (custom `onEvent` for any accumulation logic)

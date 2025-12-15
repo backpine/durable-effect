@@ -6,7 +6,10 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "example:continuous:start": "curl \"http://127.0.0.1:8787/jobs/tokenRefresher?orderId=demo\"",
+    "example:debounce:add": "curl \"http://127.0.0.1:8787/jobs/webhookDebounce/add?contactId=demo&id=evt-1&type=order.shipped\"",
+    "example:debounce:flush": "curl \"http://127.0.0.1:8787/jobs/webhookDebounce/flush?contactId=demo\""
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",

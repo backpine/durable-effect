@@ -10,8 +10,13 @@ import {
   getGenerateReport,
 } from "./routes/workflows";
 import { Workflows } from "./workflows";
-import { Jobs } from "./primitives";
-import { startRefreshTokens, stopRefreshTokens } from "./routes/primitives";
+import { Jobs } from "./jobs";
+import {
+  startRefreshTokens,
+  stopRefreshTokens,
+  addWebhookEvent,
+  flushWebhookDebounce,
+} from "./routes/jobs";
 
 // Export the Durable Object classes
 export { Workflows };
@@ -44,7 +49,9 @@ app.get("/workflows/:id/status", effectHandler(getWorkflowStatus));
 
 // Job routes
 app.get("/jobs/tokenRefresher", effectHandler(startRefreshTokens));
-app.get("/jobs/contine/stop", effectHandler(stopRefreshTokens));
+app.get("/jobs/tokenRefresher/stop", effectHandler(stopRefreshTokens));
+app.get("/jobs/webhookDebounce/add", effectHandler(addWebhookEvent));
+app.get("/jobs/webhookDebounce/flush", effectHandler(flushWebhookDebounce));
 
 // 404 handler
 app.notFound((c) => c.json({ error: "Not Found" }, 404));
