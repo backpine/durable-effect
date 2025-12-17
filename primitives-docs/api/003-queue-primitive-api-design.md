@@ -6,40 +6,23 @@ The WorkerPool primitive processes events sequentially with controlled concurren
 
 1. **Effect-first** - All operations are Effects, yieldable in generators
 2. **Schema-driven** - Events are defined via Effect Schema
-3. **Idempotent by default** - Client operations use IDs to ensure exactly-once semantics
-4. **Explicit concurrency** - User must define concurrency (no hidden defaults)
-5. **Smart routing** - Client handles distribution across workerPool instances
+3. **Explicit concurrency** - User must define concurrency (no hidden defaults)
+4. **Smart routing** - Client handles distribution across workerPool instances
+5. **Sequence-based ordering** - Events identified by arrival sequence, not user-provided IDs
 
 ---
 
 ## Core Concept
 
 A WorkerPool:
-1. Receives events via `client.workerPool("name").enworkerPool({ id, event })`
-2. Client routes to one of N instances based on concurrency setting
+1. Receives events via `client.workerPool("name").enqueue({ event })`
+2. Client routes to one of N instances based on concurrency setting (round-robin or partition key)
 3. Each instance processes events **one at a time** in FIFO order
 4. After processing, moves to next event (or idles if empty)
 
 **Key distinction from Debounce:**
 - Debounce: Accumulates → Flush all at once → Purge
-- WorkerPool: EnworkerPool → Process one → Repeat until empty
-
----
-
-## Naming Decision
-
-Considered names:
-| Name | Pros | Cons |
-|------|------|------|
-| `WorkerPool` | Simple, universally understood | Generic |
-| `WorkWorkerPool` | Explicit about purpose | Longer |
-| `JobWorkerPool` | Common pattern | Implies batch jobs |
-| `TaskWorkerPool` | Clear | Could conflict with Effect Task |
-| `Processor` | Describes action | Doesn't imply queuing |
-| `Channel` | Go/Clojure terminology | Less familiar |
-| `Pipeline` | Implies chaining | Misleading |
-
-**Decision: `WorkerPool`** - Simple, clear, and the most intuitive name for this pattern.
+- WorkerPool: Enqueue → Process one → Repeat until empty
 
 ---
 
@@ -63,7 +46,7 @@ const webhookProcessor = WorkerPool.make({
 
   execute: (ctx) =>
     Effect.gen(function* () {
-      const event = yield* ctx.event;
+      const event = ctx.event;
 
       // Process the webhook
       yield* deliverWebhook(event.payload);
@@ -93,15 +76,20 @@ export { Jobs };
 // In your worker/webhook handler
 const client = JobsClient.fromBinding(env.PRIMITIVES);
 
-// EnworkerPool event (client handles routing to 1 of 5 instances)
-yield* client.workerPool("webhookProcessor").enworkerPool({
-  id: webhookId,  // Idempotency key
+// Enqueue event (client handles routing to 1 of 5 instances)
+yield* client.workerPool("webhookProcessor").enqueue({
   event: {
     type: "order.shipped",
     webhookId: webhookId,
     payload: webhookPayload,
     receivedAt: Date.now(),
   },
+});
+
+// With partition key for ordered processing per customer
+yield* client.workerPool("webhookProcessor").enqueue({
+  event: { ... },
+  partitionKey: customerId,  // All events for this customer go to same instance
 });
 ```
 
@@ -117,7 +105,7 @@ Creates a WorkerPool definition.
 interface WorkerPoolConfig<E extends Schema.Schema.AnyNoContext, Err, R> {
   /**
    * Effect Schema defining the event shape.
-   * Events enworkerPoold via client.enworkerPool() must match this schema.
+   * Events enqueued via client.enqueue() must match this schema.
    */
   readonly eventSchema: E;
 
@@ -140,12 +128,13 @@ interface WorkerPoolConfig<E extends Schema.Schema.AnyNoContext, Err, R> {
 
   /**
    * Optional retry configuration for failed processing.
-   * @default { maxAttempts: 3, delay: Backoff.exponential({ base: "1 second" }) }
+   * @default { maxAttempts: 3, initialDelay: "1 second" }
    */
   readonly retry?: {
     readonly maxAttempts: number;
-    readonly delay?: Duration.DurationInput | BackoffStrategy;
-    readonly isRetryable?: (error: Err) => boolean;
+    readonly initialDelay: Duration.DurationInput;
+    readonly maxDelay?: Duration.DurationInput;
+    readonly backoffMultiplier?: number;
   };
 
   /**
@@ -175,14 +164,15 @@ The context provided to the `execute` function.
 ```ts
 interface WorkerPoolExecuteContext<E> {
   /**
-   * The event being processed.
+   * The event being processed (synchronous access).
    */
-  readonly event: Effect.Effect<E, never, never>;
+  readonly event: E;
 
   /**
-   * The unique ID of this event (provided at enworkerPool time).
+   * The sequence number of this event within the queue.
+   * Unique within this instance, monotonically increasing.
    */
-  readonly eventId: string;
+  readonly sequence: number;
 
   /**
    * The current retry attempt (1-indexed).
@@ -191,9 +181,14 @@ interface WorkerPoolExecuteContext<E> {
   readonly attempt: number;
 
   /**
-   * Timestamp when this event was enworkerPoold.
+   * Whether this is a retry of a previously failed attempt.
    */
-  readonly enworkerPooldAt: number;
+  readonly isRetry: boolean;
+
+  /**
+   * Timestamp when this event was enqueued.
+   */
+  readonly enqueuedAt: number;
 
   /**
    * Timestamp when processing started for this attempt.
@@ -206,14 +201,14 @@ interface WorkerPoolExecuteContext<E> {
   readonly instanceIndex: number;
 
   /**
-   * Total events processed by this instance (lifetime).
+   * The unique instance ID for this DO instance.
    */
-  readonly processedCount: Effect.Effect<number, never, never>;
+  readonly instanceId: string;
 
   /**
-   * Number of events currently waiting in this instance's workerPool.
+   * The job name (as registered).
    */
-  readonly pendingCount: Effect.Effect<number, never, never>;
+  readonly jobName: string;
 }
 ```
 
@@ -224,9 +219,9 @@ Context for dead letter handling.
 ```ts
 interface WorkerPoolDeadLetterContext {
   /**
-   * The event ID.
+   * The sequence number of the failed event.
    */
-  readonly eventId: string;
+  readonly sequence: number;
 
   /**
    * Number of attempts made.
@@ -234,9 +229,9 @@ interface WorkerPoolDeadLetterContext {
   readonly attempts: number;
 
   /**
-   * Timestamp when first enworkerPoold.
+   * Timestamp when first enqueued.
    */
-  readonly enworkerPooldAt: number;
+  readonly enqueuedAt: number;
 
   /**
    * Timestamp of final failure.
@@ -247,6 +242,44 @@ interface WorkerPoolDeadLetterContext {
    * The workerPool instance index.
    */
   readonly instanceIndex: number;
+
+  /**
+   * The unique instance ID.
+   */
+  readonly instanceId: string;
+
+  /**
+   * The job name.
+   */
+  readonly jobName: string;
+}
+```
+
+### `WorkerPoolEmptyContext`
+
+Context for empty queue handler.
+
+```ts
+interface WorkerPoolEmptyContext {
+  /**
+   * The unique instance ID.
+   */
+  readonly instanceId: string;
+
+  /**
+   * The workerPool instance index.
+   */
+  readonly instanceIndex: number;
+
+  /**
+   * The job name.
+   */
+  readonly jobName: string;
+
+  /**
+   * Total events processed by this instance (lifetime).
+   */
+  readonly processedCount: number;
 }
 ```
 
@@ -263,16 +296,18 @@ The client is responsible for distributing events across workerPool instances. T
 function resolveInstanceId(
   workerPoolName: string,
   concurrency: number,
-  eventId: string,
   partitionKey?: string
-): string {
+): { instanceId: string; instanceIndex: number } {
   // Determine which instance (0 to concurrency-1)
   const instanceIndex = partitionKey
     ? consistentHash(partitionKey, concurrency)
     : roundRobinIndex(workerPoolName, concurrency);
 
-  // Instance ID format: {workerPoolName}:{instanceIndex}
-  return `${workerPoolName}:${instanceIndex}`;
+  // Instance ID format: workerPool:{workerPoolName}:{instanceIndex}
+  return {
+    instanceId: `workerPool:${workerPoolName}:${instanceIndex}`,
+    instanceIndex,
+  };
 }
 ```
 
@@ -299,8 +334,13 @@ When a partition key is provided, the same key always routes to the same instanc
 
 ```ts
 function consistentHash(key: string, concurrency: number): number {
-  const hash = hashString(key);  // e.g., murmur3, xxhash
-  return hash % concurrency;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    const char = key.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash) % concurrency;
 }
 ```
 
@@ -320,18 +360,12 @@ const client = JobsClient.fromBinding(env.PRIMITIVES);
 const webhookWorkerPool = client.workerPool("webhookProcessor");
 ```
 
-### `enworkerPool(options)`
+### `enqueue(options)`
 
-Add an event to the workerPool. **Idempotent** - same `id` is deduplicated.
+Add an event to the workerPool.
 
 ```ts
-interface WorkerPoolEnworkerPoolOptions<E> {
-  /**
-   * Unique identifier for this event.
-   * Used for idempotency - same ID won't be processed twice.
-   */
-  readonly id: string;
-
+interface WorkerPoolEnqueueOptions<E> {
   /**
    * The event to process. Must match eventSchema.
    */
@@ -356,8 +390,7 @@ interface WorkerPoolEnworkerPoolOptions<E> {
 }
 
 // Usage - round robin (default)
-const result = yield* webhookWorkerPool.enworkerPool({
-  id: webhookId,
+const result = yield* webhookWorkerPool.enqueue({
   event: {
     type: "order.shipped",
     webhookId: webhookId,
@@ -367,33 +400,31 @@ const result = yield* webhookWorkerPool.enworkerPool({
 });
 
 // Usage - with partition key (ordered per customer)
-const result = yield* webhookWorkerPool.enworkerPool({
-  id: webhookId,
+const result = yield* webhookWorkerPool.enqueue({
   event: { ... },
   partitionKey: customerId,  // All events for this customer go to same instance
 });
 
 // Returns
-interface WorkerPoolEnworkerPoolResult {
-  readonly eventId: string;
+interface WorkerPoolEnqueueResponse {
+  readonly _type: "workerPool.enqueue";
+  readonly sequence: number;        // Event sequence number in this instance
   readonly instanceId: string;
   readonly instanceIndex: number;
-  readonly position: number;      // Position in workerPool (0 = processing now)
-  readonly created: boolean;      // false if duplicate
+  readonly position: number;        // Position in queue (0 = processing now)
 }
 ```
 
-### `enworkerPoolMany(options)`
+### `enqueueMany(options)`
 
-Batch enworkerPool multiple events.
+Batch enqueue multiple events.
 
 ```ts
-interface WorkerPoolEnworkerPoolManyOptions<E> {
+interface WorkerPoolEnqueueManyOptions<E> {
   /**
-   * Events to enworkerPool.
+   * Events to enqueue.
    */
   readonly events: ReadonlyArray<{
-    readonly id: string;
     readonly event: E;
     readonly partitionKey?: string;
     readonly priority?: number;
@@ -401,19 +432,18 @@ interface WorkerPoolEnworkerPoolManyOptions<E> {
 }
 
 // Usage
-const results = yield* webhookWorkerPool.enworkerPoolMany({
+const results = yield* webhookWorkerPool.enqueueMany({
   events: webhooks.map(w => ({
-    id: w.id,
     event: w,
     partitionKey: w.customerId,
   })),
 });
 
 // Returns
-interface WorkerPoolEnworkerPoolManyResult {
-  readonly enworkerPoold: number;
-  readonly duplicates: number;
-  readonly results: ReadonlyArray<WorkerPoolEnworkerPoolResult>;
+interface WorkerPoolEnqueueManyResponse {
+  readonly _type: "workerPool.enqueueMany";
+  readonly enqueued: number;
+  readonly results: ReadonlyArray<WorkerPoolEnqueueResponse>;
 }
 ```
 
@@ -424,18 +454,12 @@ Get overall workerPool status across all instances.
 ```ts
 const status = yield* webhookWorkerPool.status();
 
-interface WorkerPoolStatus {
-  readonly concurrency: number;
-  readonly instances: ReadonlyArray<{
-    readonly index: number;
-    readonly instanceId: string;
-    readonly status: "processing" | "idle" | "paused";
-    readonly pendingCount: number;
-    readonly processedCount: number;
-    readonly currentEventId: string | null;
-  }>;
+interface WorkerPoolAggregatedStatus {
+  readonly instances: ReadonlyArray<WorkerPoolStatusResponse>;
   readonly totalPending: number;
   readonly totalProcessed: number;
+  readonly activeInstances: number;
+  readonly pausedInstances: number;
 }
 ```
 
@@ -446,19 +470,12 @@ Get status of a specific instance.
 ```ts
 const status = yield* webhookWorkerPool.instanceStatus(0);
 
-interface WorkerPoolInstanceStatus {
-  readonly index: number;
-  readonly instanceId: string;
-  readonly status: "processing" | "idle" | "paused";
-  readonly pendingCount: number;
-  readonly processedCount: number;
-  readonly currentEventId: string | null;
-  readonly currentEventStartedAt: number | null;
-  readonly workerPooldEvents: ReadonlyArray<{
-    readonly eventId: string;
-    readonly enworkerPooldAt: number;
-    readonly priority: number;
-  }>;
+interface WorkerPoolStatusResponse {
+  readonly _type: "workerPool.status";
+  readonly status: "processing" | "idle" | "paused" | "not_found";
+  readonly pendingCount?: number;
+  readonly processedCount?: number;
+  readonly currentSequence?: number | null;
 }
 ```
 
@@ -478,32 +495,22 @@ yield* webhookWorkerPool.resume();
 yield* webhookWorkerPool.resume(2);
 ```
 
-### `cancel(eventId)`
-
-Cancel a pending event (if not yet processing).
-
-```ts
-const result = yield* webhookWorkerPool.cancel(eventId);
-
-interface WorkerPoolCancelResult {
-  readonly cancelled: boolean;
-  readonly reason: "cancelled" | "not_found" | "already_processing" | "already_completed";
-}
-```
-
 ### `drain(index?)`
 
-Wait for workerPool(s) to empty.
+Stop processing and clear all pending events.
 
 ```ts
-// Wait for all instances to empty
+// Drain all instances
 yield* webhookWorkerPool.drain();
 
-// Wait for specific instance
+// Drain specific instance
 yield* webhookWorkerPool.drain(2);
 
-// With timeout
-yield* webhookWorkerPool.drain().pipe(Effect.timeout("5 minutes"));
+interface WorkerPoolDrainResponse {
+  readonly _type: "workerPool.drain";
+  readonly drained: boolean;
+  readonly eventsCleared: number;
+}
 ```
 
 ---
@@ -533,31 +540,23 @@ const webhookDelivery = WorkerPool.make({
 
   retry: {
     maxAttempts: 5,
-    delay: Backoff.exponential({ base: "1 second", max: "5 minutes" }),
-    isRetryable: (error) => {
-      // Don't retry 4xx errors
-      if (error instanceof HttpError && error.status >= 400 && error.status < 500) {
-        return false;
-      }
-      return true;
-    },
+    initialDelay: "1 second",
+    maxDelay: "5 minutes",
+    backoffMultiplier: 2,
   },
 
   execute: (ctx) =>
     Effect.gen(function* () {
-      const event = yield* ctx.event;
-      const attempt = ctx.attempt;
-
       console.log(
-        `Processing webhook ${event.webhookId} (attempt ${attempt})`
+        `Processing webhook seq=${ctx.sequence} (attempt ${ctx.attempt})`
       );
 
       // Deliver the webhook
       const response = yield* Effect.tryPromise(() =>
-        fetch(event.endpoint, {
+        fetch(ctx.event.endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(event.payload),
+          body: JSON.stringify(ctx.event.payload),
         })
       );
 
@@ -565,7 +564,7 @@ const webhookDelivery = WorkerPool.make({
         yield* Effect.fail(new HttpError(response.status, await response.text()));
       }
 
-      console.log(`Delivered webhook ${event.webhookId}`);
+      console.log(`Delivered webhook ${ctx.event.webhookId}`);
     }),
 
   onDeadLetter: (event, error, ctx) =>
@@ -576,7 +575,7 @@ const webhookDelivery = WorkerPool.make({
         customerId: event.customerId,
         error: String(error),
         attempts: ctx.attempts,
-        enworkerPooldAt: ctx.enworkerPooldAt,
+        enqueuedAt: ctx.enqueuedAt,
         failedAt: ctx.failedAt,
       });
 
@@ -594,10 +593,9 @@ export default {
     const client = JobsClient.fromBinding(env.PRIMITIVES);
     const webhook = await request.json();
 
-    // EnworkerPool with partition key to ensure ordering per customer
+    // Enqueue with partition key to ensure ordering per customer
     const result = await Effect.runPromise(
-      client.workerPool("webhookDelivery").enworkerPool({
-        id: webhook.id,
+      client.workerPool("webhookDelivery").enqueue({
         event: {
           webhookId: webhook.id,
           endpoint: webhook.endpoint,
@@ -610,7 +608,8 @@ export default {
     );
 
     return new Response(JSON.stringify({
-      workerPoold: true,
+      queued: true,
+      sequence: result.sequence,
       position: result.position,
       instanceIndex: result.instanceIndex,
     }));
@@ -622,12 +621,10 @@ export default {
 
 ```ts
 const EmailJob = Schema.Struct({
-  emailId: Schema.String,
   to: Schema.String,
   subject: Schema.String,
   body: Schema.String,
   templateId: Schema.optional(Schema.String),
-  scheduledFor: Schema.optional(Schema.Number),
 });
 
 const emailWorkerPool = WorkerPool.make({
@@ -637,36 +634,27 @@ const emailWorkerPool = WorkerPool.make({
 
   retry: {
     maxAttempts: 3,
-    delay: "30 seconds",
+    initialDelay: "30 seconds",
   },
 
   execute: (ctx) =>
     Effect.gen(function* () {
-      const email = yield* ctx.event;
-
-      // Check if scheduled for future
-      if (email.scheduledFor && email.scheduledFor > Date.now()) {
-        // Re-enworkerPool with delay (or use a different pattern)
-        yield* Effect.sleep(Duration.millis(email.scheduledFor - Date.now()));
-      }
-
       // Send via email provider
       yield* sendEmail({
-        to: email.to,
-        subject: email.subject,
-        body: email.body,
+        to: ctx.event.to,
+        subject: ctx.event.subject,
+        body: ctx.event.body,
       });
     }),
 
   onDeadLetter: (email, error, ctx) =>
     Effect.gen(function* () {
-      yield* recordEmailFailure(email.emailId, error);
+      yield* recordEmailFailure(email.to, error);
     }),
 
   onEmpty: (ctx) =>
     Effect.gen(function* () {
-      // Log when workerPool drains
-      console.log(`Email workerPool instance ${ctx.instanceIndex} is empty`);
+      console.log(`Email queue instance ${ctx.instanceIndex} is empty`);
     }),
 });
 ```
@@ -675,10 +663,8 @@ const emailWorkerPool = WorkerPool.make({
 
 ```ts
 // Send email immediately (round-robin distribution)
-yield* client.workerPool("emailWorkerPool").enworkerPool({
-  id: `email-${userId}-${Date.now()}`,
+yield* client.workerPool("emailWorkerPool").enqueue({
   event: {
-    emailId: generateId(),
     to: user.email,
     subject: "Welcome!",
     body: welcomeBody,
@@ -686,88 +672,14 @@ yield* client.workerPool("emailWorkerPool").enworkerPool({
 });
 
 // Send bulk emails
-yield* client.workerPool("emailWorkerPool").enworkerPoolMany({
+yield* client.workerPool("emailWorkerPool").enqueueMany({
   events: users.map(user => ({
-    id: `campaign-${campaignId}-${user.id}`,
     event: {
-      emailId: `${campaignId}-${user.id}`,
       to: user.email,
       subject: campaignSubject,
       body: campaignBody,
     },
   })),
-});
-```
-
-### Example 3: Order Processing Pipeline
-
-```ts
-const OrderJob = Schema.Struct({
-  orderId: Schema.String,
-  customerId: Schema.String,
-  items: Schema.Array(Schema.Struct({
-    productId: Schema.String,
-    quantity: Schema.Number,
-  })),
-  status: Schema.Literal("pending", "processing", "shipped", "delivered"),
-});
-
-const orderProcessor = WorkerPool.make({
-  eventSchema: OrderJob,
-
-  concurrency: 5,
-
-  retry: {
-    maxAttempts: 3,
-    delay: Backoff.exponential({ base: "5 seconds" }),
-  },
-
-  execute: (ctx) =>
-    Effect.gen(function* () {
-      const order = yield* ctx.event;
-      const pending = yield* ctx.pendingCount;
-
-      console.log(
-        `Processing order ${order.orderId} ` +
-        `(${pending} orders waiting in this workerPool)`
-      );
-
-      // Reserve inventory
-      yield* reserveInventory(order.items);
-
-      // Process payment
-      yield* processPayment(order.customerId, order.orderId);
-
-      // Update order status
-      yield* updateOrderStatus(order.orderId, "processing");
-
-      // Trigger fulfillment (enworkerPool to another workerPool)
-      yield* enworkerPoolFulfillment(order);
-    }),
-
-  onDeadLetter: (order, error, ctx) =>
-    Effect.gen(function* () {
-      // Mark order as failed
-      yield* updateOrderStatus(order.orderId, "failed");
-
-      // Notify customer
-      yield* sendOrderFailureNotification(order.customerId, order.orderId);
-
-      // Alert ops team
-      yield* alertOps(`Order ${order.orderId} failed after ${ctx.attempts} attempts`);
-    }),
-});
-```
-
-**Usage with partition key for customer ordering:**
-
-```ts
-// Ensure orders for same customer are processed in sequence
-yield* client.workerPool("orderProcessor").enworkerPool({
-  id: order.id,
-  event: order,
-  partitionKey: order.customerId,  // Customer's orders processed in order
-  priority: order.isPriority ? 10 : 0,  // Priority orders first
 });
 ```
 
@@ -840,59 +752,21 @@ Events:  [A1] [B1] [A2] [C1] [B2] [A3] [C2] [B3]
 
 ```ts
 // BAD: One customer generates 90% of traffic
-yield* workerPool.enworkerPool({
-  id: eventId,
+yield* workerPool.enqueue({
   event: data,
   partitionKey: "mega-corp",  // Creates bottleneck on one instance
 });
 
 // BETTER: Sub-partition or accept out-of-order
-yield* workerPool.enworkerPool({
-  id: eventId,
+yield* workerPool.enqueue({
   event: data,
   partitionKey: `${customerId}:${userId}`,  // Spread within customer
 });
 
 // OR: No partition key, accept parallel processing
-yield* workerPool.enworkerPool({
-  id: eventId,
+yield* workerPool.enqueue({
   event: data,
   // No partitionKey = round-robin = max throughput
-});
-```
-
----
-
-## Type Inference Flow
-
-```ts
-// 1. Event schema defines event type
-const MyEvent = Schema.Struct({
-  id: Schema.String,
-  data: Schema.Number,
-});
-
-// 2. Types flow through the API
-const workerPool = WorkerPool.make({
-  eventSchema: MyEvent,
-  concurrency: 5,
-
-  execute: (ctx) =>
-    Effect.gen(function* () {
-      const event = yield* ctx.event;
-      //    ^? { id: string; data: number }
-    }),
-
-  onDeadLetter: (event, error, ctx) => {
-    //           ^? { id: string; data: number }
-  },
-});
-
-// 3. Client enworkerPool() is typed by eventSchema
-yield* client.workerPool("myWorkerPool").enworkerPool({
-  id: "123",
-  event: { id: "e1", data: 42 },
-  //      ^? Must match MyEvent
 });
 ```
 
@@ -917,17 +791,17 @@ yield* client.workerPool("myWorkerPool").enworkerPool({
 |---------|-----|
 | Define workerPool | `WorkerPool.make({ eventSchema, concurrency, execute })` |
 | Concurrency | `concurrency: 5` (required) |
-| Retry config | `retry: { maxAttempts: 3, delay: ... }` |
-| Execute context - event | `yield* ctx.event` |
+| Retry config | `retry: { maxAttempts: 3, initialDelay: "1s" }` |
+| Execute context - event | `ctx.event` |
 | Execute context - attempt | `ctx.attempt` |
-| Execute context - pending | `yield* ctx.pendingCount` |
+| Execute context - sequence | `ctx.sequence` |
 | Dead letter handler | `onDeadLetter: (event, error, ctx) => ...` |
-| Client - enworkerPool | `yield* client.workerPool("name").enworkerPool({ id, event })` |
-| Client - partition key | `enworkerPool({ ..., partitionKey: "customer-123" })` |
-| Client - batch enworkerPool | `yield* client.workerPool("name").enworkerPoolMany({ events })` |
+| Empty queue handler | `onEmpty: (ctx) => ...` |
+| Client - enqueue | `yield* client.workerPool("name").enqueue({ event })` |
+| Client - partition key | `enqueue({ event, partitionKey: "customer-123" })` |
+| Client - batch enqueue | `yield* client.workerPool("name").enqueueMany({ events })` |
 | Client - status | `yield* client.workerPool("name").status()` |
 | Client - pause/resume | `yield* client.workerPool("name").pause()` |
-| Client - cancel | `yield* client.workerPool("name").cancel(eventId)` |
 | Client - drain | `yield* client.workerPool("name").drain()` |
 
 The API prioritizes:
@@ -936,3 +810,4 @@ The API prioritizes:
 - **Explicit concurrency** (no hidden defaults)
 - **Flexible routing** (round-robin default, partition key for ordering)
 - **Resilience** (retry, dead letter handling)
+- **Simplicity** (no required event IDs, sequence-based identification)
