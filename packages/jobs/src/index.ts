@@ -138,16 +138,19 @@ export {
   hasContinuousJob,
   hasDebounceJob,
   hasWorkerPoolJob,
+  hasTaskJob,
   // Types - Unregistered (what users create)
   type UnregisteredContinuousDefinition,
   type UnregisteredDebounceDefinition,
   type UnregisteredWorkerPoolDefinition,
+  type UnregisteredTaskDefinition,
   type AnyUnregisteredDefinition,
   // Types - Registered (with name)
   type ContinuousSchedule,
   type ContinuousDefinition,
   type DebounceDefinition,
   type WorkerPoolDefinition,
+  type TaskDefinition,
   type WorkerPoolRetryConfig,
   type AnyJobDefinition,
   // Types - Context
@@ -158,6 +161,10 @@ export {
   type WorkerPoolExecuteContext,
   type WorkerPoolDeadLetterContext,
   type WorkerPoolEmptyContext,
+  type TaskEventContext,
+  type TaskExecuteContext,
+  type TaskIdleContext,
+  type TaskErrorContext,
   // Types - Registry (legacy)
   type JobRegistry,
   type InferRegistry,
@@ -167,11 +174,16 @@ export {
   type ContinuousKeysOf,
   type DebounceKeysOf,
   type WorkerPoolKeysOf,
+  type TaskKeysOf,
   type ContinuousStateOf,
   type ContinuousErrorOf,
   type DebounceEventOf,
   type DebounceStateOf,
   type WorkerPoolEventOf,
+  type TaskStateOf,
+  type TaskEventOf,
+  // Types - Stored (for handlers)
+  type StoredTaskDefinition,
 } from "./registry";
 
 // =============================================================================
@@ -222,6 +234,9 @@ export {
   Debounce,
   type DebounceMakeConfig,
   type DebounceNamespace,
+  Task,
+  type TaskMakeConfig,
+  type TaskNamespace,
 } from "./definitions";
 
 // =============================================================================

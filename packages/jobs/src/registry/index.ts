@@ -17,17 +17,21 @@ export type {
   ContinuousKeysOf,
   DebounceKeysOf,
   WorkerPoolKeysOf,
+  TaskKeysOf,
   ContinuousStateOf,
   ContinuousErrorOf,
   DebounceEventOf,
   DebounceStateOf,
   WorkerPoolEventOf,
+  TaskStateOf,
+  TaskEventOf,
 } from "./typed";
 
 export {
   hasContinuousJob,
   hasDebounceJob,
   hasWorkerPoolJob,
+  hasTaskJob,
 } from "./typed";
 
 export type {
@@ -37,11 +41,13 @@ export type {
   UnregisteredContinuousDefinition,
   UnregisteredDebounceDefinition,
   UnregisteredWorkerPoolDefinition,
+  UnregisteredTaskDefinition,
   AnyUnregisteredDefinition,
   // Registered definition types (with name)
   ContinuousDefinition,
   DebounceDefinition,
   WorkerPoolDefinition,
+  TaskDefinition,
   WorkerPoolRetryConfig,
   AnyJobDefinition,
   // Stored definition types (error type widened for handlers)
@@ -49,6 +55,7 @@ export type {
   StoredContinuousDefinition,
   StoredDebounceDefinition,
   StoredWorkerPoolDefinition,
+  StoredTaskDefinition,
   // Context types
   ContinuousContext,
   TerminateOptions,
@@ -57,6 +64,10 @@ export type {
   WorkerPoolExecuteContext,
   WorkerPoolDeadLetterContext,
   WorkerPoolEmptyContext,
+  TaskEventContext,
+  TaskExecuteContext,
+  TaskIdleContext,
+  TaskErrorContext,
   // Registry types
   JobRegistry,
   InferRegistry,

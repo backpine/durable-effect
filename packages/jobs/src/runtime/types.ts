@@ -12,7 +12,8 @@ import type { JobStatus } from "../services/metadata";
 export type JobRequest =
   | ContinuousRequest
   | DebounceRequest
-  | WorkerPoolRequest;
+  | WorkerPoolRequest
+  | TaskRequest;
 
 /**
  * Continuous job request.
@@ -57,6 +58,17 @@ export interface WorkerPoolRequest {
   readonly priority?: number;
 }
 
+/**
+ * Task job request.
+ */
+export interface TaskRequest {
+  readonly type: "task";
+  readonly action: "send" | "trigger" | "clear" | "status" | "getState";
+  readonly name: string;
+  readonly id: string;
+  readonly event?: unknown;
+}
+
 // =============================================================================
 // Response Types
 // =============================================================================
@@ -80,7 +92,12 @@ export type JobResponse =
   | WorkerPoolResumeResponse
   | WorkerPoolCancelResponse
   | WorkerPoolStatusResponse
-  | WorkerPoolDrainResponse;
+  | WorkerPoolDrainResponse
+  | TaskSendResponse
+  | TaskTriggerResponse
+  | TaskClearResponse
+  | TaskStatusResponse
+  | TaskGetStateResponse;
 
 // -----------------------------------------------------------------------------
 // Continuous Responses
@@ -205,4 +222,44 @@ export interface WorkerPoolStatusResponse {
 export interface WorkerPoolDrainResponse {
   readonly _type: "workerPool.drain";
   readonly drained: boolean;
+}
+
+// -----------------------------------------------------------------------------
+// Task Responses
+// -----------------------------------------------------------------------------
+
+export interface TaskSendResponse {
+  readonly _type: "task.send";
+  readonly instanceId: string;
+  readonly created: boolean;
+  readonly scheduledAt: number | null;
+}
+
+export interface TaskTriggerResponse {
+  readonly _type: "task.trigger";
+  readonly instanceId: string;
+  readonly triggered: boolean;
+}
+
+export interface TaskClearResponse {
+  readonly _type: "task.clear";
+  readonly instanceId: string;
+  readonly cleared: boolean;
+}
+
+export interface TaskStatusResponse {
+  readonly _type: "task.status";
+  readonly status: "active" | "idle" | "not_found";
+  readonly scheduledAt: number | null;
+  readonly createdAt: number | undefined;
+  readonly eventCount: number | undefined;
+  readonly executeCount: number | undefined;
+}
+
+export interface TaskGetStateResponse {
+  readonly _type: "task.getState";
+  readonly instanceId: string;
+  readonly state: unknown | null | undefined;
+  readonly scheduledAt: number | null;
+  readonly createdAt: number | undefined;
 }

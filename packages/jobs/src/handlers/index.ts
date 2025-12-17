@@ -3,6 +3,7 @@
 import { Layer } from "effect";
 import { ContinuousHandlerLayer } from "./continuous";
 import { DebounceHandlerLayer } from "./debounce";
+import { TaskHandlerLayer } from "./task";
 import { RetryExecutorLayer } from "../retry";
 
 // Re-export handlers
@@ -20,6 +21,12 @@ export {
   type DebounceHandlerI,
   type DebounceResponse,
 } from "./debounce";
+export {
+  TaskHandler,
+  TaskHandlerLayer,
+  type TaskHandlerI,
+  type TaskResponse,
+} from "./task";
 
 // Re-export RetryExecutorLayer for runtime composition
 export { RetryExecutorLayer } from "../retry";
@@ -37,6 +44,7 @@ export { RetryExecutorLayer } from "../retry";
  */
 export const JobHandlersLayer = Layer.mergeAll(
   ContinuousHandlerLayer,
-  DebounceHandlerLayer
+  DebounceHandlerLayer,
+  TaskHandlerLayer
   // TODO: Add WorkerPoolHandlerLayer in Phase 5
 );

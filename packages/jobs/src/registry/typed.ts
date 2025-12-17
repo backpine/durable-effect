@@ -12,13 +12,16 @@ import type {
   UnregisteredContinuousDefinition,
   UnregisteredDebounceDefinition,
   UnregisteredWorkerPoolDefinition,
+  UnregisteredTaskDefinition,
   AnyUnregisteredDefinition,
   ContinuousDefinition,
   DebounceDefinition,
   WorkerPoolDefinition,
+  TaskDefinition,
   StoredContinuousDefinition,
   StoredDebounceDefinition,
   StoredWorkerPoolDefinition,
+  StoredTaskDefinition,
 } from "./types";
 
 // =============================================================================
@@ -46,6 +49,13 @@ export type DebounceKeysOf<T extends Record<string, AnyUnregisteredDefinition>> 
  */
 export type WorkerPoolKeysOf<T extends Record<string, AnyUnregisteredDefinition>> = {
   [K in keyof T]: T[K] extends UnregisteredWorkerPoolDefinition<any, unknown, any> ? K : never;
+}[keyof T] & string;
+
+/**
+ * Extract keys from T that are task definitions.
+ */
+export type TaskKeysOf<T extends Record<string, AnyUnregisteredDefinition>> = {
+  [K in keyof T]: T[K] extends UnregisteredTaskDefinition<any, any, unknown, any> ? K : never;
 }[keyof T] & string;
 
 // =============================================================================
@@ -92,6 +102,22 @@ export type WorkerPoolEventOf<
   K extends WorkerPoolKeysOf<T>,
 > = T[K] extends UnregisteredWorkerPoolDefinition<infer E, unknown, any> ? E : never;
 
+/**
+ * Extract the state type from a task definition.
+ */
+export type TaskStateOf<
+  T extends Record<string, AnyUnregisteredDefinition>,
+  K extends TaskKeysOf<T>,
+> = T[K] extends UnregisteredTaskDefinition<infer S, any, unknown, any> ? S : never;
+
+/**
+ * Extract the event type from a task definition.
+ */
+export type TaskEventOf<
+  T extends Record<string, AnyUnregisteredDefinition>,
+  K extends TaskKeysOf<T>,
+> = T[K] extends UnregisteredTaskDefinition<any, infer E, unknown, any> ? E : never;
+
 // =============================================================================
 // Registered Definition Types (with name added)
 // =============================================================================
@@ -120,6 +146,13 @@ type RegisterWorkerPool<
   N extends string,
 > = D extends UnregisteredWorkerPoolDefinition<infer E, infer Err, infer R>
   ? WorkerPoolDefinition<E, Err, R> & { readonly name: N }
+  : never;
+
+type RegisterTask<
+  D extends UnregisteredTaskDefinition<any, any, unknown, any>,
+  N extends string,
+> = D extends UnregisteredTaskDefinition<infer S, infer E, infer Err, infer R>
+  ? TaskDefinition<S, E, Err, R> & { readonly name: N }
   : never;
 
 // =============================================================================
@@ -164,6 +197,16 @@ export interface TypedJobRegistry<T extends Record<string, AnyUnregisteredDefini
   };
 
   /**
+   * Task job definitions indexed by name.
+   */
+  readonly task: {
+    [K in TaskKeysOf<T>]: RegisterTask<
+      Extract<T[K], UnregisteredTaskDefinition<any, any, unknown, any>>,
+      K
+    >;
+  };
+
+  /**
    * Original definitions object for type inference.
    * This is the actual runtime value, not a phantom type.
    */
@@ -184,6 +227,7 @@ export interface RuntimeJobRegistry {
   readonly continuous: Record<string, StoredContinuousDefinition<any, any>>;
   readonly debounce: Record<string, StoredDebounceDefinition<any, any, any>>;
   readonly workerPool: Record<string, StoredWorkerPoolDefinition<any, any>>;
+  readonly task: Record<string, StoredTaskDefinition<any, any, any>>;
 }
 
 // =============================================================================
@@ -227,4 +271,17 @@ export function hasWorkerPoolJob<
   name: K,
 ): name is K & WorkerPoolKeysOf<T> {
   return name in registry.workerPool;
+}
+
+/**
+ * Check if a registry has a specific task job.
+ */
+export function hasTaskJob<
+  T extends Record<string, AnyUnregisteredDefinition>,
+  K extends string,
+>(
+  registry: TypedJobRegistry<T>,
+  name: K,
+): name is K & TaskKeysOf<T> {
+  return name in registry.task;
 }

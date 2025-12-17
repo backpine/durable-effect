@@ -9,6 +9,7 @@ import type {
   ContinuousClient,
   DebounceClient,
   WorkerPoolClient,
+  TaskClient,
   WorkerPoolAggregatedStatus,
   ClientError,
 } from "./types";
@@ -24,7 +25,7 @@ import { narrowResponseEffect } from "./response";
  * Format: {jobType}:{jobName}:{userProvidedId}
  */
 function createInstanceId(
-  type: "continuous" | "debounce" | "workerPool",
+  type: "continuous" | "debounce" | "workerPool" | "task",
   name: string,
   id: string | number,
 ): string {
@@ -521,6 +522,86 @@ export function createJobsClient<T extends Record<string, AnyUnregisteredDefinit
               drained: results.every((r) => r.drained),
             };
           });
+        },
+      };
+
+      return client;
+    },
+
+    // -------------------------------------------------------------------------
+    // Task Client
+    // -------------------------------------------------------------------------
+    task: (name: string) => {
+      const client: TaskClient<unknown, unknown> = {
+        send: ({ id, event }) => {
+          const instanceId = createInstanceId("task", name, id);
+          const stub = getStub(binding, instanceId);
+          return narrowResponseEffect(
+            stub.call({
+              type: "task",
+              action: "send",
+              name,
+              id,
+              event,
+            }),
+            "task.send",
+          );
+        },
+
+        trigger: (id) => {
+          const instanceId = createInstanceId("task", name, id);
+          const stub = getStub(binding, instanceId);
+          return narrowResponseEffect(
+            stub.call({
+              type: "task",
+              action: "trigger",
+              name,
+              id,
+            }),
+            "task.trigger",
+          );
+        },
+
+        clear: (id) => {
+          const instanceId = createInstanceId("task", name, id);
+          const stub = getStub(binding, instanceId);
+          return narrowResponseEffect(
+            stub.call({
+              type: "task",
+              action: "clear",
+              name,
+              id,
+            }),
+            "task.clear",
+          );
+        },
+
+        status: (id) => {
+          const instanceId = createInstanceId("task", name, id);
+          const stub = getStub(binding, instanceId);
+          return narrowResponseEffect(
+            stub.call({
+              type: "task",
+              action: "status",
+              name,
+              id,
+            }),
+            "task.status",
+          );
+        },
+
+        getState: (id) => {
+          const instanceId = createInstanceId("task", name, id);
+          const stub = getStub(binding, instanceId);
+          return narrowResponseEffect(
+            stub.call({
+              type: "task",
+              action: "getState",
+              name,
+              id,
+            }),
+            "task.getState",
+          );
         },
       };
 

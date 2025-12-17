@@ -16,6 +16,15 @@ import {
   stopRefreshTokens,
   addWebhookEvent,
   flushWebhookDebounce,
+  // Task routes
+  startCountdown,
+  pauseCountdown,
+  resumeCountdown,
+  cancelCountdown,
+  addTimeCountdown,
+  getCountdownStatus,
+  getCountdownState,
+  clearCountdown,
 } from "./routes/jobs";
 
 // Export the Durable Object classes
@@ -47,11 +56,23 @@ app.get("/workflows/processOrder", effectHandler(getProcessOrder));
 app.get("/workflows/generateReport", effectHandler(getGenerateReport));
 app.get("/workflows/:id/status", effectHandler(getWorkflowStatus));
 
-// Job routes
+// Job routes - Continuous
 app.get("/jobs/tokenRefresher", effectHandler(startRefreshTokens));
 app.get("/jobs/tokenRefresher/stop", effectHandler(stopRefreshTokens));
+
+// Job routes - Debounce
 app.get("/jobs/webhookDebounce/add", effectHandler(addWebhookEvent));
 app.get("/jobs/webhookDebounce/flush", effectHandler(flushWebhookDebounce));
+
+// Job routes - Task (Countdown Timer)
+app.get("/jobs/countdown/start", effectHandler(startCountdown));
+app.get("/jobs/countdown/pause", effectHandler(pauseCountdown));
+app.get("/jobs/countdown/resume", effectHandler(resumeCountdown));
+app.get("/jobs/countdown/cancel", effectHandler(cancelCountdown));
+app.get("/jobs/countdown/addTime", effectHandler(addTimeCountdown));
+app.get("/jobs/countdown/status", effectHandler(getCountdownStatus));
+app.get("/jobs/countdown/state", effectHandler(getCountdownState));
+app.get("/jobs/countdown/clear", effectHandler(clearCountdown));
 
 // 404 handler
 app.notFound((c) => c.json({ error: "Not Found" }, 404));

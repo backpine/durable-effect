@@ -19,6 +19,11 @@ import type {
   WorkerPoolCancelResponse,
   WorkerPoolStatusResponse,
   WorkerPoolDrainResponse,
+  TaskSendResponse,
+  TaskTriggerResponse,
+  TaskClearResponse,
+  TaskStatusResponse,
+  TaskGetStateResponse,
 } from "../runtime/types";
 
 // =============================================================================
@@ -65,6 +70,11 @@ export interface ResponseTypeMap {
   "workerPool.cancel": WorkerPoolCancelResponse;
   "workerPool.status": WorkerPoolStatusResponse;
   "workerPool.drain": WorkerPoolDrainResponse;
+  "task.send": TaskSendResponse;
+  "task.trigger": TaskTriggerResponse;
+  "task.clear": TaskClearResponse;
+  "task.status": TaskStatusResponse;
+  "task.getState": TaskGetStateResponse;
 }
 
 /**

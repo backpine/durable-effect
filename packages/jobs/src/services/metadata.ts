@@ -15,7 +15,7 @@ import { KEYS } from "../storage-keys";
 /**
  * Job types supported by the runtime.
  */
-export type JobType = "continuous" | "debounce" | "workerPool";
+export type JobType = "continuous" | "debounce" | "workerPool" | "task";
 
 /**
  * Status of a job instance.

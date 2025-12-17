@@ -33,6 +33,14 @@ export const KEYS = {
     PAUSED: "wp:paused",
   },
 
+  // Task-specific
+  TASK: {
+    EVENT_COUNT: "task:eventCount",
+    EXECUTE_COUNT: "task:execCount",
+    CREATED_AT: "task:createdAt",
+    SCHEDULED_AT: "task:scheduledAt",
+  },
+
   // Idempotency
   IDEMPOTENCY: "idem:", // prefix: idem:{eventId}
 
