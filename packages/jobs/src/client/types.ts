@@ -40,6 +40,15 @@ import type {
   JobCallError,
 } from "./response";
 
+import type {
+  TaskSendResponse,
+  TaskTriggerResponse,
+  TaskClearResponse,
+  TaskStatusResponse,
+  TaskGetStateResponse,
+} from "../runtime/types";
+import type { TaskKeysOf, TaskStateOf, TaskEventOf } from "../registry/typed";
+
 // =============================================================================
 // Client Error Type
 // =============================================================================
@@ -195,6 +204,40 @@ export interface WorkerPoolAggregatedStatus {
   readonly pausedInstances: number;
 }
 
+/**
+ * Type-safe client for task jobs.
+ */
+export interface TaskClient<S, E> {
+  /**
+   * Send an event to a task instance.
+   * Creates the instance if it doesn't exist.
+   */
+  send(options: {
+    readonly id: string;
+    readonly event: E;
+  }): Effect.Effect<TaskSendResponse, ClientError>;
+
+  /**
+   * Manually trigger execution.
+   */
+  trigger(id: string): Effect.Effect<TaskTriggerResponse, ClientError>;
+
+  /**
+   * Clear task immediately (delete all state + cancel alarms).
+   */
+  clear(id: string): Effect.Effect<TaskClearResponse, ClientError>;
+
+  /**
+   * Get current status.
+   */
+  status(id: string): Effect.Effect<TaskStatusResponse, ClientError>;
+
+  /**
+   * Get current state.
+   */
+  getState(id: string): Effect.Effect<TaskGetStateResponse, ClientError>;
+}
+
 // =============================================================================
 // Client Factory Types
 // =============================================================================
@@ -223,6 +266,11 @@ export interface JobsClient<R extends TypedJobRegistry<any>> {
    * Get a typed client for a workerPool job.
    */
   workerPool<K extends WorkerPoolKeys<R>>(name: K): WorkerPoolClient<WorkerPoolEventType<R, K>>;
+
+  /**
+   * Get a typed client for a task job.
+   */
+  task<K extends TaskKeys<R>>(name: K): TaskClient<TaskStateType<R, K>, TaskEventType<R, K>>;
 }
 
 /**
@@ -271,6 +319,12 @@ export type WorkerPoolKeys<R extends TypedJobRegistry<any>> =
   WorkerPoolKeysOf<DefinitionsOf<R>>;
 
 /**
+ * Extract task job keys from registry.
+ */
+export type TaskKeys<R extends TypedJobRegistry<any>> =
+  TaskKeysOf<DefinitionsOf<R>>;
+
+/**
  * Extract state type from continuous definition.
  */
 export type ContinuousStateType<
@@ -301,3 +355,19 @@ export type WorkerPoolEventType<
   R extends TypedJobRegistry<any>,
   K extends WorkerPoolKeys<R>,
 > = WorkerPoolEventOf<DefinitionsOf<R>, K>;
+
+/**
+ * Extract state type from task definition.
+ */
+export type TaskStateType<
+  R extends TypedJobRegistry<any>,
+  K extends TaskKeys<R>,
+> = TaskStateOf<DefinitionsOf<R>, K>;
+
+/**
+ * Extract event type from task definition.
+ */
+export type TaskEventType<
+  R extends TypedJobRegistry<any>,
+  K extends TaskKeys<R>,
+> = TaskEventOf<DefinitionsOf<R>, K>;

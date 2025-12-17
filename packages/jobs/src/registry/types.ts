@@ -117,6 +117,58 @@ export interface UnregisteredWorkerPoolDefinition<
 }
 
 /**
+ * Unregistered task job definition.
+ * Created by Task.make() - does not have a name yet.
+ *
+ * Task provides user-controlled durable state machines:
+ * - Events update state and optionally schedule execution
+ * - Execute runs when alarm fires
+ * - User controls lifecycle via schedule/clear
+ *
+ * Type Parameters:
+ * - S: State schema type (decoded)
+ * - E: Event schema type (decoded)
+ * - Err: Error type from handlers
+ * - R: Effect requirements (context)
+ */
+export interface UnregisteredTaskDefinition<
+  S = unknown,
+  E = unknown,
+  Err = unknown,
+  R = never,
+> {
+  readonly _tag: "TaskDefinition";
+  /** Schema for validating and serializing state */
+  readonly stateSchema: Schema.Schema<S, any, never>;
+  /** Schema for validating incoming events */
+  readonly eventSchema: Schema.Schema<E, any, never>;
+
+  /**
+   * Handler called for each incoming event.
+   * Updates state and optionally schedules execution.
+   */
+  onEvent(ctx: TaskEventContext<S, E>): Effect.Effect<void, Err, R>;
+
+  /**
+   * Handler called when alarm fires.
+   * Processes state and optionally schedules next execution.
+   */
+  execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, Err, R>;
+
+  /**
+   * Optional handler called when either `onEvent` or `execute` completes
+   * and no alarm is scheduled.
+   */
+  onIdle?(ctx: TaskIdleContext<S>): Effect.Effect<void, never, R>;
+
+  /**
+   * Optional error handler for onEvent/execute failures.
+   * If not provided, errors are logged and task continues.
+   */
+  onError?(error: Err, ctx: TaskErrorContext<S>): Effect.Effect<void, never, R>;
+}
+
+/**
  * Union of all unregistered job definition types.
  *
  * Note: Error types use `unknown` to accept definitions with any error type.
@@ -125,7 +177,8 @@ export interface UnregisteredWorkerPoolDefinition<
 export type AnyUnregisteredDefinition =
   | UnregisteredContinuousDefinition<any, unknown, any>
   | UnregisteredDebounceDefinition<any, any, unknown, any>
-  | UnregisteredWorkerPoolDefinition<any, unknown, any>;
+  | UnregisteredWorkerPoolDefinition<any, unknown, any>
+  | UnregisteredTaskDefinition<any, any, unknown, any>;
 
 // =============================================================================
 // Stored Definition Types (error type widened to unknown for registry storage)
@@ -195,6 +248,20 @@ export interface StoredWorkerPoolDefinition<E = unknown, R = never> {
   onEmpty?(ctx: WorkerPoolEmptyContext): Effect.Effect<void, never, R>;
 }
 
+/**
+ * Stored task job definition (error type widened to unknown).
+ */
+export interface StoredTaskDefinition<S = unknown, E = unknown, R = never> {
+  readonly _tag: "TaskDefinition";
+  readonly name: string;
+  readonly stateSchema: Schema.Schema<S, any, never>;
+  readonly eventSchema: Schema.Schema<E, any, never>;
+  onEvent(ctx: TaskEventContext<S, E>): Effect.Effect<void, unknown, R>;
+  execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, unknown, R>;
+  onIdle?(ctx: TaskIdleContext<S>): Effect.Effect<void, never, R>;
+  onError?(error: unknown, ctx: TaskErrorContext<S>): Effect.Effect<void, never, R>;
+}
+
 // =============================================================================
 // Registered Definition Types (with name - stored in registry)
 // =============================================================================
@@ -234,12 +301,25 @@ export interface WorkerPoolDefinition<
 }
 
 /**
+ * Task job definition with name (after registration).
+ */
+export interface TaskDefinition<
+  S = unknown,
+  E = unknown,
+  Err = unknown,
+  R = never,
+> extends UnregisteredTaskDefinition<S, E, Err, R> {
+  readonly name: string;
+}
+
+/**
  * Union of all registered job definition types.
  */
 export type AnyJobDefinition =
   | ContinuousDefinition<any, any, any>
   | DebounceDefinition<any, any, any, any>
-  | WorkerPoolDefinition<any, any, any>;
+  | WorkerPoolDefinition<any, any, any>
+  | TaskDefinition<any, any, any, any>;
 
 // =============================================================================
 // Context Types (provided to user functions)
@@ -371,6 +451,168 @@ export interface WorkerPoolEmptyContext {
   readonly instanceIndex: number;
   readonly jobName: string;
   readonly processedCount: number;
+}
+
+// =============================================================================
+// Task Context Types
+// =============================================================================
+
+/**
+ * Context provided to task onEvent handler.
+ *
+ * The onEvent handler receives each incoming event and should:
+ * - Update state based on the event
+ * - Schedule execution if needed (via ctx.schedule)
+ * - Optionally clear the task (via ctx.clear)
+ */
+export interface TaskEventContext<S, E> {
+  // Event access (synchronous - already decoded)
+  /** The incoming event (already validated against eventSchema) */
+  readonly event: E;
+
+  // State access (synchronous - already loaded)
+  /** Current state (null if no state set yet) */
+  readonly state: S | null;
+
+  // State mutations
+  /** Replace the entire state */
+  readonly setState: (state: S) => Effect.Effect<void, never, never>;
+  /** Update state via transformation function (no-op if state is null) */
+  readonly updateState: (fn: (current: S) => S) => Effect.Effect<void, never, never>;
+
+  // Scheduling
+  /**
+   * Schedule execution at a specific time.
+   * @param when - Duration from now, timestamp (ms), or Date
+   */
+  readonly schedule: (when: Duration.DurationInput | number | Date) => Effect.Effect<void, never, never>;
+  /** Cancel any scheduled execution */
+  readonly cancelSchedule: () => Effect.Effect<void, never, never>;
+  /** Get the currently scheduled execution time (null if none) */
+  readonly getScheduledTime: () => Effect.Effect<number | null, never, never>;
+
+  // Cleanup
+  /**
+   * Clear all state and cancel alarms immediately.
+   * Short-circuits the current handler (no further code runs).
+   */
+  readonly clear: () => Effect.Effect<never, never, never>;
+
+  // Metadata (synchronous)
+  /** The unique instance ID for this task */
+  readonly instanceId: string;
+  /** The name of this job (as registered) */
+  readonly jobName: string;
+  /** When this handler invocation started (ms since epoch) */
+  readonly executionStartedAt: number;
+  /** True if this is the first event (state was null) */
+  readonly isFirstEvent: boolean;
+
+  // Metadata (Effects)
+  /** Total number of events received (Effect for lazy loading) */
+  readonly eventCount: Effect.Effect<number, never, never>;
+  /** When this task was created (Effect for lazy loading) */
+  readonly createdAt: Effect.Effect<number, never, never>;
+}
+
+/**
+ * Context provided to task execute handler.
+ *
+ * The execute handler runs when an alarm fires and should:
+ * - Process the current state
+ * - Schedule next execution if needed
+ * - Clear the task when complete
+ */
+export interface TaskExecuteContext<S> {
+  // State access (Effect - loaded on demand)
+  /** Get current state (null if no state set) */
+  readonly state: Effect.Effect<S | null, never, never>;
+
+  // State mutations
+  /** Replace the entire state */
+  readonly setState: (state: S) => Effect.Effect<void, never, never>;
+  /** Update state via transformation function */
+  readonly updateState: (fn: (current: S) => S) => Effect.Effect<void, never, never>;
+
+  // Scheduling
+  /**
+   * Schedule next execution at a specific time.
+   * @param when - Duration from now, timestamp (ms), or Date
+   */
+  readonly schedule: (when: Duration.DurationInput | number | Date) => Effect.Effect<void, never, never>;
+  /** Cancel any scheduled execution */
+  readonly cancelSchedule: () => Effect.Effect<void, never, never>;
+  /** Get the currently scheduled execution time (null if none) */
+  readonly getScheduledTime: () => Effect.Effect<number | null, never, never>;
+
+  // Cleanup
+  /**
+   * Clear all state and cancel alarms immediately.
+   * Short-circuits the current handler.
+   */
+  readonly clear: () => Effect.Effect<never, never, never>;
+
+  // Metadata
+  /** The unique instance ID for this task */
+  readonly instanceId: string;
+  /** The name of this job (as registered) */
+  readonly jobName: string;
+  /** When this handler invocation started (ms since epoch) */
+  readonly executionStartedAt: number;
+
+  // Metadata (Effects)
+  /** Total number of events received */
+  readonly eventCount: Effect.Effect<number, never, never>;
+  /** When this task was created */
+  readonly createdAt: Effect.Effect<number, never, never>;
+  /** Number of times execute has been called (1-indexed) */
+  readonly executeCount: Effect.Effect<number, never, never>;
+}
+
+/**
+ * Context provided to task onIdle handler.
+ *
+ * Called when either onEvent or execute completes without scheduling
+ * another execution. Use this to schedule cleanup or maintenance.
+ */
+export interface TaskIdleContext<S> {
+  /** Get current state */
+  readonly state: Effect.Effect<S | null, never, never>;
+  /** Schedule execution (e.g., for delayed cleanup) */
+  readonly schedule: (when: Duration.DurationInput | number | Date) => Effect.Effect<void, never, never>;
+  /** Clear the task immediately */
+  readonly clear: () => Effect.Effect<never, never, never>;
+
+  /** The unique instance ID for this task */
+  readonly instanceId: string;
+  /** The name of this job (as registered) */
+  readonly jobName: string;
+  /** What triggered the idle state */
+  readonly idleReason: "onEvent" | "execute";
+}
+
+/**
+ * Context provided to task onError handler.
+ *
+ * Called when onEvent or execute throws an error.
+ * Use this to log errors, update state, or schedule retries.
+ */
+export interface TaskErrorContext<S> {
+  /** Get current state */
+  readonly state: Effect.Effect<S | null, never, never>;
+  /** Update state (e.g., to track error count) */
+  readonly updateState: (fn: (current: S) => S) => Effect.Effect<void, never, never>;
+  /** Schedule execution (e.g., for retry) */
+  readonly schedule: (when: Duration.DurationInput | number | Date) => Effect.Effect<void, never, never>;
+  /** Clear the task immediately */
+  readonly clear: () => Effect.Effect<never, never, never>;
+
+  /** The unique instance ID for this task */
+  readonly instanceId: string;
+  /** The name of this job (as registered) */
+  readonly jobName: string;
+  /** Which handler produced the error */
+  readonly errorSource: "onEvent" | "execute";
 }
 
 // =============================================================================

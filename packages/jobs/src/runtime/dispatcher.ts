@@ -4,6 +4,7 @@ import { Context, Effect, Layer } from "effect";
 import { MetadataService } from "../services/metadata";
 import { ContinuousHandler } from "../handlers/continuous";
 import { DebounceHandler } from "../handlers/debounce";
+import { TaskHandler } from "../handlers/task";
 import { UnknownJobTypeError, type JobError } from "../errors";
 import type { JobRequest, JobResponse } from "./types";
 
@@ -25,13 +26,13 @@ export interface DispatcherServiceI {
    */
   readonly handle: (
     request: JobRequest
-  ) => Effect.Effect<JobResponse, JobError>;
+  ) => Effect.Effect<JobResponse, JobError, any>;
 
   /**
    * Handle an alarm.
    * Reads metadata to determine which job type to route to.
    */
-  readonly handleAlarm: () => Effect.Effect<void, JobError>;
+  readonly handleAlarm: () => Effect.Effect<void, JobError, any>;
 }
 
 // =============================================================================
@@ -59,6 +60,7 @@ export const DispatcherLayer = Layer.effect(
     const metadata = yield* MetadataService;
     const continuous = yield* ContinuousHandler;
     const debounce = yield* DebounceHandler;
+    const task = yield* TaskHandler;
 
     return {
       handle: (request: JobRequest) =>
@@ -69,6 +71,9 @@ export const DispatcherLayer = Layer.effect(
 
             case "debounce":
               return yield* debounce.handle(request);
+
+            case "task":
+              return yield* task.handle(request);
 
             case "workerPool":
               // TODO: Route to WorkerPoolHandler in Phase 5
@@ -105,6 +110,10 @@ export const DispatcherLayer = Layer.effect(
 
             case "debounce":
               yield* debounce.handleAlarm();
+              break;
+
+            case "task":
+              yield* task.handleAlarm();
               break;
 
             case "workerPool":

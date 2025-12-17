@@ -11,3 +11,9 @@ export {
   type DebounceMakeConfig,
   type DebounceNamespace,
 } from "./debounce";
+
+export {
+  Task,
+  type TaskMakeConfig,
+  type TaskNamespace,
+} from "./task";

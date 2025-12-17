@@ -93,6 +93,7 @@ export function createTypedJobRegistry<
   const continuous: Record<string, any> = {};
   const debounce: Record<string, any> = {};
   const workerPool: Record<string, any> = {};
+  const task: Record<string, any> = {};
 
   for (const [name, def] of Object.entries(definitions)) {
     const withName = { ...def, name };
@@ -107,6 +108,9 @@ export function createTypedJobRegistry<
       case "WorkerPoolDefinition":
         workerPool[name] = withName;
         break;
+      case "TaskDefinition":
+        task[name] = withName;
+        break;
     }
   }
 
@@ -116,6 +120,7 @@ export function createTypedJobRegistry<
     continuous,
     debounce,
     workerPool,
+    task,
     __definitions: definitions,
   } as TypedJobRegistry<T>;
 }
@@ -133,6 +138,7 @@ export function toRuntimeRegistry<T extends Record<string, AnyUnregisteredDefini
     continuous: registry.continuous as Record<string, ContinuousDefinition<any, any, any>>,
     debounce: registry.debounce as Record<string, DebounceDefinition<any, any, any, any>>,
     workerPool: registry.workerPool as Record<string, WorkerPoolDefinition<any, any, any>>,
+    task: registry.task as Record<string, any>,
   };
 }
 

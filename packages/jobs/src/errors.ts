@@ -113,6 +113,12 @@ export class DuplicateEventError extends Data.TaggedError(
 }
 
 /**
+ * Signal that the task should clear all state and terminate.
+ * Internal use only - caught by handler.
+ */
+export class ClearSignal extends Data.TaggedError("ClearSignal")<{}> {}
+
+/**
  * Signal that the job should terminate.
  *
  * Not a true error - used to short-circuit execution from within
