@@ -64,23 +64,34 @@ jobs:
             cd packages/${{ inputs.package }} && npm version ${{ inputs.version_bump }} --no-git-tag-version
           fi
 
+      - name: Verify npm authentication
+        run: npm whoami
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish @durable-effect/core
         if: ${{ inputs.package == 'core' || inputs.package == 'all' }}
-        run: pnpm --filter @durable-effect/core publish --access public --no-git-checks
+        run: |
+          cd packages/core
+          npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @durable-effect/jobs
         if: ${{ inputs.package == 'jobs' || inputs.package == 'all' }}
-        run: pnpm --filter @durable-effect/jobs publish --access public --no-git-checks
+        run: |
+          cd packages/jobs
+          npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @durable-effect/workflow
         if: ${{ inputs.package == 'workflow' || inputs.package == 'all' }}
-        run: pnpm --filter @durable-effect/workflow publish --access public --no-git-checks
+        run: |
+          cd packages/workflow
+          npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
         run: |
