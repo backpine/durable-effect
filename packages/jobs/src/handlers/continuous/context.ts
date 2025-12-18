@@ -39,19 +39,19 @@ export function createContinuousContext<S>(
   attempt: number = 1
 ): ContinuousContext<S> {
   return {
-    get state() {
-      return stateHolder.current;
-    },
+    state: Effect.sync(() => stateHolder.current),
 
-    setState: (newState: S) => {
-      stateHolder.current = newState;
-      stateHolder.dirty = true;
-    },
+    setState: (newState: S) =>
+      Effect.sync(() => {
+        stateHolder.current = newState;
+        stateHolder.dirty = true;
+      }),
 
-    updateState: (fn: (current: S) => S) => {
-      stateHolder.current = fn(stateHolder.current);
-      stateHolder.dirty = true;
-    },
+    updateState: (fn: (current: S) => S) =>
+      Effect.sync(() => {
+        stateHolder.current = fn(stateHolder.current);
+        stateHolder.dirty = true;
+      }),
 
     instanceId,
     runCount,

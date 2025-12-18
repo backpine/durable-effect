@@ -96,11 +96,12 @@ export function createTaskEventContext<S>(
 ): TaskEventContext<S> {
   const scheduling = createSchedulingEffects(scheduleHolder, getScheduledFromStorage);
 
+  // Capture isFirstEvent at context creation time (before state might change)
+  const isFirstEvent = stateHolder.current === null;
+
   return {
-    // State access (synchronous - already loaded)
-    get state() {
-      return stateHolder.current;
-    },
+    // State access (Effect-based)
+    state: Effect.sync(() => stateHolder.current),
 
     // State mutations
     setState: (state: S): Effect.Effect<void, never, never> =>
@@ -128,7 +129,7 @@ export function createTaskEventContext<S>(
     instanceId,
     jobName,
     executionStartedAt,
-    isFirstEvent: stateHolder.current === null,
+    isFirstEvent,
 
     // Metadata (Effects)
     eventCount: getEventCount(),

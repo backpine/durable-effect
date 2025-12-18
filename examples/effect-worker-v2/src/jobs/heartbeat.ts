@@ -34,7 +34,7 @@ export type HeartbeatState = typeof HeartbeatState.Type;
  * Key points about Continuous jobs:
  * - They run on a schedule (every N seconds, or cron)
  * - State is persisted durably
- * - ctx.state, ctx.setState, ctx.updateState are SYNCHRONOUS (not Effects)
+ * - ctx.state, ctx.setState, ctx.updateState are Effects (use yield*)
  * - Use ctx.terminate() to stop the job
  */
 export const heartbeat = Continuous.make({
@@ -54,15 +54,15 @@ export const heartbeat = Continuous.make({
   // The execute function runs on each scheduled tick
   execute: (ctx) =>
     Effect.gen(function* () {
-      // In Continuous jobs, state access is SYNCHRONOUS (not an Effect)
-      const currentState = ctx.state;
+      // Get current state (Effect-based)
+      const currentState = yield* ctx.state;
 
       yield* Effect.log(
         `Heartbeat #${ctx.runCount}: ${currentState.name} - count=${currentState.count}`,
       );
 
-      // Update state (also synchronous in Continuous)
-      ctx.updateState((s) => ({
+      // Update state (Effect-based)
+      yield* ctx.updateState((s) => ({
         ...s,
         count: s.count + 1,
         lastHeartbeat: Date.now(),

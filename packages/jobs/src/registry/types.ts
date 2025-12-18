@@ -323,12 +323,12 @@ export interface TerminateOptions {
  * Context provided to continuous job execute function.
  */
 export interface ContinuousContext<S> {
-  /** Current state value (synchronous access) */
-  readonly state: S;
+  /** Current state value */
+  readonly state: Effect.Effect<S, never, never>;
   /** Replace the entire state */
-  readonly setState: (state: S) => void;
+  readonly setState: (state: S) => Effect.Effect<void, never, never>;
   /** Update state via transformation function */
-  readonly updateState: (fn: (current: S) => S) => void;
+  readonly updateState: (fn: (current: S) => S) => Effect.Effect<void, never, never>;
   /** The unique instance ID for this job instance */
   readonly instanceId: string;
   /** The number of times execute has been called (1-indexed) */
@@ -448,12 +448,12 @@ export interface WorkerPoolEmptyContext {
  * The onEvent handler receives each incoming event and should:
  * - Update state based on the event
  * - Schedule execution if needed (via ctx.schedule)
- * - Optionally clear the task (via ctx.clear)
+ * - Optionally terminate the task (via ctx.terminate)
  */
 export interface TaskEventContext<S> {
-  // State access (synchronous - already loaded)
+  // State access (Effect-based)
   /** Current state (null if no state set yet) */
-  readonly state: S | null;
+  readonly state: Effect.Effect<S | null, never, never>;
 
   // State mutations
   /** Replace the entire state */

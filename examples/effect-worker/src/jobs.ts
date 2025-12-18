@@ -22,7 +22,6 @@ const tokenRefresher = Continuous.make({
   schedule: Continuous.every("5 seconds"),
 
   startImmediately: true,
-  onError: (error) => Effect.logError(error),
 
   // The function to run
   execute: (ctx) =>
@@ -34,17 +33,19 @@ const tokenRefresher = Continuous.make({
       if (ctx.runCount > 5) {
         yield* ctx.terminate({
           reason: "done",
-          purgeState: true,
         });
       }
       yield* Effect.log(`setting the state`);
 
-      // Update state (persisted automatically)
-      ctx.setState({
-        accessToken: ctx.state.accessToken,
-        refreshToken: ctx.state.refreshToken,
-        expiresAt: Date.now() + ctx.state.expiresAt * 1000,
-        count: ctx.state.count + 1,
+      // Get current state (Effect-based)
+      const currentState = yield* ctx.state;
+
+      // Update state (Effect-based)
+      yield* ctx.setState({
+        accessToken: currentState.accessToken,
+        refreshToken: currentState.refreshToken,
+        expiresAt: Date.now() + currentState.expiresAt * 1000,
+        count: currentState.count + 1,
       });
     }),
 });
@@ -151,7 +152,8 @@ const countdownTimer = Task.make({
         }
 
         case "Pause": {
-          if (ctx.state === null || ctx.state.status !== "running") {
+          const currentState = yield* ctx.state;
+          if (currentState === null || currentState.status !== "running") {
             yield* Effect.log("Cannot pause - timer not running");
             return;
           }
@@ -162,14 +164,15 @@ const countdownTimer = Task.make({
         }
 
         case "Resume": {
-          if (ctx.state === null || ctx.state.status !== "paused") {
+          const currentState = yield* ctx.state;
+          if (currentState === null || currentState.status !== "paused") {
             yield* Effect.log("Cannot resume - timer not paused");
             return;
           }
           yield* Effect.log("Resuming countdown");
           yield* ctx.updateState((s) => ({ ...s, status: "running" as const }));
           // Resume with remaining time
-          yield* ctx.schedule(ctx.state.targetTime);
+          yield* ctx.schedule(currentState.targetTime);
           break;
         }
 
@@ -186,11 +189,12 @@ const countdownTimer = Task.make({
         }
 
         case "AddTime": {
-          if (ctx.state === null) return;
+          const currentState = yield* ctx.state;
+          if (currentState === null) return;
           yield* Effect.log(`Adding ${event.seconds} seconds`);
-          const newTarget = ctx.state.targetTime + event.seconds * 1000;
+          const newTarget = currentState.targetTime + event.seconds * 1000;
           yield* ctx.updateState((s) => ({ ...s, targetTime: newTarget }));
-          if (ctx.state.status === "running") {
+          if (currentState.status === "running") {
             yield* ctx.schedule(newTarget);
           }
           break;
@@ -205,7 +209,7 @@ const countdownTimer = Task.make({
 
       if (state.status === "cancelled") {
         yield* Effect.log("Timer was cancelled, cleaning up");
-        yield* ctx.clear();
+        yield* ctx.terminate();
         return;
       }
 

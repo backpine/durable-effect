@@ -33,13 +33,14 @@ const counterPrimitive = Continuous.make({
   stateSchema: CounterState,
   schedule: Continuous.every("30 minutes"),
   execute: (ctx) =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
+      const currentState = yield* ctx.state;
       executionLog.push({
         instanceId: ctx.instanceId,
         runCount: ctx.runCount,
-        state: ctx.state,
+        state: currentState,
       });
-      ctx.updateState((s) => ({
+      yield* ctx.updateState((s) => ({
         count: s.count + 1,
         lastRun: Date.now(),
       }));
@@ -57,11 +58,12 @@ const noImmediateStartPrimitive = Continuous.make({
   schedule: Continuous.every("1 hour"),
   startImmediately: false,
   execute: (ctx) =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
+      const currentState = yield* ctx.state;
       executionLog.push({
         instanceId: ctx.instanceId,
         runCount: ctx.runCount,
-        state: ctx.state,
+        state: currentState,
       });
     }),
 });
@@ -80,18 +82,19 @@ const terminatingPrimitive = Continuous.make({
   schedule: Continuous.every("10 minutes"),
   execute: (ctx) =>
     Effect.gen(function* () {
+      const currentState = yield* ctx.state;
       executionLog.push({
         instanceId: ctx.instanceId,
         runCount: ctx.runCount,
-        state: ctx.state as any,
+        state: currentState as any,
       });
 
-      if (ctx.runCount >= ctx.state.maxRuns) {
+      if (ctx.runCount >= currentState.maxRuns) {
         terminateLog.push({ reason: "Max runs reached" });
         return yield* ctx.terminate({ reason: "Max runs reached" });
       }
 
-      ctx.updateState((s) => ({ ...s, currentRun: s.currentRun + 1 }));
+      yield* ctx.updateState((s) => ({ ...s, currentRun: s.currentRun + 1 }));
     }),
 });
 
