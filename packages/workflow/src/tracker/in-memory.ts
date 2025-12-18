@@ -4,6 +4,7 @@ import { Effect, Layer, Ref } from "effect";
 import type {
   InternalWorkflowEvent,
   WorkflowEventType,
+  EventTrackerService as CoreEventTrackerService,
 } from "@durable-effect/core";
 import { EventTracker, type EventTrackerService } from "./tracker";
 
@@ -82,6 +83,6 @@ export function createInMemoryTracker(): Effect.Effect<{
 export const createInMemoryTrackerLayer = () =>
   Effect.gen(function* () {
     const { service, handle } = yield* createInMemoryTracker();
-    const layer = Layer.succeed(EventTracker, service);
+    const layer = Layer.succeed(EventTracker, service as CoreEventTrackerService);
     return { layer, handle };
   });

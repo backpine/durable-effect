@@ -1,19 +1,7 @@
 // packages/workflow/src/tracker/noop.ts
 
-import { Effect, Layer } from "effect";
-import { EventTracker, type EventTrackerService } from "./tracker";
-
 /**
- * No-op tracker that discards all events.
- * Useful for testing or when tracking is disabled.
+ * Re-export NoopTracker from core.
+ * The core implementation works for any event type including workflow events.
  */
-export const noopTracker: EventTrackerService = {
-  emit: () => Effect.void,
-  flush: () => Effect.void,
-  pending: () => Effect.succeed(0),
-};
-
-/**
- * Layer that provides a no-op tracker.
- */
-export const NoopTrackerLayer = Layer.succeed(EventTracker, noopTracker);
+export { noopTracker, NoopTrackerLayer } from "@durable-effect/core";

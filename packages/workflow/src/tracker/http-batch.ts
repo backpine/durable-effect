@@ -5,6 +5,7 @@ import {
   enrichEvent,
   type InternalWorkflowEvent,
   type WorkflowEvent,
+  type EventTrackerService as CoreEventTrackerService,
 } from "@durable-effect/core";
 import { EventTracker, type EventTrackerService } from "./tracker";
 
@@ -176,4 +177,7 @@ export function createHttpBatchTracker(
  * ```
  */
 export const HttpBatchTrackerLayer = (config: HttpBatchTrackerConfig) =>
-  Layer.effect(EventTracker, createHttpBatchTracker(config));
+  Layer.effect(
+    EventTracker,
+    createHttpBatchTracker(config) as Effect.Effect<CoreEventTrackerService>,
+  );

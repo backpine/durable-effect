@@ -1,10 +1,24 @@
 // packages/workflow/src/tracker/tracker.ts
 
-import { Context, Effect } from "effect";
+import { Effect } from "effect";
 import type { InternalWorkflowEvent } from "@durable-effect/core";
+import {
+  EventTracker as CoreEventTracker,
+  type EventTrackerService as CoreEventTrackerService,
+} from "@durable-effect/core";
 
 // =============================================================================
-// Workflow-specific EventTracker
+// Re-export Core EventTracker
+// =============================================================================
+
+/**
+ * Re-export EventTracker from core.
+ * Both workflow and jobs packages share the same tracker tag.
+ */
+export const EventTracker = CoreEventTracker;
+
+// =============================================================================
+// Workflow-specific Types
 // =============================================================================
 
 /**
@@ -30,17 +44,6 @@ export interface EventTrackerService {
   readonly pending: () => Effect.Effect<number>;
 }
 
-/**
- * Effect service tag for workflow EventTracker.
- *
- * This is the workflow-specific tracker that uses InternalWorkflowEvent.
- * It has the same tag ID as core's EventTracker for compatibility.
- */
-export class EventTracker extends Context.Tag("@durable-effect/EventTracker")<
-  EventTracker,
-  EventTrackerService
->() {}
-
 // =============================================================================
 // Emit Helper
 // =============================================================================
@@ -51,7 +54,9 @@ export class EventTracker extends Context.Tag("@durable-effect/EventTracker")<
  */
 export const emitEvent = (event: InternalWorkflowEvent): Effect.Effect<void> =>
   Effect.flatMap(Effect.serviceOption(EventTracker), (option) =>
-    option._tag === "Some" ? option.value.emit(event) : Effect.void,
+    option._tag === "Some"
+      ? (option.value as EventTrackerService).emit(event)
+      : Effect.void,
   );
 
 /**
