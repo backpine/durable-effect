@@ -50,7 +50,7 @@ export interface DebounceMakeConfig<I, S, E, R> {
    * }
    * ```
    */
-  readonly retry?: JobRetryConfig<E>;
+  readonly retry?: JobRetryConfig;
 
   /**
    * Reducer for each incoming event. Defaults to returning the latest event.
@@ -62,13 +62,6 @@ export interface DebounceMakeConfig<I, S, E, R> {
    */
   execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, E, R>;
 
-  /**
-   * Optional error handler for execute failures.
-   */
-  onError?(
-    error: E,
-    ctx: DebounceExecuteContext<S>
-  ): Effect.Effect<void, never, R>;
 }
 
 /**
@@ -102,7 +95,6 @@ export const Debounce = {
       ((ctx: DebounceEventContext<I, S>) =>
         Effect.succeed(ctx.event as unknown as S)),
     execute: config.execute,
-    onError: config.onError,
   }),
 };
 

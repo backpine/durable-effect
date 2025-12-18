@@ -1,0 +1,31 @@
+{
+  "name": "effect-worker",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cf-typegen": "wrangler types --env-interface Env",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "@durable-effect/jobs": "workspace:*",
+    "@effect/platform": "catalog:",
+    "drizzle-orm": "^0.45.0",
+    "effect": "catalog:",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^22.0.0",
+    "miniflare": "^3.20241127.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^4.55.0"
+  }
+}

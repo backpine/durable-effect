@@ -1,0 +1,50 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "durable-effect-examples",
+  "main": "src/worker.ts",
+  "compatibility_date": "2024-11-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+  },
+
+  // Generate TypeScript types from wrangler.jsonc bindings
+  // Run: pnpm wrangler types
+  // This generates worker-configuration.d.ts with the Env interface
+
+  // Account and deployment settings
+  // "account_id": "your-account-id",
+  // "workers_dev": true,
+
+  // Environment variables (non-secret config)
+  "vars": {
+    "ENVIRONMENT": "production",
+    "LOG_LEVEL": "info",
+  },
+
+  // Durable Objects - Jobs Engine
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "JOBS",
+        "class_name": "Jobs",
+      },
+    ],
+  },
+
+  // Migrations for Durable Objects
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["Jobs"],
+    },
+  ],
+
+  // R2 Bucket binding
+  "r2_buckets": [
+    {
+      "binding": "MY_BUCKET",
+      "bucket_name": "effect-worker-storage",
+    },
+  ],
+}

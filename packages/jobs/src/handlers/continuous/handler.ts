@@ -9,60 +9,37 @@ import {
 } from "@durable-effect/core";
 import { MetadataService, type JobStatus } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
-import {
-  createEntityStateService,
-  type EntityStateServiceI,
-} from "../../services/entity-state";
+import { createEntityStateService } from "../../services/entity-state";
 import { RegistryService } from "../../services/registry";
+import { JobExecutionService, type ExecutionResult } from "../../services/execution";
 import { KEYS } from "../../storage-keys";
 import {
   JobNotFoundError,
   ExecutionError,
-  TerminateSignal,
   type JobError,
 } from "../../errors";
-import {
-  RetryExecutor,
-  RetryScheduledSignal,
-  RetryExhaustedError,
-} from "../../retry";
+import { RetryExecutor } from "../../retry";
 import type { ContinuousRequest } from "../../runtime/types";
-import type { ContinuousDefinition } from "../../registry/types";
+import type { ContinuousDefinition, ContinuousContext } from "../../registry/types";
 import type { ContinuousHandlerI, ContinuousResponse } from "./types";
 import { createContinuousContext, type StateHolder } from "./context";
-
-// =============================================================================
-// Service Tag
-// =============================================================================
 
 export class ContinuousHandler extends Context.Tag(
   "@durable-effect/jobs/ContinuousHandler",
 )<ContinuousHandler, ContinuousHandlerI>() {}
 
-// =============================================================================
-// Error Types for Internal Use
-// =============================================================================
-
 type HandlerError = JobError | StorageError | SchedulerError;
-
-// =============================================================================
-// Layer Implementation
-// =============================================================================
 
 export const ContinuousHandlerLayer = Layer.effect(
   ContinuousHandler,
   Effect.gen(function* () {
-    // Get all required services
     const registryService = yield* RegistryService;
     const metadata = yield* MetadataService;
     const alarm = yield* AlarmService;
     const runtime = yield* RuntimeAdapter;
     const storage = yield* StorageAdapter;
+    const execution = yield* JobExecutionService;
     const retryExecutor = yield* RetryExecutor;
-
-    // -------------------------------------------------------------------------
-    // Internal Helpers
-    // -------------------------------------------------------------------------
 
     const getDefinition = (
       name: string,
@@ -74,7 +51,6 @@ export const ContinuousHandlerLayer = Layer.effect(
       if (!def) {
         return Effect.fail(new JobNotFoundError({ type: "continuous", name }));
       }
-      // Cast is safe - registry stores definitions with any types
       return Effect.succeed(
         def as ContinuousDefinition<unknown, unknown, never>,
       );
@@ -118,301 +94,46 @@ export const ContinuousHandlerLayer = Layer.effect(
       }
     };
 
-    // -------------------------------------------------------------------------
-    // Purge Helper
-    // -------------------------------------------------------------------------
-
-    /**
-     * Purge all storage data for this job.
-     * Uses deleteAll() for safety - ensures no keys are forgotten.
-     * Note: deleteAll() does not affect alarms, so we cancel separately.
-     */
-    const purge = (): Effect.Effect<void, StorageError | SchedulerError> =>
-      Effect.gen(function* () {
-        yield* alarm.cancel();
-        yield* storage.deleteAll();
-      });
-
-    // -------------------------------------------------------------------------
-    // Termination Helper
-    // -------------------------------------------------------------------------
-
-    /**
-     * Perform termination of the job.
-     * Called when ctx.terminate() is invoked from execute function.
-     */
-    const performTermination = (
-      signal: TerminateSignal,
-    ): Effect.Effect<void, StorageError | SchedulerError> =>
-      Effect.gen(function* () {
-        if (signal.purgeState) {
-          // Full purge - delete all storage and cancel alarm
-          yield* purge();
-        } else {
-          // Soft stop - keep state but cancel alarm and update metadata
-          yield* alarm.cancel();
-          yield* metadata.updateStatus("stopped");
-          if (signal.reason) {
-            yield* metadata.setStopReason(signal.reason);
-          }
-        }
-      });
-
-    // -------------------------------------------------------------------------
-    // User Function Execution
-    // -------------------------------------------------------------------------
-
-    /**
-     * Execute user function.
-     * TerminateSignal will propagate up to be caught by the caller.
-     */
-    const executeUserFunction = <S>(
-      def: ContinuousDefinition<S, unknown, never>,
-      stateService: EntityStateServiceI<S>,
-      runCount: number,
-      attempt: number = 1,
-    ): Effect.Effect<void, JobError | TerminateSignal> =>
-      Effect.gen(function* () {
-        // Get current state
-        const currentState = yield* stateService.get().pipe(
-          Effect.mapError(
-            (e) =>
-              new ExecutionError({
-                jobType: "continuous",
-                jobName: def.name,
-                instanceId: runtime.instanceId,
-                cause: e,
-              }),
-          ),
-        );
-
-        if (currentState === null) {
-          return; // Instance was deleted
-        }
-
-        // Create state holder for execution
-        const stateHolder: StateHolder<S> = {
-          current: currentState,
-          dirty: false,
-        };
-
-        const ctx = createContinuousContext(
-          stateHolder,
-          runtime.instanceId,
-          runCount,
-          def.name,
-          attempt,
-        );
-
-        // Helper to wrap errors as ExecutionError
-        const wrapError = (e: unknown): ExecutionError =>
-          e instanceof ExecutionError
-            ? e
-            : new ExecutionError({
-                jobType: "continuous",
-                jobName: def.name,
-                instanceId: runtime.instanceId,
-                cause: e,
-              });
-
-        // Execute user function
-        const executeEffect = Effect.try({
-          try: () => def.execute(ctx),
-          catch: wrapError,
-        }).pipe(Effect.flatten);
-
-        // Run and handle errors
-        yield* executeEffect.pipe(
-          Effect.catchAll(
-            (error): Effect.Effect<void, TerminateSignal | ExecutionError> => {
-              // Let TerminateSignal propagate up
-              if (error instanceof TerminateSignal) {
-                return Effect.fail(error);
-              }
-
-              // If user provided onError handler, call it
-              if (def.onError) {
-                return Effect.try({
-                  try: () => def.onError!(error, ctx),
-                  catch: wrapError,
-                }).pipe(
-                  Effect.flatten,
-                  // Also let TerminateSignal from onError propagate
-                  Effect.catchAll(
-                    (
-                      onErrorError,
-                    ): Effect.Effect<
-                      void,
-                      TerminateSignal | ExecutionError
-                    > => {
-                      if (onErrorError instanceof TerminateSignal) {
-                        return Effect.fail(onErrorError);
-                      }
-                      return Effect.fail(wrapError(onErrorError));
-                    },
-                  ),
-                  Effect.asVoid,
-                );
-              }
-
-              // Re-throw as ExecutionError
-              return Effect.fail(wrapError(error));
+    const runExecution = (
+      def: ContinuousDefinition<unknown, unknown, never>,
+      runCount: number
+    ): Effect.Effect<ExecutionResult, ExecutionError> =>
+      execution.execute({
+        jobType: "continuous",
+        jobName: def.name,
+        schema: def.stateSchema,
+        retryConfig: def.retry,
+        runCount,
+        run: (ctx: ContinuousContext<unknown>) => def.execute(ctx),
+        createContext: (base) => {
+          const proxyHolder: StateHolder<any> = {
+            get current() {
+              return base.getState();
             },
-          ),
-        );
-
-        // Persist state if modified (only reached if no terminate)
-        if (stateHolder.dirty) {
-          yield* stateService.set(stateHolder.current).pipe(
-            Effect.mapError(
-              (e) =>
-                new ExecutionError({
-                  jobType: "continuous",
-                  jobName: def.name,
-                  instanceId: runtime.instanceId,
-                  cause: e,
-                }),
-            ),
+            set current(val) {
+              base.setState(val);
+            },
+            get dirty() { return true; }, // Dummy, handled by service
+            set dirty(_) { /* no-op */ }
+          };
+          return createContinuousContext(
+            proxyHolder,
+            base.instanceId,
+            base.runCount,
+            def.name,
+            base.attempt
           );
         }
       });
-
-    // -------------------------------------------------------------------------
-    // Helper to provide storage context to effects
-    // -------------------------------------------------------------------------
-
-    const withStorage = <A, E>(
-      effect: Effect.Effect<A, E, StorageAdapter>,
-    ): Effect.Effect<A, E> =>
-      Effect.provideService(effect, StorageAdapter, storage);
-
-    // -------------------------------------------------------------------------
-    // Execute with Optional Retry
-    // -------------------------------------------------------------------------
-
-    /**
-     * Execute user function with optional retry logic.
-     *
-     * When retry is configured:
-     * - Uses RetryExecutor to handle retries
-     * - On RetryScheduledSignal, short-circuits to skip rescheduling
-     * - On RetryExhaustedError, calls onError then continues
-     *
-     * When retry is not configured:
-     * - Executes directly, calling onError on failure
-     */
-    const executeWithOptionalRetry = <S>(
-      def: ContinuousDefinition<S, unknown, never>,
-      stateService: EntityStateServiceI<S>,
-      runCount: number,
-    ): Effect.Effect<
-      void,
-      JobError | TerminateSignal | RetryScheduledSignal
-    > => {
-      const impl = Effect.gen(function* () {
-        // Get current attempt number for context
-        const attempt = yield* retryExecutor.getAttempt().pipe(
-          Effect.catchAll(() => Effect.succeed(1)),
-        );
-
-        if (!def.retry) {
-          // No retry configured - execute directly
-          return yield* executeUserFunction(def, stateService, runCount, attempt);
-        }
-
-        // Create an effect that runs the user function
-        const executeEffect = executeUserFunction(
-          def,
-          stateService,
-          runCount,
-          attempt,
-        );
-
-        // Wrap with retry executor
-        yield* retryExecutor
-          .executeWithRetry(
-            executeEffect as Effect.Effect<void, unknown, never>,
-            def.retry,
-            { jobType: "continuous", jobName: def.name },
-          )
-          .pipe(
-            Effect.catchAll((error): Effect.Effect<
-              void,
-              JobError | TerminateSignal | RetryScheduledSignal
-            > => {
-              // Handle RetryScheduledSignal - propagate to skip rescheduling
-              if (error instanceof RetryScheduledSignal) {
-                return Effect.fail(error);
-              }
-
-              // Handle TerminateSignal - propagate
-              if (error instanceof TerminateSignal) {
-                return Effect.fail(error);
-              }
-
-              // Handle RetryExhaustedError - call onError and continue
-              if (error instanceof RetryExhaustedError) {
-                return Effect.gen(function* () {
-                  if (def.onError) {
-                    const currentState = yield* stateService.get().pipe(
-                      Effect.orElse(() => Effect.succeed(null)),
-                    );
-
-                    if (currentState !== null) {
-                      const stateHolder: StateHolder<S> = {
-                        current: currentState,
-                        dirty: false,
-                      };
-                      const errorCtx = createContinuousContext(
-                        stateHolder,
-                        runtime.instanceId,
-                        runCount,
-                        def.name,
-                        error.attempts,
-                      );
-
-                      yield* Effect.try({
-                        try: () => def.onError!(error.lastError, errorCtx),
-                        catch: () => Effect.void,
-                      }).pipe(Effect.flatten, Effect.ignore);
-                    }
-                  }
-                  // Continue to next schedule (don't re-throw)
-                });
-              }
-
-              // Other errors - wrap and propagate
-              return Effect.fail(
-                new ExecutionError({
-                  jobType: "continuous",
-                  jobName: def.name,
-                  instanceId: runtime.instanceId,
-                  cause: error,
-                }),
-              );
-            }),
-          );
-      });
-
-      return impl as Effect.Effect<
-        void,
-        JobError | TerminateSignal | RetryScheduledSignal
-      >;
-    };
-
-    // -------------------------------------------------------------------------
-    // Action Handlers
-    // -------------------------------------------------------------------------
 
     const handleStart = (
       def: ContinuousDefinition<unknown, unknown, never>,
       request: ContinuousRequest,
     ): Effect.Effect<
       ContinuousResponse,
-      HandlerError | TerminateSignal | RetryScheduledSignal
+      HandlerError
     > =>
       Effect.gen(function* () {
-        // Check if already exists
         const existing = yield* metadata.get();
         if (existing) {
           return {
@@ -423,70 +144,84 @@ export const ContinuousHandlerLayer = Layer.effect(
           };
         }
 
-        // Initialize metadata
         yield* metadata.initialize("continuous", request.name);
-
-        // Create state service and set initial state
-        const stateService = yield* withStorage(
-          createEntityStateService(def.stateSchema),
+        
+        // Initial state set
+        // TODO: ExecutionService handles loading, but here we need to set INITIAL state
+        // We can use execution service to "seed" state? No, we should just use storage directly for init.
+        // Or we use a special "init" execution?
+        // Let's use direct storage access for init as before.
+        const stateService = yield* createEntityStateService(def.stateSchema).pipe(
+            Effect.provideService(StorageAdapter, storage)
         );
         yield* stateService.set(request.input);
 
-        // Initialize run count
-        yield* storage.put(KEYS.CONTINUOUS.RUN_COUNT, 0);
 
-        // Update status to running
+        yield* storage.put(KEYS.CONTINUOUS.RUN_COUNT, 0);
         yield* metadata.updateStatus("running");
 
-        // Execute immediately if configured (default true)
-        // TerminateSignal and RetryScheduledSignal will propagate up
+        let status: JobStatus = "running";
+
         if (def.startImmediately !== false) {
           const runCount = yield* incrementRunCount();
-          yield* executeWithOptionalRetry(def, stateService, runCount);
-          yield* updateLastExecutedAt();
+          const result = yield* runExecution(def, runCount);
+          
+          if (result.terminated) {
+            // Terminated - CleanupService has already purged everything
+            return {
+              _type: "continuous.start" as const,
+              instanceId: runtime.instanceId,
+              created: true,
+              status: "terminated" as JobStatus
+            };
+          }
+          
+          // Only update last executed if successful (or handled error)
+          if (result.success) {
+             yield* updateLastExecutedAt();
+          }
+          
+          // If retry scheduled, we don't schedule next run yet (handled by retry alarm)
+          if (result.retryScheduled) {
+             // Do nothing, alarm is set
+          } else if (!result.terminated) {
+             // Success, schedule next
+             yield* scheduleNext(def);
+          }
+        } else {
+           yield* scheduleNext(def);
         }
-
-        // Schedule next execution
-        yield* scheduleNext(def);
 
         return {
           _type: "continuous.start" as const,
           instanceId: runtime.instanceId,
           created: true,
-          status: "running" as JobStatus,
+          status,
         };
       });
 
-    const handleStop = (
+    const handleTerminate = (
       request: ContinuousRequest,
     ): Effect.Effect<ContinuousResponse, HandlerError> =>
       Effect.gen(function* () {
         const existing = yield* metadata.get();
         if (!existing) {
           return {
-            _type: "continuous.stop" as const,
-            stopped: false,
+            _type: "continuous.terminate" as const,
+            terminated: false,
             reason: "not_found",
           };
         }
 
-        if (existing.status === "stopped") {
-          return {
-            _type: "continuous.stop" as const,
-            stopped: false,
-            reason: "already_stopped",
-          };
-        }
-
-        // Cancel any scheduled alarm
+        // Cancel alarm
         yield* alarm.cancel();
 
-        // Update status
-        yield* metadata.updateStatus("stopped");
+        // Delete ALL storage (state, metadata, run count, etc.)
+        yield* storage.deleteAll();
 
         return {
-          _type: "continuous.stop" as const,
-          stopped: true,
+          _type: "continuous.terminate" as const,
+          terminated: true,
           reason: request.reason,
         };
       });
@@ -495,7 +230,7 @@ export const ContinuousHandlerLayer = Layer.effect(
       def: ContinuousDefinition<unknown, unknown, never>,
     ): Effect.Effect<
       ContinuousResponse,
-      HandlerError | TerminateSignal | RetryScheduledSignal
+      HandlerError
     > =>
       Effect.gen(function* () {
         const existing = yield* metadata.get();
@@ -510,25 +245,30 @@ export const ContinuousHandlerLayer = Layer.effect(
           };
         }
 
-        // Reset any existing retry state since this is a manual trigger
+        // Reset retry state
         yield* retryExecutor.reset().pipe(Effect.ignore);
 
-        // Create state service
-        const stateService = yield* withStorage(
-          createEntityStateService(def.stateSchema),
-        );
-
-        // Get and increment run count
         const runCount = yield* incrementRunCount();
+        const result = yield* runExecution(def, runCount);
 
-        // Execute user function
-        // TerminateSignal and RetryScheduledSignal will propagate up
-        yield* executeWithOptionalRetry(def, stateService, runCount);
+        if (result.terminated) {
+          // Terminated - CleanupService has already purged everything
+          return {
+            _type: "continuous.trigger" as const,
+            triggered: true,
+            terminated: true
+          };
+        }
 
-        // Update last executed timestamp
+        if (result.retryScheduled) {
+             return {
+               _type: "continuous.trigger" as const,
+               triggered: true,
+               retryScheduled: true
+             };
+        }
+
         yield* updateLastExecutedAt();
-
-        // Re-schedule next execution (resets timer)
         yield* scheduleNext(def);
 
         return {
@@ -563,8 +303,8 @@ export const ContinuousHandlerLayer = Layer.effect(
       def: ContinuousDefinition<unknown, unknown, never>,
     ): Effect.Effect<ContinuousResponse, HandlerError> =>
       Effect.gen(function* () {
-        const stateService = yield* withStorage(
-          createEntityStateService(def.stateSchema),
+        const stateService = yield* createEntityStateService(def.stateSchema).pipe(
+            Effect.provideService(StorageAdapter, storage)
         );
         const state = yield* stateService.get();
 
@@ -573,10 +313,6 @@ export const ContinuousHandlerLayer = Layer.effect(
           state,
         };
       });
-
-    // -------------------------------------------------------------------------
-    // Main Handler Implementation
-    // -------------------------------------------------------------------------
 
     return {
       handle: (
@@ -587,62 +323,17 @@ export const ContinuousHandlerLayer = Layer.effect(
 
           switch (request.action) {
             case "start":
-              return yield* handleStart(def, request).pipe(
-                // Catch TerminateSignal from initial execution
-                Effect.catchTag("TerminateSignal", (signal) =>
-                  Effect.gen(function* () {
-                    yield* performTermination(signal);
-                    return {
-                      _type: "continuous.start" as const,
-                      instanceId: runtime.instanceId,
-                      created: true,
-                      status: (signal.purgeState
-                        ? "terminated"
-                        : "stopped") as JobStatus,
-                    };
-                  }),
-                ),
-                // Catch RetryScheduledSignal - job started successfully, retry scheduled
-                Effect.catchTag("RetryScheduledSignal", () =>
-                  Effect.succeed({
-                    _type: "continuous.start" as const,
-                    instanceId: runtime.instanceId,
-                    created: true,
-                    status: "running" as JobStatus,
-                  }),
-                ),
-              );
-            case "stop":
-              return yield* handleStop(request);
+              return yield* handleStart(def, request);
+            case "terminate":
+              return yield* handleTerminate(request);
             case "trigger":
-              return yield* handleTrigger(def).pipe(
-                // Catch TerminateSignal from triggered execution
-                Effect.catchTag("TerminateSignal", (signal) =>
-                  Effect.gen(function* () {
-                    yield* performTermination(signal);
-                    return {
-                      _type: "continuous.trigger" as const,
-                      triggered: true,
-                      terminated: true,
-                    };
-                  }),
-                ),
-                // Catch RetryScheduledSignal - execution failed, retry scheduled
-                Effect.catchTag("RetryScheduledSignal", () =>
-                  Effect.succeed({
-                    _type: "continuous.trigger" as const,
-                    triggered: true,
-                    retryScheduled: true,
-                  }),
-                ),
-              );
+              return yield* handleTrigger(def);
             case "status":
               return yield* handleStatus();
             case "getState":
               return yield* handleGetState(def);
           }
         }).pipe(
-          // Map internal errors to JobError
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(
               new ExecutionError({
@@ -667,7 +358,6 @@ export const ContinuousHandlerLayer = Layer.effect(
 
       handleAlarm: (): Effect.Effect<void, JobError> =>
         Effect.gen(function* () {
-          // Get metadata to find job name
           const meta = yield* metadata.get();
           if (
             !meta ||
@@ -679,59 +369,34 @@ export const ContinuousHandlerLayer = Layer.effect(
 
           const def = yield* getDefinition(meta.name);
 
-          // Check if this alarm is a retry attempt
           const isRetrying = yield* retryExecutor.isRetrying().pipe(
             Effect.catchAll(() => Effect.succeed(false)),
           );
 
-          // Create state service for this schema
-          const stateService = yield* withStorage(
-            createEntityStateService(def.stateSchema),
-          );
-
-          // Only increment run count for new executions, not retries
           let runCount: number;
           if (isRetrying) {
-            // Use current run count without incrementing
             runCount = yield* getRunCount();
           } else {
-            // New execution - increment run count
             runCount = yield* incrementRunCount();
           }
 
-          // Execute user function with optional retry
-          // Catch TerminateSignal and perform termination
-          // Catch RetryScheduledSignal to skip rescheduling
-          const retryScheduled = yield* executeWithOptionalRetry(
-            def,
-            stateService,
-            runCount,
-          ).pipe(
-            Effect.map(() => false),
-            Effect.catchTag("TerminateSignal", (signal) =>
-              performTermination(signal).pipe(Effect.map(() => false)),
-            ),
-            Effect.catchTag("RetryScheduledSignal", () =>
-              Effect.succeed(true),
-            ),
-          );
+          const result = yield* runExecution(def, runCount);
 
-          // If retry was scheduled, don't reschedule normal execution
-          if (retryScheduled) {
+          if (result.retryScheduled) {
             return;
           }
 
-          // Only continue if not terminated
+          if (result.terminated) {
+            // Terminated - CleanupService has already purged everything
+            return;
+          }
+
           const currentMeta = yield* metadata.get();
           if (currentMeta && currentMeta.status === "running") {
-            // Update last executed timestamp
             yield* updateLastExecutedAt();
-
-            // Schedule next execution
             yield* scheduleNext(def);
           }
         }).pipe(
-          // Map internal errors to JobError
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(
               new ExecutionError({

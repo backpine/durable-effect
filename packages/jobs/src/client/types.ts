@@ -19,7 +19,7 @@ import type {
 } from "../registry/typed";
 import type {
   ContinuousStartResponse,
-  ContinuousStopResponse,
+  ContinuousTerminateResponse,
   ContinuousTriggerResponse,
   ContinuousStatusResponse,
   ContinuousGetStateResponse,
@@ -43,7 +43,7 @@ import type {
 import type {
   TaskSendResponse,
   TaskTriggerResponse,
-  TaskClearResponse,
+  TaskTerminateResponse,
   TaskStatusResponse,
   TaskGetStateResponse,
 } from "../runtime/types";
@@ -80,12 +80,15 @@ export interface ContinuousClient<S> {
   }): Effect.Effect<ContinuousStartResponse, ClientError>;
 
   /**
-   * Stop the continuous job.
+   * Terminate the continuous job.
+   *
+   * This fully removes the job - cancels the alarm and deletes all state.
+   * After termination, the same ID can be used to start a fresh instance.
    */
-  stop(
+  terminate(
     id: string,
     options?: { readonly reason?: string }
-  ): Effect.Effect<ContinuousStopResponse, ClientError>;
+  ): Effect.Effect<ContinuousTerminateResponse, ClientError>;
 
   /**
    * Trigger immediate execution (bypass schedule).
@@ -223,9 +226,9 @@ export interface TaskClient<S, E> {
   trigger(id: string): Effect.Effect<TaskTriggerResponse, ClientError>;
 
   /**
-   * Clear task immediately (delete all state + cancel alarms).
+   * Terminate task immediately (delete all state + cancel alarms).
    */
-  clear(id: string): Effect.Effect<TaskClearResponse, ClientError>;
+  terminate(id: string): Effect.Effect<TaskTerminateResponse, ClientError>;
 
   /**
    * Get current status.

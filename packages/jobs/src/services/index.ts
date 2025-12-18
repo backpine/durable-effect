@@ -35,6 +35,24 @@ export {
   type RegistryServiceI,
 } from "./registry";
 
+// Execution
+export {
+  JobExecutionService,
+  JobExecutionServiceLayer,
+  type JobExecutionServiceI,
+  type ExecuteOptions,
+  type ExecutionResult,
+  type ExecutionContextBase,
+  type OnRetryExhaustedContext,
+} from "./execution";
+
+// Cleanup
+export {
+  CleanupService,
+  CleanupServiceLayer,
+  type CleanupServiceI,
+} from "./cleanup";
+
 // =============================================================================
 // Combined Layer
 // =============================================================================

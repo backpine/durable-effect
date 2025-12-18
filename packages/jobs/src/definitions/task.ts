@@ -42,31 +42,40 @@ export interface TaskMakeConfig<S, E, Err, R> {
   /**
    * Handler called for each incoming event.
    *
+   * The event is passed as the first parameter (not on ctx) to make it
+   * clear that it's a direct value, not an Effect that needs yielding.
+   *
    * Responsibilities:
    * - Update state based on the event (via ctx.setState or ctx.updateState)
    * - Schedule execution if needed (via ctx.schedule)
    * - Optionally clear the task if complete (via ctx.clear)
    *
+   * @param event - The incoming event (already validated against eventSchema)
+   * @param ctx - Context for state access, scheduling, and metadata
+   *
    * @example
    * ```ts
-   * onEvent: (ctx) => Effect.gen(function* () {
+   * onEvent: (event, ctx) => Effect.gen(function* () {
+   *   // event is a direct value - no yield needed!
+   *   console.log("Received:", event);
+   *
    *   // Initialize state on first event
    *   if (ctx.state === null) {
-   *     yield* ctx.setState({ items: [], createdAt: Date.now() });
+   *     yield* ctx.setState({ items: [event], createdAt: Date.now() });
+   *   } else {
+   *     // Update state based on event
+   *     yield* ctx.updateState(s => ({
+   *       ...s,
+   *       items: [...s.items, event]
+   *     }));
    *   }
-   *
-   *   // Update state based on event
-   *   yield* ctx.updateState(s => ({
-   *     ...s,
-   *     items: [...s.items, ctx.event]
-   *   }));
    *
    *   // Schedule processing in 5 seconds
    *   yield* ctx.schedule(Duration.seconds(5));
    * })
    * ```
    */
-  onEvent(ctx: TaskEventContext<S, E>): Effect.Effect<void, Err, R>;
+  onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, Err, R>;
 
   /**
    * Handler called when the scheduled alarm fires.
@@ -171,9 +180,8 @@ export interface TaskMakeConfig<S, E, Err, R> {
  *     Schema.Struct({ _tag: Schema.Literal("Shipped"), trackingNumber: Schema.String }),
  *   ),
  *
- *   onEvent: (ctx) => Effect.gen(function* () {
- *     const event = ctx.event;
- *
+ *   // event is passed as first parameter - clear it's a direct value!
+ *   onEvent: (event, ctx) => Effect.gen(function* () {
  *     switch (event._tag) {
  *       case "OrderPlaced":
  *         yield* ctx.setState({

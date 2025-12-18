@@ -7,12 +7,12 @@ import {
   resolveDelay,
   addJitter,
   type StorageError,
-  type SchedulerError,
 } from "@durable-effect/core";
 import { AlarmService } from "../services/alarm";
 import { KEYS } from "../storage-keys";
-import type { JobRetryConfig, RetryExhaustedInfo } from "./types";
-import { RetryExhaustedError, RetryScheduledSignal } from "./errors";
+import type { JobRetryConfig } from "./types";
+import { RetryExhaustedSignal, RetryScheduledSignal } from "./errors";
+import { TerminateSignal } from "../errors";
 
 // =============================================================================
 // Service Interface
@@ -26,24 +26,27 @@ import { RetryExhaustedError, RetryScheduledSignal } from "./errors";
  * - Calculate retry delays using configured backoff
  * - Schedule retry alarms
  * - Signal when retries are exhausted
+ *
+ * Important: TerminateSignal bypasses retry logic entirely.
+ * All other errors from user code are considered retryable.
  */
 export interface RetryExecutorI {
   /**
    * Execute an effect with retry logic.
    *
-   * On success: resets retry state and returns result.
-   * On failure with retries remaining: schedules retry and fails with RetryScheduledSignal.
-   * On failure with retries exhausted: calls onRetryExhausted callback and fails with RetryExhaustedError.
-   * On non-retryable failure: resets retry state and propagates original error.
+   * - On success: resets retry state and returns result
+   * - On TerminateSignal: bypasses retry, propagates signal
+   * - On failure with retries remaining: schedules retry, fails with RetryScheduledSignal
+   * - On failure with retries exhausted: resets retry state, fails with RetryExhaustedSignal
    */
-  readonly executeWithRetry: <A, E>(
-    effect: Effect.Effect<A, E, never>,
-    config: JobRetryConfig<E>,
+  readonly executeWithRetry: <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+    config: JobRetryConfig,
     context: {
-      jobType: "continuous" | "debounce";
+      jobType: "continuous" | "debounce" | "task" | "workerPool";
       jobName: string;
     }
-  ) => Effect.Effect<A, E | RetryExhaustedError | RetryScheduledSignal, never>;
+  ) => Effect.Effect<A, E | RetryExhaustedSignal | RetryScheduledSignal, R>;
 
   /**
    * Check if we're currently in a retry sequence.
@@ -98,9 +101,6 @@ export const RetryExecutorLayer = Layer.effect(
     const setStartedAt = (timestamp: number): Effect.Effect<void, StorageError> =>
       storage.put(KEYS.RETRY.STARTED_AT, timestamp);
 
-    const getLastError = <E>(): Effect.Effect<E | undefined, StorageError> =>
-      storage.get<E>(KEYS.RETRY.LAST_ERROR);
-
     const setLastError = <E>(error: E): Effect.Effect<void, StorageError> =>
       storage.put(KEYS.RETRY.LAST_ERROR, error);
 
@@ -119,11 +119,11 @@ export const RetryExecutorLayer = Layer.effect(
       });
 
     return {
-      executeWithRetry: <A, E>(
-        effect: Effect.Effect<A, E, never>,
-        config: JobRetryConfig<E>,
-        context: { jobType: "continuous" | "debounce"; jobName: string }
-      ): Effect.Effect<A, E | RetryExhaustedError | RetryScheduledSignal, never> =>
+      executeWithRetry: <A, E, R>(
+        effect: Effect.Effect<A, E, R>,
+        config: JobRetryConfig,
+        context: { jobType: "continuous" | "debounce" | "task" | "workerPool"; jobName: string }
+      ): Effect.Effect<A, E | RetryExhaustedSignal | RetryScheduledSignal, R> =>
         Effect.gen(function* () {
           const attempt = yield* getAttempt();
           const now = yield* runtime.now();
@@ -133,7 +133,7 @@ export const RetryExecutorLayer = Layer.effect(
             yield* setStartedAt(now);
           }
 
-          // Check max duration
+          // Check max duration before executing
           if (config.maxDuration !== undefined) {
             const startedAt = yield* getStartedAt();
             if (startedAt !== undefined) {
@@ -141,32 +141,15 @@ export const RetryExecutorLayer = Layer.effect(
               const duration = Duration.decode(config.maxDuration);
               const maxMs = Duration.toMillis(duration);
               if (elapsed >= maxMs) {
-                // Duration exceeded, fail without retry
-                const lastError = yield* getLastError<E>();
+                // Duration exceeded - signal exhaustion
                 yield* reset();
-
-                // Call onRetryExhausted callback
-                if (config.onRetryExhausted) {
-                  const info: RetryExhaustedInfo<E> = {
-                    ...context,
-                    instanceId: runtime.instanceId,
-                    attempts: attempt,
-                    lastError: lastError as E,
-                    totalDurationMs: elapsed,
-                  };
-                  try {
-                    config.onRetryExhausted(info);
-                  } catch {
-                    // Ignore callback errors
-                  }
-                }
-
                 return yield* Effect.fail(
-                  new RetryExhaustedError({
+                  new RetryExhaustedSignal({
                     ...context,
                     instanceId: runtime.instanceId,
                     attempts: attempt,
-                    lastError: lastError ?? new Error("Max duration exceeded"),
+                    lastError: new Error("Max duration exceeded"),
+                    totalDurationMs: elapsed,
                     reason: "max_duration_exceeded",
                   })
                 );
@@ -174,51 +157,41 @@ export const RetryExecutorLayer = Layer.effect(
             }
           }
 
-          // Execute the effect
-          const result = yield* Effect.either(effect);
+          // Execute the effect, but let TerminateSignal bypass retry
+          const result = yield* effect.pipe(
+            Effect.map((a) => ({ _tag: "Success" as const, value: a })),
+            Effect.catchAll((e) => {
+              // TerminateSignal bypasses retry entirely
+              if (e instanceof TerminateSignal) {
+                return Effect.fail(e as E);
+              }
+              // Regular errors go through retry logic
+              return Effect.succeed({ _tag: "Failure" as const, error: e });
+            })
+          );
 
-          if (result._tag === "Right") {
+          if (result._tag === "Success") {
             // Success - reset retry state
             yield* reset();
-            return result.right;
+            return result.value;
           }
 
-          // Failure - check if retryable
-          const error = result.left;
-
-          if (config.isRetryable && !config.isRetryable(error)) {
-            // Not retryable - fail immediately
-            yield* reset();
-            return yield* Effect.fail(error);
-          }
+          // Failure - all errors are retryable (removed isRetryable check)
+          const error = result.error;
 
           // Check if attempts exhausted
-          if (attempt > config.maxAttempts) {
-            // Exhausted - call callback and fail
+          if (attempt >= config.maxAttempts) {
+            // Exhausted - signal it (handler will call onRetryExhausted or terminate)
             const startedAt = (yield* getStartedAt()) ?? now;
+            yield* reset();
 
-            if (config.onRetryExhausted) {
-              const info: RetryExhaustedInfo<E> = {
+            return yield* Effect.fail(
+              new RetryExhaustedSignal({
                 ...context,
                 instanceId: runtime.instanceId,
                 attempts: attempt,
                 lastError: error,
                 totalDurationMs: now - startedAt,
-              };
-              try {
-                config.onRetryExhausted(info);
-              } catch {
-                // Ignore callback errors
-              }
-            }
-
-            yield* reset();
-            return yield* Effect.fail(
-              new RetryExhaustedError({
-                ...context,
-                instanceId: runtime.instanceId,
-                attempts: attempt,
-                lastError: error,
                 reason: "max_attempts_exceeded",
               })
             );
@@ -240,10 +213,10 @@ export const RetryExecutorLayer = Layer.effect(
             new RetryScheduledSignal({ resumeAt, attempt: attempt + 1 })
           );
         }).pipe(
-          // Map storage errors to be part of the error channel
+          // Map storage/scheduler errors to defects (they shouldn't happen)
           Effect.catchTag("StorageError", (e) => Effect.die(e)),
           Effect.catchTag("SchedulerError", (e) => Effect.die(e))
-        ) as Effect.Effect<A, E | RetryExhaustedError | RetryScheduledSignal, never>,
+        ) as Effect.Effect<A, E | RetryExhaustedSignal | RetryScheduledSignal, R>,
 
       isRetrying: () => getAttempt().pipe(Effect.map((a) => a > 1)),
 

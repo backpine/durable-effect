@@ -63,7 +63,7 @@ export function createContinuousContext<S>(
       Effect.fail(
         new TerminateSignal({
           reason: options?.reason,
-          purgeState: options?.purgeState ?? true,
+          purgeState: true,
         })
       ) as Effect.Effect<never, never, never>,
   };

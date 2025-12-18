@@ -20,7 +20,7 @@ export type JobRequest =
  */
 export interface ContinuousRequest {
   readonly type: "continuous";
-  readonly action: "start" | "stop" | "trigger" | "status" | "getState";
+  readonly action: "start" | "terminate" | "trigger" | "status" | "getState";
   readonly name: string;
   readonly id: string;
   readonly input?: unknown;
@@ -63,7 +63,7 @@ export interface WorkerPoolRequest {
  */
 export interface TaskRequest {
   readonly type: "task";
-  readonly action: "send" | "trigger" | "clear" | "status" | "getState";
+  readonly action: "send" | "trigger" | "terminate" | "status" | "getState";
   readonly name: string;
   readonly id: string;
   readonly event?: unknown;
@@ -78,7 +78,7 @@ export interface TaskRequest {
  */
 export type JobResponse =
   | ContinuousStartResponse
-  | ContinuousStopResponse
+  | ContinuousTerminateResponse
   | ContinuousTriggerResponse
   | ContinuousStatusResponse
   | ContinuousGetStateResponse
@@ -95,7 +95,7 @@ export type JobResponse =
   | WorkerPoolDrainResponse
   | TaskSendResponse
   | TaskTriggerResponse
-  | TaskClearResponse
+  | TaskTerminateResponse
   | TaskStatusResponse
   | TaskGetStateResponse;
 
@@ -110,9 +110,9 @@ export interface ContinuousStartResponse {
   readonly status: JobStatus;
 }
 
-export interface ContinuousStopResponse {
-  readonly _type: "continuous.stop";
-  readonly stopped: boolean;
+export interface ContinuousTerminateResponse {
+  readonly _type: "continuous.terminate";
+  readonly terminated: boolean;
   readonly reason?: string;
 }
 
@@ -241,10 +241,10 @@ export interface TaskTriggerResponse {
   readonly triggered: boolean;
 }
 
-export interface TaskClearResponse {
-  readonly _type: "task.clear";
+export interface TaskTerminateResponse {
+  readonly _type: "task.terminate";
   readonly instanceId: string;
-  readonly cleared: boolean;
+  readonly terminated: boolean;
 }
 
 export interface TaskStatusResponse {

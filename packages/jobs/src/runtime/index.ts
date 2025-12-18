@@ -8,7 +8,7 @@ export type {
   DebounceRequest,
   WorkerPoolRequest,
   ContinuousStartResponse,
-  ContinuousStopResponse,
+  ContinuousTerminateResponse,
   ContinuousTriggerResponse,
   ContinuousStatusResponse,
   ContinuousGetStateResponse,

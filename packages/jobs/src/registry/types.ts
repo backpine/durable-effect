@@ -40,18 +40,14 @@ export interface UnregisteredContinuousDefinition<
    * When configured:
    * - Failed executions are retried up to maxAttempts times
    * - Retries are scheduled via alarm (durable, survives restarts)
-   * - After all retries exhausted, onError is called (if defined)
-   * - Schedule continues after retry success OR exhaustion
+   * - After all retries exhausted, job is terminated (state purged)
    *
    * When not configured:
-   * - Failed executions call onError immediately (if defined)
-   * - Schedule continues regardless of error
+   * - Failed executions fail immediately
    */
-  readonly retry?: JobRetryConfig<E>;
+  readonly retry?: JobRetryConfig;
   /** Function to execute on schedule */
   execute(ctx: ContinuousContext<S>): Effect.Effect<void, E, R>;
-  /** Optional error handler - uses method syntax for bivariant type checking */
-  onError?(error: E, ctx: ContinuousContext<S>): Effect.Effect<void, never, R>;
 }
 
 /**
@@ -76,16 +72,14 @@ export interface UnregisteredDebounceDefinition<
    * - Failed flush executions are retried up to maxAttempts times
    * - Events remain in buffer during retry attempts
    * - Retries are scheduled via alarm
-   * - After all retries exhausted, onError is called, then cleanup
+   * - After all retries exhausted, job is terminated (state purged)
    *
    * When not configured:
-   * - Failed flush calls onError immediately (if defined)
-   * - Cleanup happens regardless of error
+   * - Failed flush fails immediately
    */
-  readonly retry?: JobRetryConfig<E>;
+  readonly retry?: JobRetryConfig;
   execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, E, R>;
   onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, R>;
-  onError?(error: E, ctx: DebounceExecuteContext<S>): Effect.Effect<void, never, R>;
 }
 
 /**
@@ -146,8 +140,11 @@ export interface UnregisteredTaskDefinition<
   /**
    * Handler called for each incoming event.
    * Updates state and optionally schedules execution.
+   *
+   * @param event - The incoming event (already validated against eventSchema)
+   * @param ctx - Context for state access, scheduling, and metadata
    */
-  onEvent(ctx: TaskEventContext<S, E>): Effect.Effect<void, Err, R>;
+  onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, Err, R>;
 
   /**
    * Handler called when alarm fires.
@@ -186,22 +183,13 @@ export type AnyUnregisteredDefinition =
 
 /**
  * Retry config with error type widened to unknown for storage.
- * Uses method syntax for callbacks to match JobRetryConfig bivariance.
+ * Simplified to only contain timing configuration.
  */
 export interface StoredJobRetryConfig {
   readonly maxAttempts: number;
   readonly delay?: import("@durable-effect/core").RetryDelay;
   readonly jitter?: boolean;
   readonly maxDuration?: Duration.DurationInput;
-  isRetryable?(error: unknown): boolean;
-  onRetryExhausted?(info: {
-    readonly jobType: "continuous" | "debounce";
-    readonly jobName: string;
-    readonly instanceId: string;
-    readonly attempts: number;
-    readonly lastError: unknown;
-    readonly totalDurationMs: number;
-  }): void;
 }
 
 /**
@@ -215,7 +203,6 @@ export interface StoredContinuousDefinition<S = unknown, R = never> {
   readonly startImmediately?: boolean;
   readonly retry?: StoredJobRetryConfig;
   execute(ctx: ContinuousContext<S>): Effect.Effect<void, unknown, R>;
-  onError?(error: unknown, ctx: ContinuousContext<S>): Effect.Effect<void, never, R>;
 }
 
 /**
@@ -231,7 +218,6 @@ export interface StoredDebounceDefinition<I = unknown, S = unknown, R = never> {
   readonly retry?: StoredJobRetryConfig;
   execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, unknown, R>;
   onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, R>;
-  onError?(error: unknown, ctx: DebounceExecuteContext<S>): Effect.Effect<void, never, R>;
 }
 
 /**
@@ -256,7 +242,7 @@ export interface StoredTaskDefinition<S = unknown, E = unknown, R = never> {
   readonly name: string;
   readonly stateSchema: Schema.Schema<S, any, never>;
   readonly eventSchema: Schema.Schema<E, any, never>;
-  onEvent(ctx: TaskEventContext<S, E>): Effect.Effect<void, unknown, R>;
+  onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, unknown, R>;
   execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, unknown, R>;
   onIdle?(ctx: TaskIdleContext<S>): Effect.Effect<void, never, R>;
   onError?(error: unknown, ctx: TaskErrorContext<S>): Effect.Effect<void, never, R>;
@@ -329,10 +315,8 @@ export type AnyJobDefinition =
  * Options for terminating a continuous job.
  */
 export interface TerminateOptions {
-  /** Optional reason for termination (stored in metadata) */
+  /** Optional reason for termination */
   readonly reason?: string;
-  /** Whether to purge all state (default: true) */
-  readonly purgeState?: boolean;
 }
 
 /**
@@ -366,12 +350,10 @@ export interface ContinuousContext<S> {
    *
    * When called, the job will:
    * 1. Cancel any scheduled alarm
-   * 2. Update status to "stopped" or "terminated"
-   * 3. Optionally purge all state from storage
-   * 4. Short-circuit the current execution (no further code runs)
+   * 2. Delete all state from storage
+   * 3. Short-circuit the current execution (no further code runs)
    *
    * @param options.reason - Optional reason for termination
-   * @param options.purgeState - Whether to delete all state (default: true)
    * @returns Effect<never> - short-circuits execution
    *
    * @example
@@ -460,16 +442,15 @@ export interface WorkerPoolEmptyContext {
 /**
  * Context provided to task onEvent handler.
  *
+ * The event is passed as the first parameter to onEvent, not on the context.
+ * This makes it clear that the event is a direct value, not an Effect.
+ *
  * The onEvent handler receives each incoming event and should:
  * - Update state based on the event
  * - Schedule execution if needed (via ctx.schedule)
  * - Optionally clear the task (via ctx.clear)
  */
-export interface TaskEventContext<S, E> {
-  // Event access (synchronous - already decoded)
-  /** The incoming event (already validated against eventSchema) */
-  readonly event: E;
-
+export interface TaskEventContext<S> {
   // State access (synchronous - already loaded)
   /** Current state (null if no state set yet) */
   readonly state: S | null;
@@ -493,10 +474,10 @@ export interface TaskEventContext<S, E> {
 
   // Cleanup
   /**
-   * Clear all state and cancel alarms immediately.
+   * Terminate this task - cancel alarms and delete all state.
    * Short-circuits the current handler (no further code runs).
    */
-  readonly clear: () => Effect.Effect<never, never, never>;
+  readonly terminate: () => Effect.Effect<never, never, never>;
 
   // Metadata (synchronous)
   /** The unique instance ID for this task */
@@ -547,10 +528,10 @@ export interface TaskExecuteContext<S> {
 
   // Cleanup
   /**
-   * Clear all state and cancel alarms immediately.
+   * Terminate this task - cancel alarms and delete all state.
    * Short-circuits the current handler.
    */
-  readonly clear: () => Effect.Effect<never, never, never>;
+  readonly terminate: () => Effect.Effect<never, never, never>;
 
   // Metadata
   /** The unique instance ID for this task */
@@ -580,8 +561,8 @@ export interface TaskIdleContext<S> {
   readonly state: Effect.Effect<S | null, never, never>;
   /** Schedule execution (e.g., for delayed cleanup) */
   readonly schedule: (when: Duration.DurationInput | number | Date) => Effect.Effect<void, never, never>;
-  /** Clear the task immediately */
-  readonly clear: () => Effect.Effect<never, never, never>;
+  /** Terminate the task immediately - cancel alarms and delete all state */
+  readonly terminate: () => Effect.Effect<never, never, never>;
 
   /** The unique instance ID for this task */
   readonly instanceId: string;
@@ -604,8 +585,8 @@ export interface TaskErrorContext<S> {
   readonly updateState: (fn: (current: S) => S) => Effect.Effect<void, never, never>;
   /** Schedule execution (e.g., for retry) */
   readonly schedule: (when: Duration.DurationInput | number | Date) => Effect.Effect<void, never, never>;
-  /** Clear the task immediately */
-  readonly clear: () => Effect.Effect<never, never, never>;
+  /** Terminate the task immediately - cancel alarms and delete all state */
+  readonly terminate: () => Effect.Effect<never, never, never>;
 
   /** The unique instance ID for this task */
   readonly instanceId: string;

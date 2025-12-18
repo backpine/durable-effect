@@ -1,0 +1,80 @@
+import { Continuous } from "@durable-effect/jobs";
+import { Effect, Schema } from "effect";
+
+// =============================================================================
+// Heartbeat Job - Simple Continuous Job Example
+// =============================================================================
+
+/**
+ * State schema for the heartbeat job.
+ *
+ * Tracks how many heartbeats have occurred and when.
+ */
+export const HeartbeatState = Schema.Struct({
+  /** Name/label for this heartbeat instance */
+  name: Schema.String,
+  /** Total number of heartbeats */
+  count: Schema.Number,
+  /** Timestamp of last heartbeat */
+  lastHeartbeat: Schema.Number,
+  /** When this heartbeat was started */
+  startedAt: Schema.Number,
+});
+
+export type HeartbeatState = typeof HeartbeatState.Type;
+
+/**
+ * A simple continuous job that "beats" every 10 seconds.
+ *
+ * Use cases:
+ * - Health monitoring
+ * - Periodic sync tasks
+ * - Background processing
+ *
+ * Key points about Continuous jobs:
+ * - They run on a schedule (every N seconds, or cron)
+ * - State is persisted durably
+ * - ctx.state, ctx.setState, ctx.updateState are SYNCHRONOUS (not Effects)
+ * - Use ctx.terminate() to stop the job
+ */
+export const heartbeat = Continuous.make({
+  stateSchema: HeartbeatState,
+
+  // Run every 10 seconds
+  schedule: Continuous.every("10 seconds"),
+
+  // Start immediately when created (default: true)
+  startImmediately: true,
+
+  retry: {
+    maxAttempts: 4,
+    delay: "1 second",
+  },
+
+  // The execute function runs on each scheduled tick
+  execute: (ctx) =>
+    Effect.gen(function* () {
+      // In Continuous jobs, state access is SYNCHRONOUS (not an Effect)
+      const currentState = ctx.state;
+
+      yield* Effect.log(
+        `Heartbeat #${ctx.runCount}: ${currentState.name} - count=${currentState.count}`,
+      );
+
+      // Update state (also synchronous in Continuous)
+      ctx.updateState((s) => ({
+        ...s,
+        count: s.count + 1,
+        lastHeartbeat: Date.now(),
+      }));
+
+      // Example: auto-terminate after 10 heartbeats
+      if (currentState.count >= 9) {
+        yield* Effect.log(
+          `Heartbeat ${currentState.name} reached max count, terminating`,
+        );
+
+        return yield* ctx.terminate({ reason: "Max count reached" });
+      }
+    }),
+});

@@ -9,18 +9,17 @@ import {
 } from "@durable-effect/core";
 import { MetadataService } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
-import {
-  createEntityStateService,
-  type EntityStateServiceI,
-} from "../../services/entity-state";
+import { createEntityStateService } from "../../services/entity-state";
 import { RegistryService } from "../../services/registry";
+import { JobExecutionService } from "../../services/execution";
 import { KEYS } from "../../storage-keys";
 import {
   JobNotFoundError,
   ExecutionError,
-  ClearSignal,
+  TerminateSignal,
   type JobError,
 } from "../../errors";
+import { RetryExecutor } from "../../retry";
 import type { TaskRequest } from "../../runtime/types";
 import type { StoredTaskDefinition } from "../../registry/types";
 import type { TaskHandlerI, TaskResponse } from "./types";
@@ -33,17 +32,9 @@ import {
   type TaskScheduleHolder,
 } from "./context";
 
-// =============================================================================
-// Service Tag
-// =============================================================================
-
 export class TaskHandler extends Context.Tag(
   "@durable-effect/jobs/TaskHandler",
 )<TaskHandler, TaskHandlerI>() {}
-
-// =============================================================================
-// Layer Implementation
-// =============================================================================
 
 type HandlerError = JobError | StorageError | SchedulerError;
 
@@ -55,18 +46,13 @@ export const TaskHandlerLayer = Layer.effect(
     const alarm = yield* AlarmService;
     const runtime = yield* RuntimeAdapter;
     const storage = yield* StorageAdapter;
+    const execution = yield* JobExecutionService;
 
-    // -------------------------------------------------------------------------
-    // Helper: Provide storage to effects
-    // -------------------------------------------------------------------------
     const withStorage = <A, E>(
       effect: Effect.Effect<A, E, StorageAdapter>,
     ): Effect.Effect<A, E> =>
       Effect.provideService(effect, StorageAdapter, storage);
 
-    // -------------------------------------------------------------------------
-    // Helper: Get definition from registry
-    // -------------------------------------------------------------------------
     const getDefinition = (
       name: string,
     ): Effect.Effect<StoredTaskDefinition<any, any, any>, JobNotFoundError> => {
@@ -77,9 +63,6 @@ export const TaskHandlerLayer = Layer.effect(
       return Effect.succeed(def);
     };
 
-    // -------------------------------------------------------------------------
-    // Storage Helpers
-    // -------------------------------------------------------------------------
     const getEventCount = (): Effect.Effect<number, StorageError> =>
       storage
         .get<number>(KEYS.TASK.EVENT_COUNT)
@@ -126,18 +109,12 @@ export const TaskHandlerLayer = Layer.effect(
         ? storage.delete(KEYS.TASK.SCHEDULED_AT).pipe(Effect.asVoid)
         : storage.put(KEYS.TASK.SCHEDULED_AT, timestamp);
 
-    // -------------------------------------------------------------------------
-    // Purge: Clear all storage and cancel alarm
-    // -------------------------------------------------------------------------
     const purge = (): Effect.Effect<void, StorageError | SchedulerError> =>
       Effect.gen(function* () {
         yield* alarm.cancel();
         yield* storage.deleteAll();
       });
 
-    // -------------------------------------------------------------------------
-    // Apply schedule holder changes
-    // -------------------------------------------------------------------------
     const applyScheduleChanges = (
       holder: TaskScheduleHolder,
     ): Effect.Effect<void, StorageError | SchedulerError> =>
@@ -153,62 +130,133 @@ export const TaskHandlerLayer = Layer.effect(
         }
       });
 
-    // -------------------------------------------------------------------------
-    // Run onIdle if no alarm scheduled
-    // -------------------------------------------------------------------------
-    const maybeRunOnIdle = <S>(
-      def: StoredTaskDefinition<S, any, any>,
-      stateHolder: TaskStateHolder<S>,
-      scheduleHolder: TaskScheduleHolder,
-      idleReason: "onEvent" | "execute",
-      getState: () => Effect.Effect<S | null, never, never>,
-    ): Effect.Effect<void, HandlerError | ClearSignal, any> =>
-      Effect.gen(function* () {
-        if (!def.onIdle) return;
+    const runExecution = (
+      def: StoredTaskDefinition<any, any, any>,
+      runCount: number,
+      triggerType: "execute" | "onEvent",
+      event?: any
+    ) => 
+      execution.execute({
+        jobType: "task",
+        jobName: def.name,
+        schema: def.stateSchema,
+        retryConfig: undefined,
+        runCount,
+        allowNullState: true,
+        createContext: (base) => {
+            const scheduleHolder: TaskScheduleHolder = {
+                scheduledAt: null,
+                cancelled: false,
+                dirty: false
+            };
+            
+            // Proxy state holder for the legacy context factories
+            const proxyStateHolder: TaskStateHolder<any> = {
+                get current() { return base.getState(); },
+                set current(val) { base.setState(val); },
+            get dirty() { return true; }, // Handled by service
+            set dirty(_) { /* no-op */ }
 
-        // Check if alarm is scheduled
-        const scheduled = scheduleHolder.dirty
-          ? scheduleHolder.scheduledAt
-          : yield* getScheduledAt();
+            };
+            
+            return { base, scheduleHolder, proxyStateHolder };
+        },
+        run: (metaCtx) => Effect.gen(function* () {
+            const { base, scheduleHolder, proxyStateHolder } = metaCtx;
+            
+            // Define error handler for this scope
+            const runWithErrorHandling = (effect: Effect.Effect<void, any, any>, errorSource: "onEvent" | "execute") =>
+                effect.pipe(
+                    Effect.catchAll(error => {
+                        // Let TerminateSignal propagate to JobExecutionService
+                        if (error instanceof TerminateSignal) return Effect.fail(error);
 
-        if (scheduled !== null) return; // Not idle
+                        if (def.onError) {
+                            const errorCtx = createTaskErrorContext(
+                                proxyStateHolder,
+                                scheduleHolder,
+                                base.instanceId,
+                                def.name,
+                                errorSource,
+                                () => Effect.succeed(base.getState()),
+                                () => getScheduledAt().pipe(Effect.catchAll(() => Effect.succeed(null)))
+                            );
+                            return def.onError(error, errorCtx);
+                        }
+                        return Effect.fail(error);
+                    })
+                );
 
-        const ctx = createTaskIdleContext(
-          stateHolder,
-          scheduleHolder,
-          runtime.instanceId,
-          def.name,
-          idleReason,
-          getState,
-          () =>
-            getScheduledAt().pipe(Effect.catchAll(() => Effect.succeed(null))),
-        );
-
-        yield* Effect.try({
-          try: () => def.onIdle!(ctx),
-          catch: (e) =>
-            new ExecutionError({
-              jobType: "task",
-              jobName: def.name,
-              instanceId: runtime.instanceId,
-              cause: e,
-            }),
-        }).pipe(Effect.flatten);
+            if (triggerType === "onEvent") {
+                const ctx = createTaskEventContext(
+                    proxyStateHolder,
+                    scheduleHolder,
+                    base.instanceId,
+                    def.name,
+                    Date.now(),
+                    () => getEventCount().pipe(Effect.catchAll(() => Effect.succeed(0))),
+                    () => getCreatedAt().pipe(Effect.map(t => t ?? Date.now()), Effect.catchAll(() => Effect.succeed(Date.now()))),
+                    () => getScheduledAt().pipe(Effect.catchAll(() => Effect.succeed(null)))
+                );
+                // Pass event as first argument to make it clear it's a direct value
+                yield* runWithErrorHandling(def.onEvent(event, ctx), "onEvent");
+            } else {
+                const ctx = createTaskExecuteContext(
+                    proxyStateHolder,
+                    scheduleHolder,
+                    base.instanceId,
+                    def.name,
+                    Date.now(),
+                    () => Effect.succeed(base.getState()),
+                    () => getEventCount().pipe(Effect.catchAll(() => Effect.succeed(0))),
+                    () => getCreatedAt().pipe(Effect.map(t => t ?? Date.now()), Effect.catchAll(() => Effect.succeed(Date.now()))),
+                    () => getExecuteCount().pipe(Effect.catchAll(() => Effect.succeed(0))),
+                    () => getScheduledAt().pipe(Effect.catchAll(() => Effect.succeed(null)))
+                );
+                yield* runWithErrorHandling(def.execute(ctx), "execute");
+            }
+            
+            // Apply schedule changes
+            yield* applyScheduleChanges(scheduleHolder);
+            
+            // Maybe run onIdle
+            if (def.onIdle) {
+               // Check if scheduled
+               const scheduled = scheduleHolder.dirty 
+                  ? scheduleHolder.scheduledAt 
+                  : (yield* getScheduledAt());
+               
+               if (scheduled === null) {
+                   const idleCtx = createTaskIdleContext(
+                       proxyStateHolder,
+                       scheduleHolder,
+                       base.instanceId,
+                       def.name,
+                       triggerType,
+                       () => Effect.succeed(base.getState()),
+                       () => getScheduledAt().pipe(Effect.catchAll(() => Effect.succeed(null)))
+                   );
+                   
+                   // onIdle doesn't have standard error handling in definition, it returns Effect<void, never, R>
+                   // But let's wrap it just in case
+                   yield* def.onIdle(idleCtx);
+                   
+                   // Re-apply schedule changes
+                   yield* applyScheduleChanges(scheduleHolder);
+               }
+            }
+        })
       });
 
-    // -------------------------------------------------------------------------
-    // Handle: send
-    // -------------------------------------------------------------------------
     const handleSend = (
       def: StoredTaskDefinition<any, any, any>,
       request: TaskRequest,
-    ): Effect.Effect<TaskResponse, HandlerError | ClearSignal, any> =>
+    ): Effect.Effect<TaskResponse, HandlerError, any> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         const created = !meta;
         const now = yield* runtime.now();
 
-        // Initialize if new
         if (created) {
           yield* metadata.initialize("task", request.name);
           yield* metadata.updateStatus("running");
@@ -217,157 +265,21 @@ export const TaskHandlerLayer = Layer.effect(
           yield* storage.put(KEYS.TASK.EXECUTE_COUNT, 0);
         }
 
-        // Increment event count
         yield* incrementEventCount();
 
-        // Get state service and load current state
-        const stateService = yield* withStorage(
-          createEntityStateService(def.stateSchema),
-        );
-        const currentState = yield* stateService.get();
-
-        // Decode event
         const decodeEvent = Schema.decodeUnknown(def.eventSchema);
         const validatedEvent = yield* decodeEvent(request.event).pipe(
-          Effect.mapError(
-            (e) =>
-              new ExecutionError({
-                jobType: "task",
-                jobName: def.name,
-                instanceId: runtime.instanceId,
-                cause: e,
-              }),
-          ),
+          Effect.mapError(e => new ExecutionError({
+             jobType: "task",
+             jobName: def.name,
+             instanceId: runtime.instanceId,
+             cause: e
+          }))
         );
 
-        // Create holders
-        const stateHolder: TaskStateHolder<any> = {
-          current: currentState,
-          dirty: false,
-        };
+        yield* runExecution(def, 0, "onEvent", validatedEvent);
 
-        const scheduleHolder: TaskScheduleHolder = {
-          scheduledAt: null,
-          cancelled: false,
-          dirty: false,
-        };
-
-        // Create context
-        const ctx = createTaskEventContext(
-          stateHolder,
-          scheduleHolder,
-          validatedEvent,
-          runtime.instanceId,
-          def.name,
-          now,
-          () => getEventCount().pipe(Effect.catchAll(() => Effect.succeed(0))),
-          () =>
-            getCreatedAt().pipe(
-              Effect.map((t) => t ?? now),
-              Effect.catchAll(() => Effect.succeed(now)),
-            ),
-          () =>
-            getScheduledAt().pipe(Effect.catchAll(() => Effect.succeed(null))),
-        );
-
-        // Run onEvent
-        const getState = () =>
-          stateHolder.dirty
-            ? Effect.succeed(stateHolder.current)
-            : stateService
-                .get()
-                .pipe(Effect.catchAll(() => Effect.succeed(null)));
-
-        yield* Effect.try({
-          try: () => def.onEvent(ctx),
-          catch: (e) =>
-            new ExecutionError({
-              jobType: "task",
-              jobName: def.name,
-              instanceId: runtime.instanceId,
-              cause: e,
-            }),
-        }).pipe(
-          Effect.flatten,
-          Effect.catchAll(
-            (
-              error: unknown,
-            ): Effect.Effect<void, HandlerError | ClearSignal, any> => {
-              // Let ClearSignal propagate
-              if (error instanceof ClearSignal) {
-                return Effect.fail(error);
-              }
-
-              // Call onError if provided
-              if (def.onError) {
-                const errorCtx = createTaskErrorContext(
-                  stateHolder,
-                  scheduleHolder,
-                  runtime.instanceId,
-                  def.name,
-                  "onEvent",
-                  getState,
-                  () =>
-                    getScheduledAt().pipe(
-                      Effect.catchAll(() => Effect.succeed(null)),
-                    ),
-                );
-                return Effect.try({
-                  try: () => def.onError!(error, errorCtx),
-                  catch: (e) =>
-                    new ExecutionError({
-                      jobType: "task",
-                      jobName: def.name,
-                      instanceId: runtime.instanceId,
-                      cause: e,
-                    }),
-                }).pipe(Effect.flatten, Effect.ignore);
-              }
-
-              // Re-throw wrapped error
-              return Effect.fail(
-                error instanceof ExecutionError
-                  ? error
-                  : new ExecutionError({
-                      jobType: "task",
-                      jobName: def.name,
-                      instanceId: runtime.instanceId,
-                      cause: error,
-                    }),
-              );
-            },
-          ),
-        );
-
-        // Persist state if dirty
-        if (stateHolder.dirty && stateHolder.current !== null) {
-          yield* stateService.set(stateHolder.current);
-        }
-
-        // Apply schedule changes
-        yield* applyScheduleChanges(scheduleHolder);
-
-        // Maybe run onIdle
-        yield* maybeRunOnIdle(
-          def,
-          stateHolder,
-          scheduleHolder,
-          "onEvent",
-          getState,
-        );
-
-        // Re-apply schedule changes after onIdle
-        yield* applyScheduleChanges(scheduleHolder);
-
-        // Persist state again if onIdle modified it
-        if (stateHolder.dirty && stateHolder.current !== null) {
-          yield* stateService.set(stateHolder.current);
-        }
-
-        // Get final scheduled time
-        const scheduledAt = scheduleHolder.dirty
-          ? scheduleHolder.scheduledAt
-          : yield* getScheduledAt();
+        const scheduledAt = yield* getScheduledAt();
 
         return {
           _type: "task.send" as const,
@@ -377,12 +289,9 @@ export const TaskHandlerLayer = Layer.effect(
         };
       });
 
-    // -------------------------------------------------------------------------
-    // Handle: trigger (manual execution)
-    // -------------------------------------------------------------------------
     const handleTrigger = (
       def: StoredTaskDefinition<any, any, any>,
-    ): Effect.Effect<TaskResponse, HandlerError | ClearSignal, any> =>
+    ): Effect.Effect<TaskResponse, HandlerError, any> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         if (!meta) {
@@ -393,7 +302,8 @@ export const TaskHandlerLayer = Layer.effect(
           };
         }
 
-        yield* runExecute(def);
+        yield* incrementExecuteCount();
+        yield* runExecution(def, 0, "execute");
 
         return {
           _type: "task.trigger" as const,
@@ -402,32 +312,26 @@ export const TaskHandlerLayer = Layer.effect(
         };
       });
 
-    // -------------------------------------------------------------------------
-    // Handle: clear
-    // -------------------------------------------------------------------------
-    const handleClear = (): Effect.Effect<TaskResponse, HandlerError> =>
+    const handleTerminate = (): Effect.Effect<TaskResponse, HandlerError> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         if (!meta) {
           return {
-            _type: "task.clear" as const,
+            _type: "task.terminate" as const,
             instanceId: runtime.instanceId,
-            cleared: false,
+            terminated: false,
           };
         }
 
         yield* purge();
 
         return {
-          _type: "task.clear" as const,
+          _type: "task.terminate" as const,
           instanceId: runtime.instanceId,
-          cleared: true,
+          terminated: true,
         };
       });
 
-    // -------------------------------------------------------------------------
-    // Handle: status
-    // -------------------------------------------------------------------------
     const handleStatus = (): Effect.Effect<TaskResponse, HandlerError> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
@@ -457,9 +361,6 @@ export const TaskHandlerLayer = Layer.effect(
         };
       });
 
-    // -------------------------------------------------------------------------
-    // Handle: getState
-    // -------------------------------------------------------------------------
     const handleGetState = (
       def: StoredTaskDefinition<any, any, any>,
     ): Effect.Effect<TaskResponse, HandlerError> =>
@@ -491,153 +392,6 @@ export const TaskHandlerLayer = Layer.effect(
         };
       });
 
-    // -------------------------------------------------------------------------
-    // Run execute (shared by trigger and alarm)
-    // -------------------------------------------------------------------------
-    const runExecute = (
-      def: StoredTaskDefinition<any, any, any>,
-    ): Effect.Effect<void, HandlerError | ClearSignal, any> =>
-      Effect.gen(function* () {
-        const now = yield* runtime.now();
-
-        // Increment execute count
-        yield* incrementExecuteCount();
-
-        // Get state service
-        const stateService = yield* withStorage(
-          createEntityStateService(def.stateSchema),
-        );
-
-        // Create holders
-        const stateHolder: TaskStateHolder<any> = {
-          current: null,
-          dirty: false,
-        };
-
-        const scheduleHolder: TaskScheduleHolder = {
-          scheduledAt: null,
-          cancelled: false,
-          dirty: false,
-        };
-
-        // Create context
-        const getState = () =>
-          stateHolder.dirty
-            ? Effect.succeed(stateHolder.current)
-            : stateService
-                .get()
-                .pipe(Effect.catchAll(() => Effect.succeed(null)));
-
-        const ctx = createTaskExecuteContext(
-          stateHolder,
-          scheduleHolder,
-          runtime.instanceId,
-          def.name,
-          now,
-          getState,
-          () => getEventCount().pipe(Effect.catchAll(() => Effect.succeed(0))),
-          () =>
-            getCreatedAt().pipe(
-              Effect.map((t) => t ?? now),
-              Effect.catchAll(() => Effect.succeed(now)),
-            ),
-          () =>
-            getExecuteCount().pipe(Effect.catchAll(() => Effect.succeed(0))),
-          () =>
-            getScheduledAt().pipe(Effect.catchAll(() => Effect.succeed(null))),
-        );
-
-        // Run execute
-        yield* Effect.try({
-          try: () => def.execute(ctx),
-          catch: (e) =>
-            new ExecutionError({
-              jobType: "task",
-              jobName: def.name,
-              instanceId: runtime.instanceId,
-              cause: e,
-            }),
-        }).pipe(
-          Effect.flatten,
-          Effect.catchAll(
-            (
-              error: unknown,
-            ): Effect.Effect<void, HandlerError | ClearSignal, any> => {
-              // Let ClearSignal propagate
-              if (error instanceof ClearSignal) {
-                return Effect.fail(error);
-              }
-
-              // Call onError if provided
-              if (def.onError) {
-                const errorCtx = createTaskErrorContext(
-                  stateHolder,
-                  scheduleHolder,
-                  runtime.instanceId,
-                  def.name,
-                  "execute",
-                  getState,
-                  () =>
-                    getScheduledAt().pipe(
-                      Effect.catchAll(() => Effect.succeed(null)),
-                    ),
-                );
-                return Effect.try({
-                  try: () => def.onError!(error, errorCtx),
-                  catch: (e) =>
-                    new ExecutionError({
-                      jobType: "task",
-                      jobName: def.name,
-                      instanceId: runtime.instanceId,
-                      cause: e,
-                    }),
-                }).pipe(Effect.flatten, Effect.ignore);
-              }
-
-              // Re-throw wrapped error
-              return Effect.fail(
-                error instanceof ExecutionError
-                  ? error
-                  : new ExecutionError({
-                      jobType: "task",
-                      jobName: def.name,
-                      instanceId: runtime.instanceId,
-                      cause: error,
-                    }),
-              );
-            },
-          ),
-        );
-
-        // Persist state if dirty
-        if (stateHolder.dirty && stateHolder.current !== null) {
-          yield* stateService.set(stateHolder.current);
-        }
-
-        // Apply schedule changes
-        yield* applyScheduleChanges(scheduleHolder);
-
-        // Maybe run onIdle
-        yield* maybeRunOnIdle(
-          def,
-          stateHolder,
-          scheduleHolder,
-          "execute",
-          getState,
-        );
-
-        // Re-apply schedule changes after onIdle
-        yield* applyScheduleChanges(scheduleHolder);
-
-        // Persist state again if onIdle modified it
-        if (stateHolder.dirty && stateHolder.current !== null) {
-          yield* stateService.set(stateHolder.current);
-        }
-      });
-
-    // -------------------------------------------------------------------------
-    // Return handler interface
-    // -------------------------------------------------------------------------
     return {
       handle: (
         request: TaskRequest,
@@ -647,55 +401,18 @@ export const TaskHandlerLayer = Layer.effect(
 
           switch (request.action) {
             case "send":
-              return yield* handleSend(def, request).pipe(
-                Effect.catchTag("ClearSignal", () =>
-                  Effect.gen(function* () {
-                    yield* purge();
-                    return {
-                      _type: "task.send" as const,
-                      instanceId: runtime.instanceId,
-                      created: false,
-                      scheduledAt: null,
-                    };
-                  }),
-                ),
-              );
-
+              return yield* handleSend(def, request);
             case "trigger":
-              return yield* handleTrigger(def).pipe(
-                Effect.catchTag("ClearSignal", () =>
-                  Effect.gen(function* () {
-                    yield* purge();
-                    return {
-                      _type: "task.trigger" as const,
-                      instanceId: runtime.instanceId,
-                      triggered: true,
-                    };
-                  }),
-                ),
-              );
-
-            case "clear":
-              return yield* handleClear();
-
+              return yield* handleTrigger(def);
+            case "terminate":
+              return yield* handleTerminate();
             case "status":
               return yield* handleStatus();
-
             case "getState":
               return yield* handleGetState(def);
           }
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
-            Effect.fail(
-              new ExecutionError({
-                jobType: "task",
-                jobName: request.name,
-                instanceId: runtime.instanceId,
-                cause: e,
-              }),
-            ),
-          ),
-          Effect.catchTag("SchedulerError", (e) =>
             Effect.fail(
               new ExecutionError({
                 jobType: "task",
@@ -716,23 +433,10 @@ export const TaskHandlerLayer = Layer.effect(
 
           const def = yield* getDefinition(meta.name);
 
-          yield* runExecute(def).pipe(
-            Effect.catchTag("ClearSignal", () =>
-              purge().pipe(Effect.catchAll(() => Effect.void)),
-            ),
-          );
+          yield* incrementExecuteCount();
+          yield* runExecution(def, 0, "execute");
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
-            Effect.fail(
-              new ExecutionError({
-                jobType: "task",
-                jobName: "unknown",
-                instanceId: runtime.instanceId,
-                cause: e,
-              }),
-            ),
-          ),
-          Effect.catchTag("SchedulerError", (e) =>
             Effect.fail(
               new ExecutionError({
                 jobType: "task",
