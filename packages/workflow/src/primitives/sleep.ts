@@ -1,14 +1,13 @@
 // packages/workflow/src/primitives/sleep.ts
 
 import { Effect, Option } from "effect";
-import { createBaseEvent } from "@durable-effect/core";
+import { createWorkflowBaseEvent, emitEvent } from "@durable-effect/core";
 import { WorkflowContext } from "../context/workflow-context";
 import { WorkflowScope, WorkflowScopeError } from "../context/workflow-scope";
 import { guardWorkflowOperation, StepScopeError } from "../context/step-scope";
 import { WorkflowLevel } from "../context/workflow-level";
 import { RuntimeAdapter } from "../adapters/runtime";
 import { StorageAdapter } from "../adapters/storage";
-import { emitEvent } from "../tracker";
 import type { StorageError } from "../errors";
 import { PauseSignal } from "./pause-signal";
 import { parseDuration } from "./backoff";
@@ -98,7 +97,7 @@ export function sleep(
 
       // Emit sleep.completed event
       yield* emitEvent({
-        ...createBaseEvent(workflowId, workflowName, executionId),
+        ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
         type: "sleep.completed",
         durationMs,
       });
@@ -116,7 +115,7 @@ export function sleep(
 
     // Emit sleep.started event
     yield* emitEvent({
-      ...createBaseEvent(workflowId, workflowName, executionId),
+      ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
       type: "sleep.started",
       durationMs,
       resumeAt: new Date(resumeAt).toISOString(),
@@ -187,7 +186,7 @@ export function sleepUntil(
 
       // Emit sleep.completed event
       yield* emitEvent({
-        ...createBaseEvent(workflowId, workflowName, executionId),
+        ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
         type: "sleep.completed",
         durationMs: Math.max(0, durationMs),
       });
@@ -209,7 +208,7 @@ export function sleepUntil(
 
     // Emit sleep.started event
     yield* emitEvent({
-      ...createBaseEvent(workflowId, workflowName, executionId),
+      ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
       type: "sleep.started",
       durationMs,
       resumeAt: new Date(timestamp).toISOString(),

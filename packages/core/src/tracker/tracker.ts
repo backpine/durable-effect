@@ -73,9 +73,15 @@ export class EventTracker extends Context.Tag("@durable-effect/EventTracker")<
 export const emitEvent = <E extends BaseTrackingEvent>(
   event: E,
 ): Effect.Effect<void> =>
-  Effect.flatMap(Effect.serviceOption(EventTracker), (option) =>
-    option._tag === "Some" ? option.value.emit(event) : Effect.void,
-  );
+  Effect.flatMap(Effect.serviceOption(EventTracker), (option) => {
+    if (option._tag === "Some") {
+      console.log(`[Tracker] emitEvent: type=${event.type}, eventId=${event.eventId}`);
+      return option.value.emit(event);
+    } else {
+      console.log(`[Tracker] emitEvent: tracker not available, event type=${event.type} dropped`);
+      return Effect.void;
+    }
+  });
 
 /**
  * Flush events using the tracker from context.
@@ -83,7 +89,15 @@ export const emitEvent = <E extends BaseTrackingEvent>(
  */
 export const flushEvents: Effect.Effect<void> = Effect.flatMap(
   Effect.serviceOption(EventTracker),
-  (option) => (option._tag === "Some" ? option.value.flush() : Effect.void),
+  (option) => {
+    if (option._tag === "Some") {
+      console.log("[Tracker] flushEvents: flushing...");
+      return option.value.flush();
+    } else {
+      console.log("[Tracker] flushEvents: tracker not available, nothing to flush");
+      return Effect.void;
+    }
+  },
 );
 
 /**

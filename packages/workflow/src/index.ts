@@ -220,16 +220,16 @@ export {
   type CancelResult as ClientCancelResult,
 } from "./client";
 
-// Tracker
+// Tracker (re-exported from @durable-effect/core)
 export {
   // Service
   EventTracker,
   emitEvent,
   flushEvents,
   type EventTrackerService,
-  // Event types from core (re-exported for convenience)
-  createBaseEvent,
-  enrichEvent,
+  // Event types
+  createWorkflowBaseEvent,
+  enrichWorkflowEvent,
   type InternalWorkflowEvent,
   type InternalBaseEvent,
   type InternalWorkflowStartedEvent,
@@ -249,7 +249,7 @@ export {
   createInMemoryTracker,
   createInMemoryTrackerLayer,
   type InMemoryTrackerHandle,
-} from "./tracker";
+} from "@durable-effect/core";
 
 // Re-export as Workflow namespace for convenience
 export * as Workflow from "./primitives";

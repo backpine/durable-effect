@@ -41,12 +41,9 @@ export const { Workflows, WorkflowClient } = createDurableWorkflows(
   },
   {
     tracker: {
-      env: "production",
-      serviceKey: "finance-workflows",
-      endpoint: "https://tanstack-trpc-on-cloudflare.backpine.workers.dev/sync",
-      retry: {
-        maxAttempts: 3,
-      },
+      endpoint: "http://localhost:3000/sync",
+      env: "dev",
+      serviceKey: "my-service-key",
     },
   },
 );

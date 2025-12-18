@@ -2,7 +2,7 @@
 
 import type { WorkflowRegistry, WorkflowCall } from "../orchestrator/types";
 import type { WorkflowStatus } from "../state/types";
-import type { HttpBatchTrackerConfig } from "../tracker/http-batch";
+import type { HttpBatchTrackerConfig } from "@durable-effect/core";
 import type { RecoveryConfig } from "../recovery/config";
 import type { WorkflowClientFactory } from "../client/types";
 import type { PurgeConfig } from "../purge/config";

@@ -1,7 +1,7 @@
 // packages/workflow/src/orchestrator/orchestrator.ts
 
 import { Context, Effect, Layer } from "effect";
-import { createBaseEvent } from "@durable-effect/core";
+import { createWorkflowBaseEvent, emitEvent } from "@durable-effect/core";
 import { StorageAdapter } from "../adapters/storage";
 import { SchedulerAdapter } from "../adapters/scheduler";
 import { RuntimeAdapter } from "../adapters/runtime";
@@ -10,7 +10,6 @@ import { Start, Queue, Resume, Cancel } from "../state/types";
 import { RecoveryManager } from "../recovery/manager";
 import { WorkflowExecutor, resultToTransition } from "../executor";
 import { OrchestratorError, StorageError } from "../errors";
-import { emitEvent } from "../tracker";
 import { PurgeManager, type TerminalState } from "../purge";
 import type { WorkflowDefinition } from "../primitives/make";
 import { WorkflowRegistryTag, WorkflowNotFoundError } from "./registry";
@@ -157,7 +156,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
           // Emit workflow.started event
           yield* emitEvent({
-            ...createBaseEvent(
+            ...createWorkflowBaseEvent(
               runtime.instanceId,
               call.workflow,
               call.executionId,
@@ -180,7 +179,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
           yield* stateMachine.applyTransition(transition);
 
           // Emit result event
-          const baseEvent = createBaseEvent(
+          const baseEvent = createWorkflowBaseEvent(
             runtime.instanceId,
             call.workflow,
             call.executionId,
@@ -277,7 +276,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
           // Emit workflow.queued event
           yield* emitEvent({
-            ...createBaseEvent(
+            ...createWorkflowBaseEvent(
               runtime.instanceId,
               call.workflow,
               call.executionId,
@@ -320,7 +319,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
             executionId?: string,
           ) =>
             Effect.gen(function* () {
-              const baseEvent = createBaseEvent(
+              const baseEvent = createWorkflowBaseEvent(
                 runtime.instanceId,
                 workflowName,
                 executionId,
@@ -379,11 +378,13 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
               const definition = yield* registry.get(state.workflowName);
 
-              yield* stateMachine.applyTransition(new Start({ input: state.input }));
+              yield* stateMachine.applyTransition(
+                new Start({ input: state.input }),
+              );
 
               // Emit workflow.started event
               yield* emitEvent({
-                ...createBaseEvent(
+                ...createWorkflowBaseEvent(
                   runtime.instanceId,
                   state.workflowName,
                   state.executionId,
@@ -428,7 +429,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
               // Emit workflow.resumed event
               yield* emitEvent({
-                ...createBaseEvent(
+                ...createWorkflowBaseEvent(
                   runtime.instanceId,
                   state.workflowName,
                   state.executionId,
@@ -475,7 +476,7 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
 
                 // Emit workflow.resumed for recovery (similar to resume)
                 yield* emitEvent({
-                  ...createBaseEvent(
+                  ...createWorkflowBaseEvent(
                     runtime.instanceId,
                     state.workflowName,
                     state.executionId,
@@ -558,14 +559,14 @@ export const createWorkflowOrchestrator = <W extends WorkflowRegistry>() =>
             const completedSteps = yield* stateMachine.getCompletedSteps();
 
             yield* stateMachine.applyTransition(
-              new Cancel({ reason: options?.reason, completedSteps })
+              new Cancel({ reason: options?.reason, completedSteps }),
             );
 
             // Emit workflow.cancelled event
             const state = yield* stateMachine.getState();
             if (state) {
               yield* emitEvent({
-                ...createBaseEvent(
+                ...createWorkflowBaseEvent(
                   runtime.instanceId,
                   state.workflowName,
                   state.executionId,

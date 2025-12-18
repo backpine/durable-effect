@@ -22,7 +22,7 @@ import {
   HttpBatchTrackerLayer,
   NoopTrackerLayer,
   flushEvents,
-} from "../tracker";
+} from "@durable-effect/core";
 import {
   PurgeManager,
   PurgeManagerLayer,
@@ -171,12 +171,11 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         Effect.gen(function* () {
           const orchestrator = yield* WorkflowOrchestrator;
           const result = yield* orchestrator.start(call);
+          // Flush events in the same execution context to preserve tracker instance
+          yield* flushEvents;
           return result;
         }),
       );
-
-      // Fire-and-forget event flushing - don't block response
-      this.ctx.waitUntil(this.#runEffect(flushEvents));
 
       return { id: result.id, completed: result.completed };
     }
@@ -186,12 +185,11 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
         Effect.gen(function* () {
           const orchestrator = yield* WorkflowOrchestrator;
           const result = yield* orchestrator.queue(call);
+          // Flush events in the same execution context to preserve tracker instance
+          yield* flushEvents;
           return result;
         }),
       );
-
-      // Fire-and-forget event flushing - don't block response
-      this.ctx.waitUntil(this.#runEffect(flushEvents));
 
       return { id: result.id };
     }
@@ -216,11 +214,10 @@ export function createDurableWorkflows<const W extends WorkflowRegistry>(
           // Not a purge alarm - handle as workflow alarm (resume/recovery)
           const orchestrator = yield* WorkflowOrchestrator;
           yield* orchestrator.handleAlarm();
+          // Flush events in the same execution context to preserve tracker instance
+          yield* flushEvents;
         }),
       );
-
-      // Fire-and-forget event flushing - don't block alarm completion
-      this.ctx.waitUntil(this.#runEffect(flushEvents));
     }
 
     async cancel(options?: { reason?: string }): Promise<{

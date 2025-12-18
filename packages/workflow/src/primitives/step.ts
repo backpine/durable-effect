@@ -1,7 +1,7 @@
 // packages/workflow/src/primitives/step.ts
 
 import { Effect, Layer, Option } from "effect";
-import { createBaseEvent } from "@durable-effect/core";
+import { createWorkflowBaseEvent, emitEvent } from "@durable-effect/core";
 import { WorkflowContext } from "../context/workflow-context";
 import {
   StepContext,
@@ -13,7 +13,6 @@ import { StepScope, StepScopeError } from "../context/step-scope";
 import { WorkflowLevel } from "../context/workflow-level";
 import { StorageAdapter } from "../adapters/storage";
 import { RuntimeAdapter } from "../adapters/runtime";
-import { emitEvent } from "../tracker";
 import type { StorageError } from "../errors";
 import { PauseSignal, isPauseSignal } from "./pause-signal";
 import {
@@ -326,7 +325,7 @@ export function step<A, E, R>(
     }
 
     yield* emitEvent({
-      ...createBaseEvent(workflowId, workflowName, executionId),
+      ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
       type: "step.started",
       stepName: name,
       attempt: currentAttempt,
@@ -342,7 +341,7 @@ export function step<A, E, R>(
         const elapsed = now - startedAt;
         if (elapsed >= maxDurationMs) {
           yield* emitEvent({
-            ...createBaseEvent(workflowId, workflowName, executionId),
+            ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
             type: "retry.exhausted",
             stepName: name,
             attempts: currentAttempt - 1,
@@ -362,7 +361,7 @@ export function step<A, E, R>(
       // Check max attempts
       if (currentAttempt > config.retry.maxAttempts + 1) {
         yield* emitEvent({
-          ...createBaseEvent(workflowId, workflowName, executionId),
+          ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
           type: "retry.exhausted",
           stepName: name,
           attempts: currentAttempt - 1,
@@ -389,7 +388,7 @@ export function step<A, E, R>(
       // Emit timeout.set event on first execution
       if (startedAt === undefined) {
         yield* emitEvent({
-          ...createBaseEvent(workflowId, workflowName, executionId),
+          ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
           type: "timeout.set",
           stepName: name,
           deadline: new Date(deadline).toISOString(),
@@ -399,7 +398,7 @@ export function step<A, E, R>(
 
       if (remainingMs <= 0) {
         yield* emitEvent({
-          ...createBaseEvent(workflowId, workflowName, executionId),
+          ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
           type: "timeout.exceeded",
           stepName: name,
           timeoutMs,
@@ -465,7 +464,7 @@ export function step<A, E, R>(
       if (!config.retry) {
         // No retry configured - emit failure and propagate error
         yield* emitEvent({
-          ...createBaseEvent(workflowId, workflowName, executionId),
+          ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
           type: "step.failed",
           stepName: name,
           attempt: currentAttempt,
@@ -481,7 +480,7 @@ export function step<A, E, R>(
       // Check isRetryable
       if (config.retry.isRetryable && !config.retry.isRetryable(error)) {
         yield* emitEvent({
-          ...createBaseEvent(workflowId, workflowName, executionId),
+          ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
           type: "step.failed",
           stepName: name,
           attempt: currentAttempt,
@@ -497,7 +496,7 @@ export function step<A, E, R>(
       // Check if retries exhausted
       if (currentAttempt > config.retry.maxAttempts) {
         yield* emitEvent({
-          ...createBaseEvent(workflowId, workflowName, executionId),
+          ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
           type: "retry.exhausted",
           stepName: name,
           attempts: currentAttempt,
@@ -518,7 +517,7 @@ export function step<A, E, R>(
       const resumeAt = now + delayMs;
 
       yield* emitEvent({
-        ...createBaseEvent(workflowId, workflowName, executionId),
+        ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
         type: "retry.scheduled",
         stepName: name,
         attempt: currentAttempt,
@@ -549,7 +548,7 @@ export function step<A, E, R>(
     yield* workflowCtx.markStepCompleted(name);
 
     yield* emitEvent({
-      ...createBaseEvent(workflowId, workflowName, executionId),
+      ...createWorkflowBaseEvent(workflowId, workflowName, executionId),
       type: "step.completed",
       stepName: name,
       attempt,
