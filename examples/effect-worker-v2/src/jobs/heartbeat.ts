@@ -41,15 +41,10 @@ export const heartbeat = Continuous.make({
   stateSchema: HeartbeatState,
 
   // Run every 10 seconds
-  schedule: Continuous.every("10 seconds"),
+  schedule: Continuous.every("4 minutes"),
 
   // Start immediately when created (default: true)
   startImmediately: true,
-
-  retry: {
-    maxAttempts: 4,
-    delay: "1 second",
-  },
 
   // The execute function runs on each scheduled tick
   execute: (ctx) =>
