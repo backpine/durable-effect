@@ -1,5 +1,10 @@
 import { Effect, Schema, Duration } from "effect";
-import { Continuous, Debounce, Task, createDurableJobs } from "@durable-effect/jobs";
+import {
+  Continuous,
+  Debounce,
+  Task,
+  createDurableJobs,
+} from "@durable-effect/jobs";
 
 // 1. Define your job (name comes from the key in createDurableJobs)
 const tokenRefresher = Continuous.make({
@@ -124,9 +129,9 @@ const countdownTimer = Task.make({
     }),
   ),
 
-  onEvent: (ctx) =>
+  // event is passed as first parameter - clear it's a direct value!
+  onEvent: (event, ctx) =>
     Effect.gen(function* () {
-      const event = ctx.event;
       const now = Date.now();
 
       switch (event._tag) {

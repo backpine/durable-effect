@@ -4,37 +4,34 @@ import type { BaseRetryConfig } from "@durable-effect/core";
 
 /**
  * Information provided when all retry attempts are exhausted.
+ *
+ * This is passed to the RetryExhaustedSignal and can be used by
+ * the job's onRetryExhausted handler.
  */
-export interface RetryExhaustedInfo<E> {
-  readonly jobType: "continuous" | "debounce";
+export interface RetryExhaustedInfo {
+  readonly jobType: "continuous" | "debounce" | "task" | "workerPool";
   readonly jobName: string;
   readonly instanceId: string;
   readonly attempts: number;
-  readonly lastError: E;
+  readonly lastError: unknown;
   readonly totalDurationMs: number;
 }
 
 /**
  * Retry configuration for job execute handlers.
- * Extends base config with job-specific options.
  *
- * Note: Uses method syntax for callbacks to enable bivariant type checking,
- * allowing definitions with any error type to be stored in a common registry.
+ * Simplified configuration focused only on retry timing.
+ * All errors from execute are retryable - use onRetryExhausted
+ * at the job definition level for custom exhaustion handling.
+ *
+ * When retries are exhausted:
+ * - If onRetryExhausted is defined on the job: it's called with the typed error
+ * - If not defined: the job is terminated (state purged) by default
  */
-export interface JobRetryConfig<E = unknown> extends BaseRetryConfig {
-  /**
-   * Predicate to determine if an error is retryable.
-   * Return false to fail immediately without retrying.
-   *
-   * @default () => true (all errors are retryable)
-   */
-  isRetryable?(error: E): boolean;
-
-  /**
-   * Called when all retry attempts are exhausted.
-   * Useful for logging, alerting, or custom cleanup.
-   *
-   * Note: This is called BEFORE the final error is propagated to onError.
-   */
-  onRetryExhausted?(info: RetryExhaustedInfo<E>): void;
+export interface JobRetryConfig extends BaseRetryConfig {
+  // Inherits from BaseRetryConfig:
+  // - maxAttempts: number
+  // - delay: RetryDelay
+  // - jitter?: boolean
+  // - maxDuration?: Duration.DurationInput
 }

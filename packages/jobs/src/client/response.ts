@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import type {
   JobResponse,
   ContinuousStartResponse,
-  ContinuousStopResponse,
+  ContinuousTerminateResponse,
   ContinuousTriggerResponse,
   ContinuousStatusResponse,
   ContinuousGetStateResponse,
@@ -21,7 +21,7 @@ import type {
   WorkerPoolDrainResponse,
   TaskSendResponse,
   TaskTriggerResponse,
-  TaskClearResponse,
+  TaskTerminateResponse,
   TaskStatusResponse,
   TaskGetStateResponse,
 } from "../runtime/types";
@@ -55,7 +55,7 @@ export const jobCallError = (cause: unknown): JobCallError => ({
  */
 export interface ResponseTypeMap {
   "continuous.start": ContinuousStartResponse;
-  "continuous.stop": ContinuousStopResponse;
+  "continuous.terminate": ContinuousTerminateResponse;
   "continuous.trigger": ContinuousTriggerResponse;
   "continuous.status": ContinuousStatusResponse;
   "continuous.getState": ContinuousGetStateResponse;
@@ -72,7 +72,7 @@ export interface ResponseTypeMap {
   "workerPool.drain": WorkerPoolDrainResponse;
   "task.send": TaskSendResponse;
   "task.trigger": TaskTriggerResponse;
-  "task.clear": TaskClearResponse;
+  "task.terminate": TaskTerminateResponse;
   "task.status": TaskStatusResponse;
   "task.getState": TaskGetStateResponse;
 }

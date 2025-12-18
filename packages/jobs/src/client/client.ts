@@ -123,18 +123,18 @@ export function createJobsClient<T extends Record<string, AnyUnregisteredDefinit
           );
         },
 
-        stop: (id, options) => {
+        terminate: (id, options) => {
           const instanceId = createInstanceId("continuous", name, id);
           const stub = getStub(binding, instanceId);
           return narrowResponseEffect(
             stub.call({
               type: "continuous",
-              action: "stop",
+              action: "terminate",
               name,
               id,
               reason: options?.reason,
             }),
-            "continuous.stop",
+            "continuous.terminate",
           );
         },
 
@@ -562,17 +562,17 @@ export function createJobsClient<T extends Record<string, AnyUnregisteredDefinit
           );
         },
 
-        clear: (id) => {
+        terminate: (id) => {
           const instanceId = createInstanceId("task", name, id);
           const stub = getStub(binding, instanceId);
           return narrowResponseEffect(
             stub.call({
               type: "task",
-              action: "clear",
+              action: "terminate",
               name,
               id,
             }),
-            "task.clear",
+            "task.terminate",
           );
         },
 

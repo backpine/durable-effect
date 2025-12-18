@@ -5,7 +5,7 @@ import type { TaskRequest } from "../../runtime/types";
 import type {
   TaskSendResponse,
   TaskTriggerResponse,
-  TaskClearResponse,
+  TaskTerminateResponse,
   TaskStatusResponse,
   TaskGetStateResponse,
 } from "../../runtime/types";
@@ -14,7 +14,7 @@ import type { JobError } from "../../errors";
 export type TaskResponse =
   | TaskSendResponse
   | TaskTriggerResponse
-  | TaskClearResponse
+  | TaskTerminateResponse
   | TaskStatusResponse
   | TaskGetStateResponse;
 

@@ -11,6 +11,8 @@ import {
 import { MetadataService, MetadataServiceLayer } from "../../src/services/metadata";
 import { AlarmService, AlarmServiceLayer } from "../../src/services/alarm";
 import { RegistryService, RegistryServiceLayer } from "../../src/services/registry";
+import { JobExecutionServiceLayer } from "../../src/services/execution";
+import { CleanupServiceLayer } from "../../src/services/cleanup";
 import { RetryExecutorLayer } from "../../src/retry";
 import { Continuous } from "../../src/definitions/continuous";
 import type { RuntimeJobRegistry } from "../../src/registry/typed";
@@ -26,7 +28,6 @@ const CounterState = Schema.Struct({
 type CounterState = typeof CounterState.Type;
 
 const executionLog: Array<{ instanceId: string; runCount: number; state: CounterState }> = [];
-const errorLog: Array<{ instanceId: string; error: unknown }> = [];
 
 const counterPrimitive = Continuous.make({
   stateSchema: CounterState,
@@ -49,10 +50,6 @@ const failingPrimitive = Continuous.make({
   stateSchema: CounterState,
   schedule: Continuous.every("1 hour"),
   execute: () => Effect.fail(new Error("Intentional test failure")),
-  onError: (error, ctx) =>
-    Effect.sync(() => {
-      errorLog.push({ instanceId: ctx.instanceId, error });
-    }),
 });
 
 const noImmediateStartPrimitive = Continuous.make({
@@ -76,7 +73,7 @@ const TerminatingState = Schema.Struct({
 });
 type TerminatingState = typeof TerminatingState.Type;
 
-const terminateLog: Array<{ reason?: string; purgeState: boolean }> = [];
+const terminateLog: Array<{ reason?: string }> = [];
 
 const terminatingPrimitive = Continuous.make({
   stateSchema: TerminatingState,
@@ -90,23 +87,10 @@ const terminatingPrimitive = Continuous.make({
       });
 
       if (ctx.runCount >= ctx.state.maxRuns) {
-        terminateLog.push({ reason: "Max runs reached", purgeState: true });
+        terminateLog.push({ reason: "Max runs reached" });
         return yield* ctx.terminate({ reason: "Max runs reached" });
       }
 
-      ctx.updateState((s) => ({ ...s, currentRun: s.currentRun + 1 }));
-    }),
-});
-
-const terminatingKeepStatePrimitive = Continuous.make({
-  stateSchema: TerminatingState,
-  schedule: Continuous.every("10 minutes"),
-  execute: (ctx) =>
-    Effect.gen(function* () {
-      if (ctx.runCount >= ctx.state.maxRuns) {
-        terminateLog.push({ reason: "Stopped for debugging", purgeState: false });
-        return yield* ctx.terminate({ reason: "Stopped for debugging", purgeState: false });
-      }
       ctx.updateState((s) => ({ ...s, currentRun: s.currentRun + 1 }));
     }),
 });
@@ -118,7 +102,6 @@ const createTestRegistry = (): RuntimeJobRegistry => ({
     "failing": { ...failingPrimitive, name: "failing" },
     "no-immediate": { ...noImmediateStartPrimitive, name: "no-immediate" },
     "terminating": { ...terminatingPrimitive, name: "terminating" },
-    "terminating-keep-state": { ...terminatingKeepStatePrimitive, name: "terminating-keep-state" },
   } as Record<string, any>,
   debounce: {} as Record<string, any>,
   workerPool: {} as Record<string, any>,
@@ -145,10 +128,23 @@ const createTestLayer = (initialTime = 1000000) => {
     Layer.provideMerge(servicesLayer)
   );
 
+  // CleanupService depends on AlarmService and StorageAdapter
+  const cleanupLayer = CleanupServiceLayer.pipe(
+    Layer.provideMerge(servicesLayer)
+  );
+
+  // JobExecutionService depends on RetryExecutor, CleanupService, and core adapters
+  const executionLayer = JobExecutionServiceLayer.pipe(
+    Layer.provideMerge(retryLayer),
+    Layer.provideMerge(cleanupLayer),
+    Layer.provideMerge(coreLayer)
+  );
+
   const handlerLayer = ContinuousHandlerLayer.pipe(
     Layer.provideMerge(RegistryServiceLayer(registry)),
     Layer.provideMerge(servicesLayer),
-    Layer.provideMerge(retryLayer)
+    Layer.provideMerge(retryLayer),
+    Layer.provideMerge(executionLayer)
   );
 
   return { layer: handlerLayer, time, handles, coreLayer };
@@ -162,7 +158,6 @@ describe("ContinuousHandler", () => {
   beforeEach(() => {
     // Clear execution logs before each test
     executionLog.length = 0;
-    errorLog.length = 0;
     terminateLog.length = 0;
   });
 
@@ -251,8 +246,8 @@ describe("ContinuousHandler", () => {
     });
   });
 
-  describe("stop action", () => {
-    it("stops a running instance", async () => {
+  describe("terminate action", () => {
+    it("terminates a running instance and deletes all storage", async () => {
       const { layer } = createTestLayer();
 
       const result = await Effect.runPromise(
@@ -267,19 +262,31 @@ describe("ContinuousHandler", () => {
             input: { count: 0, lastRun: null },
           });
 
-          // Stop
-          return yield* handler.handle({
+          // Terminate
+          const terminateResult = yield* handler.handle({
             type: "continuous",
-            action: "stop",
+            action: "terminate",
             name: "counter",
             reason: "user requested",
           });
+
+          // Verify status is now not_found (all storage deleted)
+          const statusResult = yield* handler.handle({
+            type: "continuous",
+            action: "status",
+            name: "counter",
+          });
+
+          return { terminateResult, statusResult };
         }).pipe(Effect.provide(layer))
       );
 
-      expect(result._type).toBe("continuous.stop");
-      expect((result as any).stopped).toBe(true);
-      expect((result as any).reason).toBe("user requested");
+      expect(result.terminateResult._type).toBe("continuous.terminate");
+      expect((result.terminateResult as any).terminated).toBe(true);
+      expect((result.terminateResult as any).reason).toBe("user requested");
+
+      // Instance should be gone after terminate
+      expect((result.statusResult as any).status).toBe("not_found");
     });
 
     it("returns not_found for non-existent instance", async () => {
@@ -290,19 +297,19 @@ describe("ContinuousHandler", () => {
           const handler = yield* ContinuousHandler;
           return yield* handler.handle({
             type: "continuous",
-            action: "stop",
+            action: "terminate",
             name: "counter",
             reason: "test",
           });
         }).pipe(Effect.provide(layer))
       );
 
-      expect(result._type).toBe("continuous.stop");
-      expect((result as any).stopped).toBe(false);
+      expect(result._type).toBe("continuous.terminate");
+      expect((result as any).terminated).toBe(false);
       expect((result as any).reason).toBe("not_found");
     });
 
-    it("returns already_stopped for stopped instance", async () => {
+    it("returns not_found when called twice (since first terminate deletes all storage)", async () => {
       const { layer } = createTestLayer();
 
       const result = await Effect.runPromise(
@@ -317,27 +324,27 @@ describe("ContinuousHandler", () => {
             input: { count: 0, lastRun: null },
           });
 
-          // Stop
+          // First terminate
           yield* handler.handle({
             type: "continuous",
-            action: "stop",
+            action: "terminate",
             name: "counter",
-            reason: "first stop",
+            reason: "first terminate",
           });
 
-          // Stop again
+          // Second terminate - instance no longer exists
           return yield* handler.handle({
             type: "continuous",
-            action: "stop",
+            action: "terminate",
             name: "counter",
-            reason: "second stop",
+            reason: "second terminate",
           });
         }).pipe(Effect.provide(layer))
       );
 
-      expect(result._type).toBe("continuous.stop");
-      expect((result as any).stopped).toBe(false);
-      expect((result as any).reason).toBe("already_stopped");
+      expect(result._type).toBe("continuous.terminate");
+      expect((result as any).terminated).toBe(false);
+      expect((result as any).reason).toBe("not_found");
     });
   });
 
@@ -392,7 +399,7 @@ describe("ContinuousHandler", () => {
       expect((result as any).triggered).toBe(false);
     });
 
-    it("returns triggered: false for stopped instance", async () => {
+    it("returns triggered: false for terminated instance", async () => {
       const { layer } = createTestLayer();
 
       const result = await Effect.runPromise(
@@ -408,9 +415,9 @@ describe("ContinuousHandler", () => {
 
           yield* handler.handle({
             type: "continuous",
-            action: "stop",
+            action: "terminate",
             name: "counter",
-            reason: "stopping",
+            reason: "terminating",
           });
 
           return yield* handler.handle({
@@ -536,7 +543,7 @@ describe("ContinuousHandler", () => {
       expect(scheduledTime).toBeDefined();
     });
 
-    it("does nothing when stopped", async () => {
+    it("does nothing when terminated", async () => {
       const { layer, time } = createTestLayer();
 
       await Effect.runPromise(
@@ -552,9 +559,9 @@ describe("ContinuousHandler", () => {
 
           yield* handler.handle({
             type: "continuous",
-            action: "stop",
+            action: "terminate",
             name: "counter",
-            reason: "stopping",
+            reason: "terminating",
           });
 
           executionLog.length = 0;
@@ -570,10 +577,10 @@ describe("ContinuousHandler", () => {
   });
 
   describe("error handling", () => {
-    it("calls onError handler when execute fails", async () => {
+    it("fails with ExecutionError when execute fails without retry config", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const resultExit = await Effect.runPromiseExit(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -586,14 +593,8 @@ describe("ContinuousHandler", () => {
         }).pipe(Effect.provide(layer))
       );
 
-      // Should still succeed (onError handles the error)
-      expect(result._type).toBe("continuous.start");
-      expect((result as any).created).toBe(true);
-
-      // onError should have been called
-      expect(errorLog).toHaveLength(1);
-      expect(errorLog[0].error).toBeInstanceOf(Error);
-      expect((errorLog[0].error as Error).message).toBe("Intentional test failure");
+      // Without onError or retry, the job should fail with an error
+      expect(resultExit._tag).toBe("Failure");
     });
   });
 
@@ -636,50 +637,6 @@ describe("ContinuousHandler", () => {
       expect(executionLog).toHaveLength(1);
       expect(terminateLog).toHaveLength(1);
       expect(terminateLog[0].reason).toBe("Max runs reached");
-      expect(terminateLog[0].purgeState).toBe(true);
-    });
-
-    it("terminates without purging state when purgeState: false", async () => {
-      const { layer } = createTestLayer();
-
-      const result = await Effect.runPromise(
-        Effect.gen(function* () {
-          const handler = yield* ContinuousHandler;
-
-          // Start with maxRuns=1 so it terminates immediately
-          yield* handler.handle({
-            type: "continuous",
-            action: "start",
-            name: "terminating-keep-state",
-            input: { maxRuns: 1, currentRun: 0 },
-          });
-
-          // Get status
-          const statusResult = yield* handler.handle({
-            type: "continuous",
-            action: "status",
-            name: "terminating-keep-state",
-          });
-
-          // Get state - should still exist since purgeState was false
-          const stateResult = yield* handler.handle({
-            type: "continuous",
-            action: "getState",
-            name: "terminating-keep-state",
-          });
-
-          return { statusResult, stateResult };
-        }).pipe(Effect.provide(layer))
-      );
-
-      // Status should show stopped (not terminated since we kept state)
-      expect(result.statusResult._type).toBe("continuous.status");
-      expect((result.statusResult as any).status).toBe("stopped");
-      expect((result.statusResult as any).stopReason).toBe("Stopped for debugging");
-
-      // State should still exist
-      expect(result.stateResult._type).toBe("continuous.getState");
-      expect((result.stateResult as any).state).not.toBeNull();
     });
 
     it("terminates during alarm and stops further alarms", async () => {

@@ -2,7 +2,7 @@
 
 import { Effect, Layer } from "effect";
 import { createDurableObjectRuntime, flushEvents, type RuntimeLayer } from "@durable-effect/core";
-import { RuntimeServicesLayer, RegistryServiceLayer } from "../services";
+import { RuntimeServicesLayer, RegistryServiceLayer, JobExecutionServiceLayer, CleanupServiceLayer } from "../services";
 import { JobHandlersLayer, RetryExecutorLayer } from "../handlers";
 import { Dispatcher, DispatcherLayer } from "./dispatcher";
 import type { JobRequest, JobResponse } from "./types";
@@ -72,15 +72,26 @@ function createDispatcherLayer(
   // Runtime services layer (MetadataService, AlarmService, IdempotencyService)
   const servicesLayer = RuntimeServicesLayer.pipe(Layer.provideMerge(coreLayer));
 
+  // Cleanup service layer (depends on AlarmService and StorageAdapter)
+  const cleanupLayer = CleanupServiceLayer.pipe(Layer.provideMerge(servicesLayer));
+
   // Retry executor layer (depends on AlarmService from servicesLayer)
   const retryLayer = RetryExecutorLayer.pipe(Layer.provideMerge(servicesLayer));
 
+  // Job Execution Service (depends on RetryExecutor, CleanupService, and Core)
+  const executionLayer = JobExecutionServiceLayer.pipe(
+    Layer.provideMerge(retryLayer),
+    Layer.provideMerge(cleanupLayer),
+    Layer.provideMerge(coreLayer)
+  );
+
   // Handlers layer (ContinuousHandler, DebounceHandler, etc.)
-  // Depends on: registry, services, and retry executor
+  // Depends on: registry, services, retry executor, execution service
   const handlersLayer = JobHandlersLayer.pipe(
     Layer.provideMerge(registryLayer),
     Layer.provideMerge(servicesLayer),
-    Layer.provideMerge(retryLayer)
+    Layer.provideMerge(retryLayer),
+    Layer.provideMerge(executionLayer)
   );
 
   // Dispatcher layer (routes requests to handlers)

@@ -7,7 +7,7 @@ import type {
   TaskIdleContext,
   TaskErrorContext,
 } from "../../registry/types";
-import { ClearSignal } from "../../errors";
+import { TerminateSignal } from "../../errors";
 
 // =============================================================================
 // State Holder
@@ -82,24 +82,21 @@ function createSchedulingEffects(
 
 /**
  * Create TaskEventContext for onEvent handler.
+ * Note: event is passed separately to onEvent, not via context.
  */
-export function createTaskEventContext<S, E>(
+export function createTaskEventContext<S>(
   stateHolder: TaskStateHolder<S>,
   scheduleHolder: TaskScheduleHolder,
-  event: E,
   instanceId: string,
   jobName: string,
   executionStartedAt: number,
   getEventCount: () => Effect.Effect<number, never, never>,
   getCreatedAt: () => Effect.Effect<number, never, never>,
   getScheduledFromStorage: () => Effect.Effect<number | null, never, never>,
-): TaskEventContext<S, E> {
+): TaskEventContext<S> {
   const scheduling = createSchedulingEffects(scheduleHolder, getScheduledFromStorage);
 
   return {
-    // Event access
-    event,
-
     // State access (synchronous - already loaded)
     get state() {
       return stateHolder.current;
@@ -124,8 +121,8 @@ export function createTaskEventContext<S, E>(
     ...scheduling,
 
     // Cleanup
-    clear: (): Effect.Effect<never, never, never> =>
-      Effect.fail(new ClearSignal()) as Effect.Effect<never, never, never>,
+    terminate: (): Effect.Effect<never, never, never> =>
+      Effect.fail(new TerminateSignal({ reason: "terminate", purgeState: true })) as Effect.Effect<never, never, never>,
 
     // Metadata
     instanceId,
@@ -184,8 +181,8 @@ export function createTaskExecuteContext<S>(
     ...scheduling,
 
     // Cleanup
-    clear: (): Effect.Effect<never, never, never> =>
-      Effect.fail(new ClearSignal()) as Effect.Effect<never, never, never>,
+    terminate: (): Effect.Effect<never, never, never> =>
+      Effect.fail(new TerminateSignal({ reason: "terminate", purgeState: true })) as Effect.Effect<never, never, never>,
 
     // Metadata
     instanceId,
@@ -220,8 +217,8 @@ export function createTaskIdleContext<S>(
 
     schedule: scheduling.schedule,
 
-    clear: (): Effect.Effect<never, never, never> =>
-      Effect.fail(new ClearSignal()) as Effect.Effect<never, never, never>,
+    terminate: (): Effect.Effect<never, never, never> =>
+      Effect.fail(new TerminateSignal({ reason: "terminate", purgeState: true })) as Effect.Effect<never, never, never>,
 
     instanceId,
     jobName,
@@ -261,8 +258,8 @@ export function createTaskErrorContext<S>(
 
     schedule: scheduling.schedule,
 
-    clear: (): Effect.Effect<never, never, never> =>
-      Effect.fail(new ClearSignal()) as Effect.Effect<never, never, never>,
+    terminate: (): Effect.Effect<never, never, never> =>
+      Effect.fail(new TerminateSignal({ reason: "terminate", purgeState: true })) as Effect.Effect<never, never, never>,
 
     instanceId,
     jobName,

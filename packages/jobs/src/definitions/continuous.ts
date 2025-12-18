@@ -47,18 +47,13 @@ export interface ContinuousMakeConfig<S, E, R> {
    * }
    * ```
    */
-  readonly retry?: JobRetryConfig<E>;
+  readonly retry?: JobRetryConfig;
 
   /**
    * The function to execute on schedule.
    */
   execute(ctx: ContinuousContext<S>): Effect.Effect<void, E, R>;
 
-  /**
-   * Optional error handler. If provided, errors from execute() are
-   * passed here instead of failing the execution.
-   */
-  onError?(error: E, ctx: ContinuousContext<S>): Effect.Effect<void, never, R>;
 }
 
 /**
@@ -109,7 +104,6 @@ export const Continuous = {
     startImmediately: config.startImmediately,
     retry: config.retry,
     execute: config.execute,
-    onError: config.onError,
   }),
 
   /**

@@ -9,8 +9,9 @@ import {
 } from "@durable-effect/core";
 import { MetadataService } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
-import { createEntityStateService, type EntityStateServiceI } from "../../services/entity-state";
+import { createEntityStateService } from "../../services/entity-state";
 import { RegistryService } from "../../services/registry";
+import { JobExecutionService, type ExecutionResult } from "../../services/execution";
 import { KEYS } from "../../storage-keys";
 import {
   JobNotFoundError,
@@ -18,26 +19,14 @@ import {
   UnknownJobTypeError,
   type JobError,
 } from "../../errors";
-import {
-  RetryExecutor,
-  RetryScheduledSignal,
-  RetryExhaustedError,
-} from "../../retry";
+import { RetryExecutor } from "../../retry";
 import type { DebounceRequest } from "../../runtime/types";
 import type { DebounceDefinition, DebounceExecuteContext } from "../../registry/types";
 import type { DebounceHandlerI, DebounceResponse } from "./types";
 
-// =============================================================================
-// Service Tag
-// =============================================================================
-
 export class DebounceHandler extends Context.Tag(
   "@durable-effect/jobs/DebounceHandler"
 )<DebounceHandler, DebounceHandlerI>() {}
-
-// =============================================================================
-// Layer Implementation
-// =============================================================================
 
 type HandlerError = JobError | StorageError | SchedulerError;
 
@@ -49,6 +38,7 @@ export const DebounceHandlerLayer = Layer.effect(
     const alarm = yield* AlarmService;
     const runtime = yield* RuntimeAdapter;
     const storage = yield* StorageAdapter;
+    const execution = yield* JobExecutionService;
     const retryExecutor = yield* RetryExecutor;
 
     const withStorage = <A, E>(
@@ -80,187 +70,36 @@ export const DebounceHandlerLayer = Layer.effect(
         yield* storage.put(KEYS.DEBOUNCE.STARTED_AT, now);
       });
 
-    /**
-     * Purge all storage data for this debounce job.
-     * Uses deleteAll() for safety - ensures no keys are forgotten.
-     * Note: deleteAll() does not affect alarms, so we cancel separately.
-     */
     const purge = (): Effect.Effect<void, StorageError | SchedulerError> =>
       Effect.gen(function* () {
         yield* alarm.cancel();
         yield* storage.deleteAll();
       });
 
-    const runExecute = <S>(
-      def: DebounceDefinition<any, S, any, never>,
-      stateService: EntityStateServiceI<S>,
-      eventCount: number,
-      flushReason: "maxEvents" | "flushAfter" | "manual",
-      attempt: number = 1
-    ): Effect.Effect<void, ExecutionError> =>
-      Effect.gen(function* () {
-        const currentState = yield* stateService.get().pipe(
-          Effect.mapError((e) =>
-            new ExecutionError({
-              jobType: "debounce",
-              jobName: def.name,
-              instanceId: runtime.instanceId,
-              cause: e,
-            })
-          )
-        );
-
-        if (currentState === null) {
-          return;
-        }
-
-        const startedAt = (yield* getStartedAt().pipe(
-          Effect.mapError((e) =>
-            new ExecutionError({
-              jobType: "debounce",
-              jobName: def.name,
-              instanceId: runtime.instanceId,
-              cause: e,
-            })
-          )
-        )) ?? (yield* runtime.now());
-        const now = yield* runtime.now();
-
-        const ctx: DebounceExecuteContext<S> = {
-          state: Effect.succeed(currentState),
-          eventCount: Effect.succeed(eventCount),
-          instanceId: runtime.instanceId,
-          debounceStartedAt: Effect.succeed(startedAt),
-          executionStartedAt: now,
-          flushReason,
-          attempt,
-          isRetry: attempt > 1,
-        };
-
-        const wrapError = (e: unknown): ExecutionError =>
-          e instanceof ExecutionError
-            ? e
-            : new ExecutionError({
-                jobType: "debounce",
-                jobName: def.name,
-                instanceId: runtime.instanceId,
-                cause: e,
-              });
-
-        const execEffect = Effect.try({
-          try: () => def.execute(ctx),
-          catch: wrapError,
-        }).pipe(Effect.flatten);
-
-        yield* execEffect.pipe(
-          Effect.catchAll((error): Effect.Effect<void, ExecutionError> => {
-            if (def.onError) {
-              return Effect.try({
-                try: () => def.onError!(error as never, ctx),
-                catch: wrapError,
-              }).pipe(Effect.flatten, Effect.asVoid);
-            }
-            return Effect.fail(wrapError(error));
-          })
-        );
-      });
-
-    const flushAndCleanup = (
+    const runFlush = (
       def: DebounceDefinition<any, any, any, never>,
       flushReason: "maxEvents" | "flushAfter" | "manual"
-    ): Effect.Effect<DebounceResponse, HandlerError | RetryScheduledSignal> => {
-      const impl = Effect.gen(function* () {
-        const stateService = yield* withStorage(createEntityStateService(def.stateSchema));
-        const currentState = yield* stateService.get();
-        const eventCount = yield* getEventCount();
-
-        if (currentState === null || eventCount === 0) {
-          yield* purge();
-          return {
-            _type: "debounce.flush" as const,
-            flushed: false,
-            eventCount: 0,
-            reason: "empty" as const,
-          };
+    ): Effect.Effect<ExecutionResult, ExecutionError> =>
+      execution.execute({
+        jobType: "debounce",
+        jobName: def.name,
+        schema: def.stateSchema,
+        retryConfig: def.retry,
+        runCount: 0, // Debounce doesn't track runCount persistently in same way
+        run: (ctx: DebounceExecuteContext<any>) => def.execute(ctx),
+        createContext: (base) => {
+           return {
+             state: Effect.succeed(base.getState()), // Snapshotted state
+             eventCount: getEventCount().pipe(Effect.orDie), // Live event count
+             instanceId: base.instanceId,
+             debounceStartedAt: getStartedAt().pipe(Effect.orDie, Effect.map(t => t ?? 0)),
+             executionStartedAt: Date.now(),
+             flushReason,
+             attempt: base.attempt,
+             isRetry: base.isRetry
+           } as DebounceExecuteContext<any>;
         }
-
-        // Get current attempt for context
-        const attempt = yield* retryExecutor.getAttempt().pipe(
-          Effect.catchAll(() => Effect.succeed(1)),
-        );
-
-        if (!def.retry) {
-          // No retry configured - execute directly
-          yield* runExecute(def, stateService, eventCount, flushReason, attempt);
-
-          // Cleanup storage and metadata
-          yield* purge();
-
-          return {
-            _type: "debounce.flush" as const,
-            flushed: true,
-            eventCount,
-            reason: flushReason,
-          };
-        }
-
-        // Create execute effect for retry wrapper
-        const executeEffect = runExecute(
-          def,
-          stateService,
-          eventCount,
-          flushReason,
-          attempt,
-        );
-
-        // Wrap with retry executor
-        yield* retryExecutor
-          .executeWithRetry(
-            executeEffect as Effect.Effect<void, unknown, never>,
-            def.retry,
-            { jobType: "debounce", jobName: def.name },
-          )
-          .pipe(
-            Effect.catchAll((error): Effect.Effect<
-              void,
-              HandlerError | RetryScheduledSignal
-            > => {
-              // Handle RetryScheduledSignal - propagate (don't purge)
-              if (error instanceof RetryScheduledSignal) {
-                return Effect.fail(error);
-              }
-
-              // Handle RetryExhaustedError - onError already called in runExecute,
-              // just continue to purge
-              if (error instanceof RetryExhaustedError) {
-                return Effect.void;
-              }
-
-              // Other errors - wrap and propagate
-              return Effect.fail(
-                new ExecutionError({
-                  jobType: "debounce",
-                  jobName: def.name,
-                  instanceId: runtime.instanceId,
-                  cause: error,
-                }),
-              );
-            }),
-          );
-
-        // Cleanup storage and metadata (only reached if not retry scheduled)
-        yield* purge();
-
-        return {
-          _type: "debounce.flush" as const,
-          flushed: true,
-          eventCount,
-          reason: flushReason,
-        };
       });
-
-      return impl as Effect.Effect<DebounceResponse, HandlerError | RetryScheduledSignal>;
-    };
 
     const handleAdd = (
       def: DebounceDefinition<any, any, any, never>,
@@ -294,10 +133,10 @@ export const DebounceHandlerLayer = Layer.effect(
           )
         );
 
-        // Auto-initialize state from event when null (first event)
         const stateForContext = currentState ?? (validatedEvent as unknown);
 
         const onEvent = def.onEvent!;
+        // Cast is still needed unless we fix Definition generic constraints
         const reducedState = yield* onEvent({
           event: validatedEvent as unknown,
           state: stateForContext,
@@ -315,22 +154,23 @@ export const DebounceHandlerLayer = Layer.effect(
         const willFlushAt = yield* alarm.getScheduled();
 
         if (def.maxEvents !== undefined && nextCount >= def.maxEvents) {
-          const retryScheduled = yield* flushAndCleanup(def, "maxEvents").pipe(
-            Effect.map(() => false),
-            Effect.catchTag("RetryScheduledSignal", () => Effect.succeed(true)),
-          );
+          // Immediate flush
+          const result = yield* runFlush(def, "maxEvents");
 
-          const scheduledAt = retryScheduled
-            ? (yield* alarm.getScheduled().pipe(Effect.orElse(() => Effect.succeed(undefined)))) ?? null
-            : null;
+          if (result.success) {
+            // Success - purge state after flush
+            yield* purge();
+          } else if (result.terminated) {
+            // Terminated by CleanupService - already purged
+          }
 
           return {
             _type: "debounce.add" as const,
             instanceId: runtime.instanceId,
             eventCount: nextCount,
-            willFlushAt: scheduledAt,
+            willFlushAt: result.retryScheduled ? ((yield* alarm.getScheduled()) ?? null) : null,
             created,
-            retryScheduled,
+            retryScheduled: result.retryScheduled,
           };
         }
 
@@ -346,7 +186,7 @@ export const DebounceHandlerLayer = Layer.effect(
     const handleFlush = (
       def: DebounceDefinition<any, any, any, never>,
       reason: "manual" | "flushAfter" | "maxEvents"
-    ): Effect.Effect<DebounceResponse, HandlerError | RetryScheduledSignal> =>
+    ): Effect.Effect<DebounceResponse, HandlerError> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         if (!meta) {
@@ -369,7 +209,22 @@ export const DebounceHandlerLayer = Layer.effect(
           };
         }
 
-        return yield* flushAndCleanup(def, reason);
+        const result = yield* runFlush(def, reason);
+
+        if (result.success) {
+          // Success - purge state after flush
+          yield* purge();
+        } else if (result.terminated) {
+          // Terminated by CleanupService - already purged
+        }
+
+        return {
+          _type: "debounce.flush" as const,
+          flushed: true,
+          eventCount,
+          reason,
+          retryScheduled: result.retryScheduled
+        };
       });
 
     const handleClear = (): Effect.Effect<DebounceResponse, HandlerError> =>
@@ -438,21 +293,7 @@ export const DebounceHandlerLayer = Layer.effect(
             case "add":
               return yield* handleAdd(def, request);
             case "flush":
-              return yield* handleFlush(def, "manual").pipe(
-                // Catch RetryScheduledSignal and return appropriate response
-                Effect.catchTag("RetryScheduledSignal", () =>
-                  Effect.gen(function* () {
-                    const eventCount = yield* getEventCount();
-                    return {
-                      _type: "debounce.flush" as const,
-                      flushed: false,
-                      eventCount,
-                      reason: "manual" as const,
-                      retryScheduled: true,
-                    };
-                  }),
-                ),
-              );
+              return yield* handleFlush(def, "manual");
             case "clear":
               return yield* handleClear();
             case "status":
@@ -506,24 +347,12 @@ export const DebounceHandlerLayer = Layer.effect(
             yield* retryExecutor.reset().pipe(Effect.ignore);
           }
 
-          const retryScheduled = yield* handleFlush(def, "flushAfter").pipe(
-            Effect.map((result) => {
-              // If not flushed and not retrying, purge
-              if (result._type === "debounce.flush" && !result.flushed) {
-                return "empty";
-              }
-              return "success";
-            }),
-            Effect.catchTag("RetryScheduledSignal", () =>
-              Effect.succeed("retry_scheduled" as const),
-            ),
-          );
-
-          // Only purge if flush returned empty and no retry scheduled
-          if (retryScheduled === "empty") {
-            yield* purge();
-          }
-          // If retry_scheduled, don't purge - alarm already set by RetryExecutor
+          const result = yield* handleFlush(def, "flushAfter");
+          void result;
+          
+          // Note: handleFlush already purges on success.
+          // If retryScheduled, handleFlush returns retryScheduled=true.
+          // We don't need to do anything else.
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(

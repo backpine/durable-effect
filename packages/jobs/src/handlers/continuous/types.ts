@@ -4,7 +4,7 @@ import type { Effect } from "effect";
 import type {
   ContinuousRequest,
   ContinuousStartResponse,
-  ContinuousStopResponse,
+  ContinuousTerminateResponse,
   ContinuousTriggerResponse,
   ContinuousStatusResponse,
   ContinuousGetStateResponse,
@@ -20,7 +20,7 @@ import type { JobError } from "../../errors";
  */
 export type ContinuousResponse =
   | ContinuousStartResponse
-  | ContinuousStopResponse
+  | ContinuousTerminateResponse
   | ContinuousTriggerResponse
   | ContinuousStatusResponse
   | ContinuousGetStateResponse;
@@ -34,7 +34,7 @@ export type ContinuousResponse =
  *
  * Handles all continuous job operations:
  * - start: Initialize and optionally run first execution
- * - stop: Stop and purge
+ * - terminate: Fully remove job (cancel alarm + delete all state)
  * - trigger: Trigger immediate execution
  * - status: Get current status
  * - getState: Get current state

@@ -96,7 +96,7 @@ export {
   type WorkerPoolRequest,
   // Response types
   type ContinuousStartResponse,
-  type ContinuousStopResponse,
+  type ContinuousTerminateResponse,
   type ContinuousTriggerResponse,
   type ContinuousStatusResponse,
   type ContinuousGetStateResponse,

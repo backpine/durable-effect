@@ -4,7 +4,6 @@ import { Layer } from "effect";
 import { ContinuousHandlerLayer } from "./continuous";
 import { DebounceHandlerLayer } from "./debounce";
 import { TaskHandlerLayer } from "./task";
-import { RetryExecutorLayer } from "../retry";
 
 // Re-export handlers
 export {
