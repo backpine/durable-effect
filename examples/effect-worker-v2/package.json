@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@durable-effect/jobs": "workspace:*",
+    "@durable-effect/workflow": "workspace:*",
     "@effect/platform": "catalog:",
     "drizzle-orm": "^0.45.0",
     "effect": "catalog:",

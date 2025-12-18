@@ -1,35 +1,52 @@
 /**
- * Workflow tracking events.
+ * Tracking events for workflows and jobs.
  *
- * These events represent all lifecycle points in a durable workflow
+ * These events represent all lifecycle points in durable workflows and jobs
  * and are used by the optional event tracker service.
  *
  * All events are defined as Effect Schemas for runtime validation.
  *
  * There are two event formats:
- * - Internal events: Created by workflow code (no env/serviceKey)
+ * - Internal events: Created by workflow/job code (no env/serviceKey)
  * - Wire events: Sent to tracking service (includes env/serviceKey)
  *
  * The EventTrackerService enriches internal events with env/serviceKey
  * before sending them over the wire.
+ *
+ * Events are distinguished by the `source` field:
+ * - "workflow" - Events from the workflow package
+ * - "job" - Events from the jobs package
  */
 
 import { Schema } from "effect";
 import { v7 as uuidv7 } from "uuid";
 
 // =============================================================================
-// Internal Base Event Schema (used by workflow code)
+// Shared Base Fields (all events)
 // =============================================================================
 
 /**
- * Internal base event fields - created by workflow code.
- * Does NOT include env/serviceKey - those are added by the tracker.
+ * Shared base fields for all tracking events.
  */
-const InternalBaseEventFields = {
+const SharedBaseFields = {
   /** Unique event ID for deduplication */
   eventId: Schema.String,
   /** ISO timestamp when event occurred */
   timestamp: Schema.String,
+};
+
+// =============================================================================
+// Workflow Base Event Schema
+// =============================================================================
+
+/**
+ * Internal workflow base event fields.
+ * Does NOT include env/serviceKey - those are added by the tracker.
+ */
+const InternalWorkflowBaseFields = {
+  ...SharedBaseFields,
+  /** Event source discriminator */
+  source: Schema.Literal("workflow"),
   /** Durable Object ID */
   workflowId: Schema.String,
   /** Workflow definition name */
@@ -38,27 +55,72 @@ const InternalBaseEventFields = {
   executionId: Schema.optional(Schema.String),
 };
 
-export const InternalBaseEventSchema = Schema.Struct(InternalBaseEventFields);
+/** @deprecated Use InternalWorkflowBaseFields instead */
+const InternalBaseEventFields = InternalWorkflowBaseFields;
+
+export const InternalBaseEventSchema = Schema.Struct(InternalWorkflowBaseFields);
 export type InternalBaseEvent = Schema.Schema.Type<typeof InternalBaseEventSchema>;
+
+// =============================================================================
+// Job Base Event Schema
+// =============================================================================
+
+/**
+ * Job type discriminator.
+ */
+export type JobType = "continuous" | "debounce" | "task" | "workerPool";
+
+/**
+ * Internal job base event fields.
+ * Does NOT include env/serviceKey - those are added by the tracker.
+ */
+const InternalJobBaseFields = {
+  ...SharedBaseFields,
+  /** Event source discriminator */
+  source: Schema.Literal("job"),
+  /** Durable Object instance ID */
+  instanceId: Schema.String,
+  /** Job type discriminator */
+  jobType: Schema.Literal("continuous", "debounce", "task", "workerPool"),
+  /** Job definition name */
+  jobName: Schema.String,
+};
+
+export const InternalJobBaseEventSchema = Schema.Struct(InternalJobBaseFields);
+export type InternalJobBaseEvent = Schema.Schema.Type<typeof InternalJobBaseEventSchema>;
 
 // =============================================================================
 // Wire Base Event Schema (sent to tracking service)
 // =============================================================================
 
 /**
- * Wire format base event fields - includes env and serviceKey.
+ * Wire format workflow base event fields - includes env and serviceKey.
  * This is what gets sent to the external tracking service.
  */
-const WireBaseEventFields = {
-  ...InternalBaseEventFields,
+const WireWorkflowBaseFields = {
+  ...InternalWorkflowBaseFields,
   /** Environment identifier (e.g., "production", "staging") */
   env: Schema.String,
   /** User-defined service key */
   serviceKey: Schema.String,
 };
 
-export const BaseEventSchema = Schema.Struct(WireBaseEventFields);
+/** @deprecated Use WireWorkflowBaseFields instead */
+const WireBaseEventFields = WireWorkflowBaseFields;
+
+export const BaseEventSchema = Schema.Struct(WireWorkflowBaseFields);
 export type BaseEvent = Schema.Schema.Type<typeof BaseEventSchema>;
+
+/**
+ * Wire format job base event fields - includes env and serviceKey.
+ */
+const WireJobBaseFields = {
+  ...InternalJobBaseFields,
+  /** Environment identifier (e.g., "production", "staging") */
+  env: Schema.String,
+  /** User-defined service key */
+  serviceKey: Schema.String,
+};
 
 // =============================================================================
 // Workflow Events (Internal)
@@ -496,18 +558,299 @@ export type WorkflowEvent = Schema.Schema.Type<typeof WorkflowEventSchema>;
 export type WorkflowEventType = WorkflowEvent["type"];
 
 // =============================================================================
+// Job Events (Internal)
+// =============================================================================
+
+/**
+ * Error details schema for job failures.
+ */
+const JobErrorSchema = Schema.Struct({
+  message: Schema.String,
+  stack: Schema.optional(Schema.String),
+});
+
+/**
+ * Emitted when a job instance is created/started.
+ */
+export const InternalJobStartedEventSchema = Schema.Struct({
+  ...InternalJobBaseFields,
+  type: Schema.Literal("job.started"),
+  /** Initial state/input provided */
+  input: Schema.optional(Schema.Unknown),
+});
+export type InternalJobStartedEvent = Schema.Schema.Type<typeof InternalJobStartedEventSchema>;
+
+/**
+ * Emitted when a job execution runs successfully.
+ */
+export const InternalJobExecutedEventSchema = Schema.Struct({
+  ...InternalJobBaseFields,
+  type: Schema.Literal("job.executed"),
+  /** Run number (1-indexed) */
+  runCount: Schema.Number,
+  /** Execution duration in milliseconds */
+  durationMs: Schema.Number,
+  /** Current retry attempt (1 = first attempt) */
+  attempt: Schema.Number,
+});
+export type InternalJobExecutedEvent = Schema.Schema.Type<typeof InternalJobExecutedEventSchema>;
+
+/**
+ * Emitted when a job execution fails.
+ */
+export const InternalJobFailedEventSchema = Schema.Struct({
+  ...InternalJobBaseFields,
+  type: Schema.Literal("job.failed"),
+  error: JobErrorSchema,
+  /** Run number when failure occurred */
+  runCount: Schema.Number,
+  /** Retry attempt when failure occurred */
+  attempt: Schema.Number,
+  /** Whether a retry will be attempted */
+  willRetry: Schema.Boolean,
+});
+export type InternalJobFailedEvent = Schema.Schema.Type<typeof InternalJobFailedEventSchema>;
+
+/**
+ * Emitted when job retries are exhausted.
+ */
+export const InternalJobRetryExhaustedEventSchema = Schema.Struct({
+  ...InternalJobBaseFields,
+  type: Schema.Literal("job.retryExhausted"),
+  /** Total attempts made */
+  attempts: Schema.Number,
+  /** Reason for exhaustion */
+  reason: Schema.Literal("max_attempts", "max_duration"),
+});
+export type InternalJobRetryExhaustedEvent = Schema.Schema.Type<typeof InternalJobRetryExhaustedEventSchema>;
+
+/**
+ * Emitted when a job is terminated.
+ */
+export const InternalJobTerminatedEventSchema = Schema.Struct({
+  ...InternalJobBaseFields,
+  type: Schema.Literal("job.terminated"),
+  /** Termination reason */
+  reason: Schema.optional(Schema.String),
+  /** Total runs before termination */
+  runCount: Schema.Number,
+});
+export type InternalJobTerminatedEvent = Schema.Schema.Type<typeof InternalJobTerminatedEventSchema>;
+
+// =============================================================================
+// Debounce-specific Events (Internal)
+// =============================================================================
+
+/**
+ * Emitted when first event is received for a debounce job.
+ */
+export const InternalDebounceStartedEventSchema = Schema.Struct({
+  ...InternalJobBaseFields,
+  type: Schema.Literal("debounce.started"),
+  /** When the flush is scheduled */
+  flushAt: Schema.String,
+});
+export type InternalDebounceStartedEvent = Schema.Schema.Type<typeof InternalDebounceStartedEventSchema>;
+
+/**
+ * Emitted when a debounce job flushes.
+ */
+export const InternalDebounceFlushedEventSchema = Schema.Struct({
+  ...InternalJobBaseFields,
+  type: Schema.Literal("debounce.flushed"),
+  /** Number of events in the batch */
+  eventCount: Schema.Number,
+  /** What triggered the flush */
+  reason: Schema.Literal("timeout", "maxEvents", "manual"),
+  /** Execution duration in milliseconds */
+  durationMs: Schema.Number,
+});
+export type InternalDebounceFlushedEvent = Schema.Schema.Type<typeof InternalDebounceFlushedEventSchema>;
+
+// =============================================================================
+// Task-specific Events (Internal)
+// =============================================================================
+
+/**
+ * Emitted when a task execution is scheduled.
+ */
+export const InternalTaskScheduledEventSchema = Schema.Struct({
+  ...InternalJobBaseFields,
+  type: Schema.Literal("task.scheduled"),
+  /** When execution is scheduled for */
+  scheduledAt: Schema.String,
+  /** What triggered the schedule */
+  trigger: Schema.Literal("event", "execute", "idle", "error"),
+});
+export type InternalTaskScheduledEvent = Schema.Schema.Type<typeof InternalTaskScheduledEventSchema>;
+
+// =============================================================================
+// Job Event Union (Internal)
+// =============================================================================
+
+/**
+ * Schema for all possible internal job events.
+ */
+export const InternalJobEventSchema = Schema.Union(
+  // Lifecycle
+  InternalJobStartedEventSchema,
+  InternalJobExecutedEventSchema,
+  InternalJobFailedEventSchema,
+  InternalJobRetryExhaustedEventSchema,
+  InternalJobTerminatedEventSchema,
+  // Debounce-specific
+  InternalDebounceStartedEventSchema,
+  InternalDebounceFlushedEventSchema,
+  // Task-specific
+  InternalTaskScheduledEventSchema,
+);
+
+/**
+ * Internal job event type (without env/serviceKey).
+ */
+export type InternalJobEvent = Schema.Schema.Type<typeof InternalJobEventSchema>;
+
+/**
+ * Job event type discriminator values.
+ */
+export type JobEventType = InternalJobEvent["type"];
+
+// =============================================================================
+// Job Events (Wire)
+// =============================================================================
+
+export const JobStartedEventSchema = Schema.Struct({
+  ...WireJobBaseFields,
+  type: Schema.Literal("job.started"),
+  input: Schema.optional(Schema.Unknown),
+});
+export type JobStartedEvent = Schema.Schema.Type<typeof JobStartedEventSchema>;
+
+export const JobExecutedEventSchema = Schema.Struct({
+  ...WireJobBaseFields,
+  type: Schema.Literal("job.executed"),
+  runCount: Schema.Number,
+  durationMs: Schema.Number,
+  attempt: Schema.Number,
+});
+export type JobExecutedEvent = Schema.Schema.Type<typeof JobExecutedEventSchema>;
+
+export const JobFailedEventSchema = Schema.Struct({
+  ...WireJobBaseFields,
+  type: Schema.Literal("job.failed"),
+  error: JobErrorSchema,
+  runCount: Schema.Number,
+  attempt: Schema.Number,
+  willRetry: Schema.Boolean,
+});
+export type JobFailedEvent = Schema.Schema.Type<typeof JobFailedEventSchema>;
+
+export const JobRetryExhaustedEventSchema = Schema.Struct({
+  ...WireJobBaseFields,
+  type: Schema.Literal("job.retryExhausted"),
+  attempts: Schema.Number,
+  reason: Schema.Literal("max_attempts", "max_duration"),
+});
+export type JobRetryExhaustedEvent = Schema.Schema.Type<typeof JobRetryExhaustedEventSchema>;
+
+export const JobTerminatedEventSchema = Schema.Struct({
+  ...WireJobBaseFields,
+  type: Schema.Literal("job.terminated"),
+  reason: Schema.optional(Schema.String),
+  runCount: Schema.Number,
+});
+export type JobTerminatedEvent = Schema.Schema.Type<typeof JobTerminatedEventSchema>;
+
+export const DebounceStartedEventSchema = Schema.Struct({
+  ...WireJobBaseFields,
+  type: Schema.Literal("debounce.started"),
+  flushAt: Schema.String,
+});
+export type DebounceStartedEvent = Schema.Schema.Type<typeof DebounceStartedEventSchema>;
+
+export const DebounceFlushedEventSchema = Schema.Struct({
+  ...WireJobBaseFields,
+  type: Schema.Literal("debounce.flushed"),
+  eventCount: Schema.Number,
+  reason: Schema.Literal("timeout", "maxEvents", "manual"),
+  durationMs: Schema.Number,
+});
+export type DebounceFlushedEvent = Schema.Schema.Type<typeof DebounceFlushedEventSchema>;
+
+export const TaskScheduledEventSchema = Schema.Struct({
+  ...WireJobBaseFields,
+  type: Schema.Literal("task.scheduled"),
+  scheduledAt: Schema.String,
+  trigger: Schema.Literal("event", "execute", "idle", "error"),
+});
+export type TaskScheduledEvent = Schema.Schema.Type<typeof TaskScheduledEventSchema>;
+
+// =============================================================================
+// Job Event Union (Wire)
+// =============================================================================
+
+/**
+ * Schema for all possible wire job events.
+ */
+export const JobEventSchema = Schema.Union(
+  JobStartedEventSchema,
+  JobExecutedEventSchema,
+  JobFailedEventSchema,
+  JobRetryExhaustedEventSchema,
+  JobTerminatedEventSchema,
+  DebounceStartedEventSchema,
+  DebounceFlushedEventSchema,
+  TaskScheduledEventSchema,
+);
+
+/**
+ * Wire format job event (includes env/serviceKey).
+ */
+export type JobEvent = Schema.Schema.Type<typeof JobEventSchema>;
+
+// =============================================================================
+// Combined Event Union (all tracking events)
+// =============================================================================
+
+/**
+ * Schema for all internal tracking events (workflow + job).
+ */
+export const InternalTrackingEventSchema = Schema.Union(
+  InternalWorkflowEventSchema,
+  InternalJobEventSchema,
+);
+
+/**
+ * Any internal tracking event (workflow or job).
+ */
+export type InternalTrackingEvent = Schema.Schema.Type<typeof InternalTrackingEventSchema>;
+
+/**
+ * Schema for all wire tracking events (workflow + job).
+ */
+export const TrackingEventSchema = Schema.Union(
+  WorkflowEventSchema,
+  JobEventSchema,
+);
+
+/**
+ * Any wire tracking event (workflow or job).
+ */
+export type TrackingEvent = Schema.Schema.Type<typeof TrackingEventSchema>;
+
+// =============================================================================
 // Helper Functions
 // =============================================================================
 
 /**
- * Create the base fields for an internal event.
+ * Create the base fields for an internal workflow event.
  * Does NOT include env/serviceKey - the tracker adds those.
  *
  * @param workflowId - Durable Object ID
  * @param workflowName - Workflow definition name
  * @param executionId - Optional user-provided ID for correlation (persists across lifecycle)
  */
-export function createBaseEvent(
+export function createWorkflowBaseEvent(
   workflowId: string,
   workflowName: string,
   executionId?: string,
@@ -515,6 +858,7 @@ export function createBaseEvent(
   return {
     eventId: uuidv7(),
     timestamp: new Date().toISOString(),
+    source: "workflow" as const,
     workflowId,
     workflowName,
     ...(executionId && { executionId }),
@@ -522,9 +866,59 @@ export function createBaseEvent(
 }
 
 /**
- * Enrich an internal event with env and serviceKey for wire transmission.
+ * Create the base fields for an internal workflow event.
+ * @deprecated Use createWorkflowBaseEvent instead
  */
-export function enrichEvent<T extends InternalWorkflowEvent>(
+export const createBaseEvent = createWorkflowBaseEvent;
+
+/**
+ * Create the base fields for an internal job event.
+ * Does NOT include env/serviceKey - the tracker adds those.
+ *
+ * @param instanceId - Durable Object instance ID
+ * @param jobType - The job type (continuous, debounce, task, workerPool)
+ * @param jobName - Job definition name
+ */
+export function createJobBaseEvent(
+  instanceId: string,
+  jobType: JobType,
+  jobName: string,
+): InternalJobBaseEvent {
+  return {
+    eventId: uuidv7(),
+    timestamp: new Date().toISOString(),
+    source: "job" as const,
+    instanceId,
+    jobType,
+    jobName,
+  };
+}
+
+/**
+ * Enrich an internal workflow event with env and serviceKey for wire transmission.
+ */
+export function enrichWorkflowEvent<T extends InternalWorkflowEvent>(
+  event: T,
+  env: string,
+  serviceKey: string,
+): T & { env: string; serviceKey: string } {
+  return {
+    ...event,
+    env,
+    serviceKey,
+  };
+}
+
+/**
+ * Enrich an internal workflow event with env and serviceKey for wire transmission.
+ * @deprecated Use enrichWorkflowEvent instead
+ */
+export const enrichEvent = enrichWorkflowEvent;
+
+/**
+ * Enrich an internal job event with env and serviceKey for wire transmission.
+ */
+export function enrichJobEvent<T extends InternalJobEvent>(
   event: T,
   env: string,
   serviceKey: string,

@@ -4,10 +4,14 @@ export { PauseSignal, StorageError, SchedulerError } from "./errors";
 // Event Schemas
 export {
   // Helper functions
-  createBaseEvent,
-  enrichEvent,
+  createBaseEvent, // @deprecated Use createWorkflowBaseEvent
+  createWorkflowBaseEvent,
+  createJobBaseEvent,
+  enrichEvent, // @deprecated Use enrichWorkflowEvent
+  enrichWorkflowEvent,
+  enrichJobEvent,
 
-  // Internal Event Schemas (used by workflow code)
+  // Internal Workflow Event Schemas (used by workflow code)
   InternalBaseEventSchema,
   InternalWorkflowEventSchema,
   InternalWorkflowStartedEventSchema,
@@ -26,7 +30,22 @@ export {
   InternalTimeoutSetEventSchema,
   InternalTimeoutExceededEventSchema,
 
-  // Wire Event Schemas (sent to tracking service)
+  // Internal Job Event Schemas
+  InternalJobBaseEventSchema,
+  InternalJobEventSchema,
+  InternalJobStartedEventSchema,
+  InternalJobExecutedEventSchema,
+  InternalJobFailedEventSchema,
+  InternalJobRetryExhaustedEventSchema,
+  InternalJobTerminatedEventSchema,
+  InternalDebounceStartedEventSchema,
+  InternalDebounceFlushedEventSchema,
+  InternalTaskScheduledEventSchema,
+
+  // Combined Internal Event Schema
+  InternalTrackingEventSchema,
+
+  // Wire Workflow Event Schemas (sent to tracking service)
   BaseEventSchema,
   WorkflowStartedEventSchema,
   WorkflowQueuedEventSchema,
@@ -45,7 +64,21 @@ export {
   TimeoutExceededEventSchema,
   WorkflowEventSchema,
 
-  // Internal Types (used by workflow code)
+  // Wire Job Event Schemas
+  JobEventSchema,
+  JobStartedEventSchema,
+  JobExecutedEventSchema,
+  JobFailedEventSchema,
+  JobRetryExhaustedEventSchema,
+  JobTerminatedEventSchema,
+  DebounceStartedEventSchema,
+  DebounceFlushedEventSchema,
+  TaskScheduledEventSchema,
+
+  // Combined Wire Event Schema
+  TrackingEventSchema,
+
+  // Internal Workflow Types (used by workflow code)
   type InternalBaseEvent,
   type InternalWorkflowEvent,
   type InternalWorkflowStartedEvent,
@@ -64,7 +97,23 @@ export {
   type InternalTimeoutSetEvent,
   type InternalTimeoutExceededEvent,
 
-  // Wire Types (sent to tracking service)
+  // Internal Job Types
+  type JobType,
+  type InternalJobBaseEvent,
+  type InternalJobEvent,
+  type InternalJobStartedEvent,
+  type InternalJobExecutedEvent,
+  type InternalJobFailedEvent,
+  type InternalJobRetryExhaustedEvent,
+  type InternalJobTerminatedEvent,
+  type InternalDebounceStartedEvent,
+  type InternalDebounceFlushedEvent,
+  type InternalTaskScheduledEvent,
+
+  // Combined Internal Types
+  type InternalTrackingEvent,
+
+  // Wire Workflow Types (sent to tracking service)
   type BaseEvent,
   type WorkflowEvent,
   type WorkflowEventType,
@@ -83,6 +132,21 @@ export {
   type SleepCompletedEvent,
   type TimeoutSetEvent,
   type TimeoutExceededEvent,
+
+  // Wire Job Types
+  type JobEvent,
+  type JobEventType,
+  type JobStartedEvent,
+  type JobExecutedEvent,
+  type JobFailedEvent,
+  type JobRetryExhaustedEvent,
+  type JobTerminatedEvent,
+  type DebounceStartedEvent,
+  type DebounceFlushedEvent,
+  type TaskScheduledEvent,
+
+  // Combined Wire Types
+  type TrackingEvent,
 } from "./events";
 
 // Adapters

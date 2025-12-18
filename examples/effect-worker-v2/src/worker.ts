@@ -3,8 +3,9 @@ import { handleRequest } from "./handler";
 import { AppLayer } from "./app";
 import { CloudflareEnv, CloudflareCtx } from "./services";
 
-// Export the Jobs Durable Object class for Cloudflare
+// Export the Durable Object classes for Cloudflare
 export { Jobs } from "./jobs";
+export { Workflows } from "./workflows";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Module-Level Runtime (built ONCE per isolate)

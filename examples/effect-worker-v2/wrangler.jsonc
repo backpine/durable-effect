@@ -22,12 +22,16 @@
     "LOG_LEVEL": "info",
   },
 
-  // Durable Objects - Jobs Engine
+  // Durable Objects - Jobs and Workflows
   "durable_objects": {
     "bindings": [
       {
         "name": "JOBS",
         "class_name": "Jobs",
+      },
+      {
+        "name": "WORKFLOWS",
+        "class_name": "Workflows",
       },
     ],
   },
@@ -37,6 +41,10 @@
     {
       "tag": "v1",
       "new_classes": ["Jobs"],
+    },
+    {
+      "tag": "v2",
+      "new_classes": ["Workflows"],
     },
   ],
 

@@ -1,0 +1,97 @@
+name: Publish Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish'
+        required: true
+        type: choice
+        options:
+          - core
+          - jobs
+          - workflow
+          - all
+      version_bump:
+        description: 'Version bump type (or "none" to use current version)'
+        required: true
+        type: choice
+        default: 'none'
+        options:
+          - none
+          - patch
+          - minor
+          - major
+          - prerelease
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Bump version (if requested)
+        if: ${{ inputs.version_bump != 'none' }}
+        run: |
+          if [ "${{ inputs.package }}" = "all" ]; then
+            cd packages/core && npm version ${{ inputs.version_bump }} --no-git-tag-version
+            cd ../jobs && npm version ${{ inputs.version_bump }} --no-git-tag-version
+            cd ../workflow && npm version ${{ inputs.version_bump }} --no-git-tag-version
+          else
+            cd packages/${{ inputs.package }} && npm version ${{ inputs.version_bump }} --no-git-tag-version
+          fi
+
+      - name: Publish @durable-effect/core
+        if: ${{ inputs.package == 'core' || inputs.package == 'all' }}
+        run: pnpm --filter @durable-effect/core publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @durable-effect/jobs
+        if: ${{ inputs.package == 'jobs' || inputs.package == 'all' }}
+        run: pnpm --filter @durable-effect/jobs publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @durable-effect/workflow
+        if: ${{ inputs.package == 'workflow' || inputs.package == 'all' }}
+        run: pnpm --filter @durable-effect/workflow publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Published Package(s)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.package }}" = "all" ]; then
+            echo "- @durable-effect/core" >> $GITHUB_STEP_SUMMARY
+            echo "- @durable-effect/jobs" >> $GITHUB_STEP_SUMMARY
+            echo "- @durable-effect/workflow" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- @durable-effect/${{ inputs.package }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version bump: ${{ inputs.version_bump }}" >> $GITHUB_STEP_SUMMARY

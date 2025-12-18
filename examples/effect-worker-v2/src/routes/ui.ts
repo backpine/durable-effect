@@ -28,6 +28,8 @@ const navHtml = `
 <nav class="bg-gray-800 border-b border-gray-700 mb-8">
   <div class="container mx-auto px-4 max-w-2xl">
     <div class="flex space-x-4 py-3">
+      <a href="/ui/workflow" class="text-gray-300 hover:text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition">Workflow</a>
+      <span class="text-gray-600">|</span>
       <a href="/ui/task" class="text-gray-300 hover:text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition">Task</a>
       <a href="/ui/continuous" class="text-gray-300 hover:text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition">Continuous</a>
       <a href="/ui/debounce" class="text-gray-300 hover:text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition">Debounce</a>
@@ -35,6 +37,236 @@ const navHtml = `
   </div>
 </nav>
 `;
+
+// =============================================================================
+// Workflow UI
+// =============================================================================
+
+const workflowUiHtml = baseHtml(
+  "Workflows - Durable Effect",
+  `
+  ${navHtml}
+  <div class="container mx-auto px-4 py-4 max-w-2xl">
+    <header class="mb-8">
+      <h1 class="text-3xl font-bold text-white mb-2">Workflow Demo</h1>
+      <p class="text-gray-400">Durable workflow with steps, retries, and sleep. Order processing example.</p>
+    </header>
+
+    <!-- Instance ID -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
+      <label class="block text-sm font-medium text-gray-300 mb-2">Instance ID (optional, defaults to Order ID)</label>
+      <input
+        type="text"
+        id="instanceId"
+        placeholder="Leave empty to use Order ID"
+        class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-orange-500 outline-none"
+      />
+    </div>
+
+    <!-- Order Input -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
+      <h2 class="text-lg font-semibold text-white mb-4">Order Details</h2>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-1">Order ID</label>
+          <input
+            type="text"
+            id="orderId"
+            value="order-001"
+            class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-orange-500 outline-none"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-1">Items (comma separated)</label>
+          <input
+            type="text"
+            id="items"
+            value="item-a, item-b, item-c"
+            class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-orange-500 outline-none"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-1">Customer Email</label>
+          <input
+            type="text"
+            id="customerEmail"
+            value="customer@example.com"
+            class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-orange-500 outline-none"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Run Actions -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
+      <h2 class="text-lg font-semibold text-white mb-4">Run Workflow</h2>
+      <div class="grid grid-cols-2 gap-3">
+        <button onclick="runSync()" class="bg-orange-600 hover:bg-orange-700 text-white font-medium py-3 px-4 rounded-lg transition">
+          Run (Sync)
+          <span class="block text-xs text-orange-200 mt-1">Waits for completion</span>
+        </button>
+        <button onclick="runAsync()" class="bg-amber-600 hover:bg-amber-700 text-white font-medium py-3 px-4 rounded-lg transition">
+          Run (Async)
+          <span class="block text-xs text-amber-200 mt-1">Returns immediately</span>
+        </button>
+      </div>
+      <p class="text-gray-500 text-sm mt-3">Workflow has 4 steps: validate, reserve inventory, process payment (with 2s sleep), send confirmation</p>
+    </div>
+
+    <!-- Query Actions -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
+      <h2 class="text-lg font-semibold text-white mb-4">Query & Control</h2>
+      <div class="grid grid-cols-3 gap-3">
+        <button onclick="getStatus()" class="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg transition">Get Status</button>
+        <button onclick="getSteps()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition">Get Steps</button>
+        <button onclick="cancelWorkflow()" class="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Live Status -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold text-white">Live Status</h2>
+        <div class="flex items-center gap-2">
+          <span id="autoRefreshStatus" class="text-gray-500 text-sm">Auto-refresh: off</span>
+          <button onclick="toggleAutoRefresh()" id="autoRefreshBtn" class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium py-1 px-3 rounded transition">
+            Enable
+          </button>
+        </div>
+      </div>
+      <div id="liveStatus" class="bg-gray-900 rounded-lg p-4">
+        <div class="grid grid-cols-2 gap-4 text-sm mb-4">
+          <div>
+            <span class="text-gray-500">Status:</span>
+            <span id="statusValue" class="text-white ml-2">-</span>
+          </div>
+          <div>
+            <span class="text-gray-500">Instance ID:</span>
+            <span id="instanceIdValue" class="text-white ml-2">-</span>
+          </div>
+        </div>
+        <div>
+          <span class="text-gray-500 text-sm">Completed Steps:</span>
+          <div id="stepsValue" class="text-orange-400 mt-1 font-mono text-sm">-</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Response Log -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold text-white">Log</h2>
+        <button onclick="clearLog()" class="text-gray-400 hover:text-white text-sm">Clear</button>
+      </div>
+      <div id="log" class="bg-gray-900 rounded-lg p-4 font-mono text-sm max-h-80 overflow-y-auto space-y-1">
+        <div class="text-gray-500">Responses will appear here...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const getInstanceId = () => document.getElementById('instanceId').value || document.getElementById('orderId').value || 'order-001';
+    let autoRefreshInterval = null;
+
+    const log = (msg, data) => {
+      const el = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      const line = document.createElement('div');
+      line.className = 'text-green-400';
+      line.innerHTML = '<span class="text-gray-500">[' + time + ']</span> <span class="text-orange-400">' + msg + '</span>: ' + JSON.stringify(data, null, 2);
+      el.insertBefore(line, el.firstChild);
+    };
+
+    const clearLog = () => {
+      document.getElementById('log').innerHTML = '<div class="text-gray-500">Responses will appear here...</div>';
+    };
+
+    const getOrderInput = () => ({
+      instanceId: document.getElementById('instanceId').value || undefined,
+      orderId: document.getElementById('orderId').value || 'order-001',
+      items: (document.getElementById('items').value || 'item-a').split(',').map(s => s.trim()).filter(Boolean),
+      customerEmail: document.getElementById('customerEmail').value || 'customer@example.com',
+    });
+
+    const api = async (endpoint, body) => {
+      const res = await fetch('/api/workflows' + endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    };
+
+    const runSync = async () => {
+      log('run (sync)', 'Starting...');
+      const input = getOrderInput();
+      const result = await api('/run', input);
+      log('run (sync)', result);
+      updateLiveStatus();
+    };
+
+    const runAsync = async () => {
+      const input = getOrderInput();
+      const result = await api('/runAsync', input);
+      log('runAsync', result);
+      updateLiveStatus();
+    };
+
+    const getStatus = async () => {
+      const result = await api('/status', { instanceId: getInstanceId() });
+      log('status', result);
+      return result;
+    };
+
+    const getSteps = async () => {
+      const result = await api('/steps', { instanceId: getInstanceId() });
+      log('steps', result);
+      return result;
+    };
+
+    const cancelWorkflow = async () => {
+      const result = await api('/cancel', { instanceId: getInstanceId(), reason: 'User cancelled' });
+      log('cancel', result);
+      updateLiveStatus();
+    };
+
+    const updateLiveStatus = async () => {
+      try {
+        const [statusRes, stepsRes] = await Promise.all([
+          api('/status', { instanceId: getInstanceId() }),
+          api('/steps', { instanceId: getInstanceId() })
+        ]);
+
+        document.getElementById('statusValue').textContent = statusRes.result?.status || 'unknown';
+        document.getElementById('instanceIdValue').textContent = getInstanceId();
+
+        const steps = stepsRes.result?.completedSteps;
+        if (steps && steps.length > 0) {
+          document.getElementById('stepsValue').textContent = steps.join(' -> ');
+        } else {
+          document.getElementById('stepsValue').textContent = 'No steps completed yet';
+        }
+      } catch (e) {
+        console.error('Failed to update live status', e);
+      }
+    };
+
+    const toggleAutoRefresh = () => {
+      if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+        document.getElementById('autoRefreshStatus').textContent = 'Auto-refresh: off';
+        document.getElementById('autoRefreshBtn').textContent = 'Enable';
+      } else {
+        updateLiveStatus();
+        autoRefreshInterval = setInterval(updateLiveStatus, 1000);
+        document.getElementById('autoRefreshStatus').textContent = 'Auto-refresh: 1s';
+        document.getElementById('autoRefreshBtn').textContent = 'Disable';
+      }
+    };
+  </script>
+  `
+);
 
 // =============================================================================
 // Task UI
@@ -577,7 +809,14 @@ const debounceUiHtml = baseHtml(
 export const uiRoutes = HttpRouter.empty.pipe(
   HttpRouter.get(
     "/",
-    Effect.succeed(HttpServerResponse.redirect("/ui/task"))
+    Effect.succeed(HttpServerResponse.redirect("/ui/workflow"))
+  ),
+
+  HttpRouter.get(
+    "/workflow",
+    Effect.gen(function* () {
+      return yield* HttpServerResponse.html(workflowUiHtml);
+    })
   ),
 
   HttpRouter.get(

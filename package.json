@@ -7,6 +7,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "publish:core": "pnpm build && pnpm --filter @durable-effect/core publish --access public --no-git-checks",
+    "publish:jobs": "pnpm build && pnpm --filter @durable-effect/jobs publish --access public --no-git-checks",
     "publish:workflow": "pnpm build && pnpm --filter @durable-effect/workflow publish --access public --no-git-checks",
     "publish:all": "pnpm build && pnpm -r publish --access public --no-git-checks"
   },

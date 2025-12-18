@@ -60,6 +60,9 @@ importers:
       '@durable-effect/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs
+      '@durable-effect/workflow':
+        specifier: workspace:*
+        version: link:../../packages/workflow
       '@effect/platform':
         specifier: 'catalog:'
         version: 0.75.4(effect@3.19.8)
