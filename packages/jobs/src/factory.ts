@@ -2,6 +2,7 @@
 
 import { Context } from "effect";
 import { DurableObject } from "cloudflare:workers";
+import type { HttpBatchTrackerConfig } from "@durable-effect/core";
 import { DurableJobsEngine, type JobsEngineConfig } from "./engine";
 import {
   createTypedJobRegistry,
@@ -15,6 +16,32 @@ import {
   type JobsClient,
   type JobsClientFactory,
 } from "./client";
+
+// =============================================================================
+// Options
+// =============================================================================
+
+/**
+ * Options for creating durable jobs.
+ */
+export interface CreateDurableJobsOptions {
+  /**
+   * Optional tracker configuration.
+   * If provided, job events will be sent to the configured endpoint.
+   *
+   * @example
+   * ```ts
+   * const { Jobs, JobsClient } = createDurableJobs(definitions, {
+   *   tracker: {
+   *     endpoint: "https://events.example.com/ingest",
+   *     env: "production",
+   *     serviceKey: "my-jobs-service",
+   *   },
+   * });
+   * ```
+   */
+  readonly tracker?: HttpBatchTrackerConfig;
+}
 
 /**
  * Result of creating durable jobs.
@@ -77,6 +104,7 @@ export type InferRegistryFromDefinitions<
  * - `registry`: The job registry (for advanced use cases)
  *
  * @param definitions - Object of job definitions (keys become job names)
+ * @param options - Optional configuration (tracker, etc.)
  *
  * @example
  * ```ts
@@ -100,6 +128,12 @@ export type InferRegistryFromDefinitions<
  * // Create engine and client - keys become job names
  * const { Jobs, JobsClient } = createDurableJobs({
  *   tokenRefresher,
+ * }, {
+ *   tracker: {
+ *     endpoint: "https://events.example.com/ingest",
+ *     env: "production",
+ *     serviceKey: "my-jobs",
+ *   },
  * });
  *
  * // Export for Cloudflare
@@ -124,7 +158,8 @@ export type InferRegistryFromDefinitions<
 export function createDurableJobs<
   const T extends Record<string, AnyUnregisteredDefinition>,
 >(
-  definitions: T
+  definitions: T,
+  options?: CreateDurableJobsOptions
 ): CreateDurableJobsResult<T> {
   // Create typed registry from definitions (preserves literal keys)
   const registry = createTypedJobRegistry(definitions);
@@ -135,10 +170,11 @@ export function createDurableJobs<
   // Create bound DO class with runtime registry injected
   class BoundJobsEngine extends DurableJobsEngine {
     constructor(state: DurableObjectState, env: unknown) {
-      // Inject runtime registry into environment
+      // Inject runtime registry and tracker config into environment
       const enrichedEnv: JobsEngineConfig = {
         ...(env as object),
         __JOB_REGISTRY__: runtimeRegistry,
+        __TRACKER_CONFIG__: options?.tracker,
       };
 
       super(state, enrichedEnv);

@@ -4,8 +4,12 @@ import { Context, Effect, Layer, Schema } from "effect";
 import {
   RuntimeAdapter,
   StorageAdapter,
+  createJobBaseEvent,
+  emitEvent,
   type StorageError,
   type SchedulerError,
+  type InternalDebounceStartedEvent,
+  type InternalDebounceFlushedEvent,
 } from "@durable-effect/core";
 import { MetadataService } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
@@ -149,6 +153,14 @@ export const DebounceHandlerLayer = Layer.effect(
 
         if (created) {
           yield* alarm.schedule(def.flushAfter);
+
+          // Emit debounce.started event for first event
+          const scheduledAt = yield* alarm.getScheduled();
+          yield* emitEvent({
+            ...createJobBaseEvent(runtime.instanceId, "debounce", request.name),
+            type: "debounce.started" as const,
+            flushAt: scheduledAt ? new Date(scheduledAt).toISOString() : new Date().toISOString(),
+          } satisfies InternalDebounceStartedEvent);
         }
 
         const willFlushAt = yield* alarm.getScheduled();
@@ -209,9 +221,22 @@ export const DebounceHandlerLayer = Layer.effect(
           };
         }
 
+        // Get startedAt for duration calculation
+        const startedAt = yield* getStartedAt();
+        const durationMs = startedAt ? Date.now() - startedAt : 0;
+
         const result = yield* runFlush(def, reason);
 
         if (result.success) {
+          // Emit debounce.flushed event
+          yield* emitEvent({
+            ...createJobBaseEvent(runtime.instanceId, "debounce", def.name),
+            type: "debounce.flushed" as const,
+            eventCount,
+            reason: reason === "flushAfter" ? "timeout" : reason,
+            durationMs,
+          } satisfies InternalDebounceFlushedEvent);
+
           // Success - purge state after flush
           yield* purge();
         } else if (result.terminated) {

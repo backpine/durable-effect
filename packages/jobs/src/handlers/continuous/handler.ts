@@ -4,8 +4,12 @@ import { Context, Effect, Layer } from "effect";
 import {
   RuntimeAdapter,
   StorageAdapter,
+  createJobBaseEvent,
+  emitEvent,
   type StorageError,
   type SchedulerError,
+  type InternalJobStartedEvent,
+  type InternalJobTerminatedEvent,
 } from "@durable-effect/core";
 import { MetadataService, type JobStatus } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
@@ -145,7 +149,14 @@ export const ContinuousHandlerLayer = Layer.effect(
         }
 
         yield* metadata.initialize("continuous", request.name);
-        
+
+        // Emit job.started event
+        yield* emitEvent({
+          ...createJobBaseEvent(runtime.instanceId, "continuous", request.name),
+          type: "job.started" as const,
+          input: request.input,
+        } satisfies InternalJobStartedEvent);
+
         // Initial state set
         // TODO: ExecutionService handles loading, but here we need to set INITIAL state
         // We can use execution service to "seed" state? No, we should just use storage directly for init.
@@ -212,6 +223,17 @@ export const ContinuousHandlerLayer = Layer.effect(
             reason: "not_found",
           };
         }
+
+        // Get run count before deletion for event
+        const runCount = yield* getRunCount();
+
+        // Emit job.terminated event
+        yield* emitEvent({
+          ...createJobBaseEvent(runtime.instanceId, "continuous", existing.name),
+          type: "job.terminated" as const,
+          reason: request.reason,
+          runCount,
+        } satisfies InternalJobTerminatedEvent);
 
         // Cancel alarm
         yield* alarm.cancel();

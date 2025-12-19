@@ -4,8 +4,11 @@ import { Context, Effect, Layer, Schema } from "effect";
 import {
   RuntimeAdapter,
   StorageAdapter,
+  createJobBaseEvent,
+  emitEvent,
   type StorageError,
   type SchedulerError,
+  type InternalTaskScheduledEvent,
 } from "@durable-effect/core";
 import { MetadataService } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
@@ -117,6 +120,8 @@ export const TaskHandlerLayer = Layer.effect(
 
     const applyScheduleChanges = (
       holder: TaskScheduleHolder,
+      jobName: string,
+      trigger: "event" | "execute" | "idle" | "error"
     ): Effect.Effect<void, StorageError | SchedulerError> =>
       Effect.gen(function* () {
         if (!holder.dirty) return;
@@ -127,6 +132,14 @@ export const TaskHandlerLayer = Layer.effect(
         } else if (holder.scheduledAt !== null) {
           yield* alarm.schedule(holder.scheduledAt);
           yield* setScheduledAt(holder.scheduledAt);
+
+          // Emit task.scheduled event
+          yield* emitEvent({
+            ...createJobBaseEvent(runtime.instanceId, "task", jobName),
+            type: "task.scheduled" as const,
+            scheduledAt: new Date(holder.scheduledAt).toISOString(),
+            trigger,
+          } satisfies InternalTaskScheduledEvent);
         }
       });
 
@@ -217,16 +230,19 @@ export const TaskHandlerLayer = Layer.effect(
             }
             
             // Apply schedule changes
-            yield* applyScheduleChanges(scheduleHolder);
-            
+            yield* applyScheduleChanges(scheduleHolder, def.name, triggerType === "onEvent" ? "event" : "execute");
+
             // Maybe run onIdle
             if (def.onIdle) {
                // Check if scheduled
-               const scheduled = scheduleHolder.dirty 
-                  ? scheduleHolder.scheduledAt 
+               const scheduled = scheduleHolder.dirty
+                  ? scheduleHolder.scheduledAt
                   : (yield* getScheduledAt());
-               
+
                if (scheduled === null) {
+                   // Reset dirty flag before onIdle
+                   scheduleHolder.dirty = false;
+
                    const idleCtx = createTaskIdleContext(
                        proxyStateHolder,
                        scheduleHolder,
@@ -236,13 +252,13 @@ export const TaskHandlerLayer = Layer.effect(
                        () => Effect.succeed(base.getState()),
                        () => getScheduledAt().pipe(Effect.catchAll(() => Effect.succeed(null)))
                    );
-                   
+
                    // onIdle doesn't have standard error handling in definition, it returns Effect<void, never, R>
                    // But let's wrap it just in case
                    yield* def.onIdle(idleCtx);
-                   
+
                    // Re-apply schedule changes
-                   yield* applyScheduleChanges(scheduleHolder);
+                   yield* applyScheduleChanges(scheduleHolder, def.name, "idle");
                }
             }
         })

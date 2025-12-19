@@ -1,7 +1,16 @@
 // packages/jobs/src/services/execution.ts
 
 import { Context, Effect, Layer, type Schema } from "effect";
-import { RuntimeAdapter, StorageAdapter } from "@durable-effect/core";
+import {
+  RuntimeAdapter,
+  StorageAdapter,
+  createJobBaseEvent,
+  emitEvent,
+  type InternalJobExecutedEvent,
+  type InternalJobFailedEvent,
+  type InternalJobRetryExhaustedEvent,
+  type JobType,
+} from "@durable-effect/core";
 import {
   RetryExecutor,
   RetryExhaustedSignal,
@@ -128,6 +137,9 @@ export const JobExecutionServiceLayer = Layer.effect(
             onRetryExhausted,
           } = options;
 
+          // Track execution start time for duration calculation
+          const startTime = Date.now();
+
           const stateService = yield* withStorage(
             createEntityStateService(schema)
           );
@@ -223,7 +235,17 @@ export const JobExecutionServiceLayer = Layer.effect(
               // Handle retry scheduled signal
               if (error instanceof RetryScheduledSignal) {
                 retryScheduled = true;
-                return Effect.void;
+                // Emit job.failed event with willRetry: true
+                return emitEvent({
+                  ...createJobBaseEvent(runtime.instanceId, jobType as JobType, jobName),
+                  type: "job.failed" as const,
+                  error: {
+                    message: `Retry scheduled for attempt ${error.attempt + 1}`,
+                  },
+                  runCount: options.runCount ?? 0,
+                  attempt: error.attempt,
+                  willRetry: true,
+                } satisfies InternalJobFailedEvent);
               }
 
               // Handle terminate signal (from ctx.terminate())
@@ -238,6 +260,14 @@ export const JobExecutionServiceLayer = Layer.effect(
               // Handle retry exhausted signal
               if (error instanceof RetryExhaustedSignal) {
                 retryExhausted = true;
+
+                // Emit job.retryExhausted event then continue with handler logic
+                const retryExhaustedEvent = emitEvent({
+                  ...createJobBaseEvent(runtime.instanceId, jobType as JobType, jobName),
+                  type: "job.retryExhausted" as const,
+                  attempts: error.attempts,
+                  reason: "max_attempts" as const,
+                } satisfies InternalJobRetryExhaustedEvent);
 
                 if (onRetryExhausted) {
                   // User has handler - create context and call it
@@ -268,21 +298,29 @@ export const JobExecutionServiceLayer = Layer.effect(
                       }).pipe(Effect.catchAll(() => Effect.void)) as Effect.Effect<void, never, never>,
                   };
 
-                  return (onRetryExhausted(error.lastError as E, exhaustedCtx) as Effect.Effect<void, never, any>).pipe(
-                    Effect.tap(() => {
-                      // If user didn't take action, leave state intact (paused)
-                      terminated = exhaustedCtx._terminated;
-                      rescheduled = exhaustedCtx._rescheduled;
-                    }),
-                    Effect.catchAll(() => Effect.void)
+                  return retryExhaustedEvent.pipe(
+                    Effect.zipRight(
+                      (onRetryExhausted(error.lastError as E, exhaustedCtx) as Effect.Effect<void, never, any>).pipe(
+                        Effect.tap(() => {
+                          // If user didn't take action, leave state intact (paused)
+                          terminated = exhaustedCtx._terminated;
+                          rescheduled = exhaustedCtx._rescheduled;
+                        }),
+                        Effect.catchAll(() => Effect.void)
+                      )
+                    )
                   );
                 }
 
                 // No handler - default behavior: terminate (purge everything)
                 terminated = true;
                 terminateReason = `Retry exhausted after ${error.attempts} attempts`;
-                return cleanup.terminate().pipe(
-                  Effect.catchAll(() => Effect.void)
+                return retryExhaustedEvent.pipe(
+                  Effect.zipRight(
+                    cleanup.terminate().pipe(
+                      Effect.catchAll(() => Effect.void)
+                    )
+                  )
                 );
               }
 
@@ -294,6 +332,15 @@ export const JobExecutionServiceLayer = Layer.effect(
           // Determine success
           if (!retryScheduled && !terminated && !rescheduled && !retryExhausted) {
             success = true;
+            // Emit job.executed event on success
+            const durationMs = Date.now() - startTime;
+            yield* emitEvent({
+              ...createJobBaseEvent(runtime.instanceId, jobType as JobType, jobName),
+              type: "job.executed" as const,
+              runCount: options.runCount ?? 0,
+              durationMs,
+              attempt,
+            } satisfies InternalJobExecutedEvent);
           }
 
           // Save state if modified and not terminated
