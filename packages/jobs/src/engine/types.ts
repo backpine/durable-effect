@@ -1,5 +1,6 @@
 // packages/jobs/src/engine/types.ts
 
+import type { HttpBatchTrackerConfig } from "@durable-effect/core";
 import type { JobRequest, JobResponse } from "../runtime/types";
 import type { RuntimeJobRegistry } from "../registry/typed";
 
@@ -17,6 +18,12 @@ export interface JobsEngineConfig {
    * The job registry containing all registered jobs.
    */
   readonly __JOB_REGISTRY__: RuntimeJobRegistry;
+
+  /**
+   * Optional tracker configuration.
+   * If provided, events will be sent to the configured endpoint.
+   */
+  readonly __TRACKER_CONFIG__?: HttpBatchTrackerConfig;
 }
 
 // =============================================================================

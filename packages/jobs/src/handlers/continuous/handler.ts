@@ -4,8 +4,12 @@ import { Context, Effect, Layer } from "effect";
 import {
   RuntimeAdapter,
   StorageAdapter,
+  createJobBaseEvent,
+  emitEvent,
   type StorageError,
   type SchedulerError,
+  type InternalJobStartedEvent,
+  type InternalJobTerminatedEvent,
 } from "@durable-effect/core";
 import { MetadataService, type JobStatus } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
@@ -96,7 +100,8 @@ export const ContinuousHandlerLayer = Layer.effect(
 
     const runExecution = (
       def: ContinuousDefinition<unknown, unknown, never>,
-      runCount: number
+      runCount: number,
+      id?: string
     ): Effect.Effect<ExecutionResult, ExecutionError> =>
       execution.execute({
         jobType: "continuous",
@@ -104,6 +109,7 @@ export const ContinuousHandlerLayer = Layer.effect(
         schema: def.stateSchema,
         retryConfig: def.retry,
         runCount,
+        id,
         run: (ctx: ContinuousContext<unknown>) => def.execute(ctx),
         createContext: (base) => {
           const proxyHolder: StateHolder<any> = {
@@ -144,8 +150,15 @@ export const ContinuousHandlerLayer = Layer.effect(
           };
         }
 
-        yield* metadata.initialize("continuous", request.name);
-        
+        yield* metadata.initialize("continuous", request.name, request.id);
+
+        // Emit job.started event
+        yield* emitEvent({
+          ...createJobBaseEvent(runtime.instanceId, "continuous", request.name, request.id),
+          type: "job.started" as const,
+          input: request.input,
+        } satisfies InternalJobStartedEvent);
+
         // Initial state set
         // TODO: ExecutionService handles loading, but here we need to set INITIAL state
         // We can use execution service to "seed" state? No, we should just use storage directly for init.
@@ -164,7 +177,7 @@ export const ContinuousHandlerLayer = Layer.effect(
 
         if (def.startImmediately !== false) {
           const runCount = yield* incrementRunCount();
-          const result = yield* runExecution(def, runCount);
+          const result = yield* runExecution(def, runCount, request.id);
           
           if (result.terminated) {
             // Terminated - CleanupService has already purged everything
@@ -213,6 +226,17 @@ export const ContinuousHandlerLayer = Layer.effect(
           };
         }
 
+        // Get run count before deletion for event
+        const runCount = yield* getRunCount();
+
+        // Emit job.terminated event
+        yield* emitEvent({
+          ...createJobBaseEvent(runtime.instanceId, "continuous", existing.name, existing.id),
+          type: "job.terminated" as const,
+          reason: request.reason,
+          runCount,
+        } satisfies InternalJobTerminatedEvent);
+
         // Cancel alarm
         yield* alarm.cancel();
 
@@ -249,7 +273,7 @@ export const ContinuousHandlerLayer = Layer.effect(
         yield* retryExecutor.reset().pipe(Effect.ignore);
 
         const runCount = yield* incrementRunCount();
-        const result = yield* runExecution(def, runCount);
+        const result = yield* runExecution(def, runCount, existing.id);
 
         if (result.terminated) {
           // Terminated - CleanupService has already purged everything
@@ -380,7 +404,7 @@ export const ContinuousHandlerLayer = Layer.effect(
             runCount = yield* incrementRunCount();
           }
 
-          const result = yield* runExecution(def, runCount);
+          const result = yield* runExecution(def, runCount, meta.id);
 
           if (result.retryScheduled) {
             return;

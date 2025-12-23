@@ -1,7 +1,14 @@
 // packages/jobs/src/runtime/runtime.ts
 
 import { Effect, Layer } from "effect";
-import { createDurableObjectRuntime, flushEvents, type RuntimeLayer } from "@durable-effect/core";
+import {
+  createDurableObjectRuntime,
+  flushEvents,
+  HttpBatchTrackerLayer,
+  NoopTrackerLayer,
+  type RuntimeLayer,
+  type HttpBatchTrackerConfig,
+} from "@durable-effect/core";
 import { RuntimeServicesLayer, RegistryServiceLayer, JobExecutionServiceLayer, CleanupServiceLayer } from "../services";
 import { JobHandlersLayer, RetryExecutorLayer } from "../handlers";
 import { Dispatcher, DispatcherLayer } from "./dispatcher";
@@ -26,6 +33,12 @@ export interface JobsRuntimeConfig {
    * Required for handlers to look up definitions.
    */
   readonly registry: RuntimeJobRegistry;
+
+  /**
+   * Optional tracker configuration.
+   * If provided, events will be sent to the configured endpoint.
+   */
+  readonly trackerConfig?: HttpBatchTrackerConfig;
 }
 
 /**
@@ -64,13 +77,22 @@ export interface JobsRuntime {
  */
 function createDispatcherLayer(
   coreLayer: RuntimeLayer,
-  registry: RuntimeJobRegistry
+  registry: RuntimeJobRegistry,
+  trackerConfig?: HttpBatchTrackerConfig
 ): Layer.Layer<Dispatcher> {
+  // Tracker layer (if config provided, otherwise noop)
+  const trackerLayer = trackerConfig
+    ? HttpBatchTrackerLayer(trackerConfig)
+    : NoopTrackerLayer;
+
+  // Base layer with core + tracker
+  const baseLayer = Layer.provideMerge(coreLayer, trackerLayer);
+
   // Registry layer
   const registryLayer = RegistryServiceLayer(registry);
 
   // Runtime services layer (MetadataService, AlarmService, IdempotencyService)
-  const servicesLayer = RuntimeServicesLayer.pipe(Layer.provideMerge(coreLayer));
+  const servicesLayer = RuntimeServicesLayer.pipe(Layer.provideMerge(baseLayer));
 
   // Cleanup service layer (depends on AlarmService and StorageAdapter)
   const cleanupLayer = CleanupServiceLayer.pipe(Layer.provideMerge(servicesLayer));
@@ -82,7 +104,7 @@ function createDispatcherLayer(
   const executionLayer = JobExecutionServiceLayer.pipe(
     Layer.provideMerge(retryLayer),
     Layer.provideMerge(cleanupLayer),
-    Layer.provideMerge(coreLayer)
+    Layer.provideMerge(baseLayer)
   );
 
   // Handlers layer (ContinuousHandler, DebounceHandler, etc.)
@@ -115,7 +137,10 @@ function createRuntimeFromDispatcherLayer(
       runEffect(
         Effect.gen(function* () {
           const dispatcher = yield* Dispatcher;
-          return yield* dispatcher.handle(request);
+          const result = yield* dispatcher.handle(request);
+          // Flush events in the same execution context to preserve tracker instance
+          yield* flushEvents;
+          return result;
         })
       ),
 
@@ -124,10 +149,13 @@ function createRuntimeFromDispatcherLayer(
         Effect.gen(function* () {
           const dispatcher = yield* Dispatcher;
           yield* dispatcher.handleAlarm();
+          // Flush events in the same execution context to preserve tracker instance
+          yield* flushEvents;
         })
       ),
 
-    flush: () => runEffect(flushEvents),
+    // Kept for backwards compatibility but no longer needed
+    flush: () => Effect.runPromise(Effect.void),
   };
 }
 
@@ -175,7 +203,11 @@ export function createJobsRuntime(
   }
 
   const coreLayer = createDurableObjectRuntime(config.doState);
-  const dispatcherLayer = createDispatcherLayer(coreLayer, config.registry);
+  const dispatcherLayer = createDispatcherLayer(
+    coreLayer,
+    config.registry,
+    config.trackerConfig
+  );
 
   return createRuntimeFromDispatcherLayer(dispatcherLayer);
 }
@@ -201,9 +233,10 @@ export function createJobsRuntime(
  */
 export function createJobsRuntimeFromLayer(
   coreLayer: RuntimeLayer,
-  registry: RuntimeJobRegistry
+  registry: RuntimeJobRegistry,
+  trackerConfig?: HttpBatchTrackerConfig
 ): JobsRuntime {
-  const dispatcherLayer = createDispatcherLayer(coreLayer, registry);
+  const dispatcherLayer = createDispatcherLayer(coreLayer, registry, trackerConfig);
 
   return createRuntimeFromDispatcherLayer(dispatcherLayer);
 }

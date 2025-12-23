@@ -52,7 +52,8 @@ export const debounceExample = Debounce.make({
     Effect.gen(function* () {
       const state = yield* ctx.state;
       const eventCount = yield* ctx.eventCount;
-
+      yield* Effect.tryPromise(() => fetch("http://localhost:3000/api/health"));
+      // yield* Effect.fail("Debounce job failed");
       yield* Effect.log(
         `Debounce flushed! Events: ${eventCount}, Last action: ${state?.actionId}, Reason: ${ctx.flushReason}`,
       );

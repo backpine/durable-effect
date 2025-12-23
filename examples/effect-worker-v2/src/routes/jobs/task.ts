@@ -34,7 +34,7 @@ export const taskRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(SendEventRequest);
 
-      const result = yield* client.task("basicTask").send({
+      const result = yield* client.task("basicTask2").send({
         id: body.id,
         event: { targetRuns: body.targetRuns },
       });
@@ -46,7 +46,7 @@ export const taskRoutes = HttpRouter.empty.pipe(
           scheduledAt: result.scheduledAt,
         },
       });
-    })
+    }),
   ),
 
   // POST /task/status - Get task status
@@ -57,13 +57,13 @@ export const taskRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.task("basicTask").status(body.id);
+      const result = yield* client.task("basicTask2").status(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
         result,
       });
-    })
+    }),
   ),
 
   // POST /task/state - Get task state
@@ -74,7 +74,7 @@ export const taskRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.task("basicTask").getState(body.id);
+      const result = yield* client.task("basicTask2").getState(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
@@ -84,7 +84,7 @@ export const taskRoutes = HttpRouter.empty.pipe(
           scheduledAt: result.scheduledAt,
         },
       });
-    })
+    }),
   ),
 
   // POST /task/terminate - Terminate task
@@ -95,7 +95,7 @@ export const taskRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.task("basicTask").terminate(body.id);
+      const result = yield* client.task("basicTask2").terminate(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
@@ -104,6 +104,6 @@ export const taskRoutes = HttpRouter.empty.pipe(
           terminated: result.terminated,
         },
       });
-    })
-  )
+    }),
+  ),
 );

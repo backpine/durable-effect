@@ -4,8 +4,11 @@ import { Context, Effect, Layer, Schema } from "effect";
 import {
   RuntimeAdapter,
   StorageAdapter,
+  createJobBaseEvent,
+  emitEvent,
   type StorageError,
   type SchedulerError,
+  type InternalTaskScheduledEvent,
 } from "@durable-effect/core";
 import { MetadataService } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
@@ -117,6 +120,9 @@ export const TaskHandlerLayer = Layer.effect(
 
     const applyScheduleChanges = (
       holder: TaskScheduleHolder,
+      jobName: string,
+      trigger: "event" | "execute" | "idle" | "error",
+      id?: string
     ): Effect.Effect<void, StorageError | SchedulerError> =>
       Effect.gen(function* () {
         if (!holder.dirty) return;
@@ -127,6 +133,14 @@ export const TaskHandlerLayer = Layer.effect(
         } else if (holder.scheduledAt !== null) {
           yield* alarm.schedule(holder.scheduledAt);
           yield* setScheduledAt(holder.scheduledAt);
+
+          // Emit task.scheduled event
+          yield* emitEvent({
+            ...createJobBaseEvent(runtime.instanceId, "task", jobName, id),
+            type: "task.scheduled" as const,
+            scheduledAt: new Date(holder.scheduledAt).toISOString(),
+            trigger,
+          } satisfies InternalTaskScheduledEvent);
         }
       });
 
@@ -134,14 +148,16 @@ export const TaskHandlerLayer = Layer.effect(
       def: StoredTaskDefinition<any, any, any>,
       runCount: number,
       triggerType: "execute" | "onEvent",
-      event?: any
-    ) => 
+      event?: any,
+      id?: string
+    ) =>
       execution.execute({
         jobType: "task",
         jobName: def.name,
         schema: def.stateSchema,
         retryConfig: undefined,
         runCount,
+        id,
         allowNullState: true,
         createContext: (base) => {
             const scheduleHolder: TaskScheduleHolder = {
@@ -217,16 +233,19 @@ export const TaskHandlerLayer = Layer.effect(
             }
             
             // Apply schedule changes
-            yield* applyScheduleChanges(scheduleHolder);
-            
+            yield* applyScheduleChanges(scheduleHolder, def.name, triggerType === "onEvent" ? "event" : "execute", id);
+
             // Maybe run onIdle
             if (def.onIdle) {
                // Check if scheduled
-               const scheduled = scheduleHolder.dirty 
-                  ? scheduleHolder.scheduledAt 
+               const scheduled = scheduleHolder.dirty
+                  ? scheduleHolder.scheduledAt
                   : (yield* getScheduledAt());
-               
+
                if (scheduled === null) {
+                   // Reset dirty flag before onIdle
+                   scheduleHolder.dirty = false;
+
                    const idleCtx = createTaskIdleContext(
                        proxyStateHolder,
                        scheduleHolder,
@@ -236,13 +255,13 @@ export const TaskHandlerLayer = Layer.effect(
                        () => Effect.succeed(base.getState()),
                        () => getScheduledAt().pipe(Effect.catchAll(() => Effect.succeed(null)))
                    );
-                   
+
                    // onIdle doesn't have standard error handling in definition, it returns Effect<void, never, R>
                    // But let's wrap it just in case
                    yield* def.onIdle(idleCtx);
-                   
+
                    // Re-apply schedule changes
-                   yield* applyScheduleChanges(scheduleHolder);
+                   yield* applyScheduleChanges(scheduleHolder, def.name, "idle", id);
                }
             }
         })
@@ -258,7 +277,7 @@ export const TaskHandlerLayer = Layer.effect(
         const now = yield* runtime.now();
 
         if (created) {
-          yield* metadata.initialize("task", request.name);
+          yield* metadata.initialize("task", request.name, request.id);
           yield* metadata.updateStatus("running");
           yield* setCreatedAt(now);
           yield* storage.put(KEYS.TASK.EVENT_COUNT, 0);
@@ -277,7 +296,7 @@ export const TaskHandlerLayer = Layer.effect(
           }))
         );
 
-        yield* runExecution(def, 0, "onEvent", validatedEvent);
+        yield* runExecution(def, 0, "onEvent", validatedEvent, request.id);
 
         const scheduledAt = yield* getScheduledAt();
 
@@ -303,7 +322,7 @@ export const TaskHandlerLayer = Layer.effect(
         }
 
         yield* incrementExecuteCount();
-        yield* runExecution(def, 0, "execute");
+        yield* runExecution(def, 0, "execute", undefined, meta.id);
 
         return {
           _type: "task.trigger" as const,
@@ -434,7 +453,7 @@ export const TaskHandlerLayer = Layer.effect(
           const def = yield* getDefinition(meta.name);
 
           yield* incrementExecuteCount();
-          yield* runExecution(def, 0, "execute");
+          yield* runExecution(def, 0, "execute", undefined, meta.id);
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(

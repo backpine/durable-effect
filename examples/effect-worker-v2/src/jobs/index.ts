@@ -30,15 +30,24 @@ import { debounceExample } from "./basic-debounce";
  * });
  * ```
  */
-export const { Jobs, JobsClient, registry } = createDurableJobs({
-  // Task jobs
-  basicTask,
+export const { Jobs, JobsClient, registry } = createDurableJobs(
+  {
+    // Task jobs
+    basicTask2: basicTask,
 
-  // Continuous jobs
-  heartbeat,
-  // Debounce job
-  debounceExample,
-});
+    // Continuous jobs
+    heartbeat2: heartbeat,
+    // Debounce job
+    debounceExample2: debounceExample,
+  },
+  {
+    tracker: {
+      endpoint: "http://localhost:3000/sync",
+      env: "dev",
+      serviceKey: "my-service-key",
+    },
+  },
+);
 
 // =============================================================================
 // Type Exports

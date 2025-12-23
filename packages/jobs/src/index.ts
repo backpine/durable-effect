@@ -25,6 +25,7 @@
 export {
   createDurableJobs,
   type CreateDurableJobsResult,
+  type CreateDurableJobsOptions,
   type InferRegistryFromDefinitions,
 } from "./factory";
 
@@ -256,3 +257,24 @@ export {
   type DebounceResponse,
   JobHandlersLayer,
 } from "./handlers";
+
+// =============================================================================
+// Tracker (Re-exported from @durable-effect/core)
+// =============================================================================
+
+export {
+  // Tracker config
+  type HttpBatchTrackerConfig,
+  // Job event types
+  type InternalJobEvent,
+  type InternalJobStartedEvent,
+  type InternalJobExecutedEvent,
+  type InternalJobFailedEvent,
+  type InternalJobRetryExhaustedEvent,
+  type InternalJobTerminatedEvent,
+  type InternalDebounceStartedEvent,
+  type InternalDebounceFlushedEvent,
+  type InternalTaskScheduledEvent,
+  // Wire event types (with env/serviceKey)
+  type JobEvent,
+} from "@durable-effect/core";

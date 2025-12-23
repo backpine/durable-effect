@@ -27,7 +27,7 @@ export const basicTask = Task.make({
           currentRun: 0,
         });
 
-        yield* ctx.schedule(Date.now() + 5000);
+        yield* ctx.schedule(Date.now() + 200);
       }
     }),
 

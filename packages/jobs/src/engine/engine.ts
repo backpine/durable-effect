@@ -60,11 +60,12 @@ export class DurableJobsEngine
       throw new Error("DurableJobsEngine requires __JOB_REGISTRY__ in env");
     }
 
-    // Create the runtime with DO state and registry
+    // Create the runtime with DO state, registry, and optional tracker config
     // The runtime handles all Effect complexity
     this.#runtime = createJobsRuntime({
       doState: state,
       registry: env.__JOB_REGISTRY__,
+      trackerConfig: env.__TRACKER_CONFIG__,
     });
   }
 
@@ -78,13 +79,8 @@ export class DurableJobsEngine
    * @returns The typed response
    */
   async call(request: JobRequest): Promise<JobResponse> {
-    // Delegate to runtime
-    const result = await this.#runtime.handle(request);
-
-    // Fire-and-forget event flushing - don't block response
-    this.ctx.waitUntil(this.#runtime.flush());
-
-    return result;
+    // Delegate to runtime (flush happens inside runtime.handle)
+    return this.#runtime.handle(request);
   }
 
   /**
@@ -94,10 +90,7 @@ export class DurableJobsEngine
    * then delegates to the appropriate handler.
    */
   async alarm(): Promise<void> {
-    // Delegate to runtime
+    // Delegate to runtime (flush happens inside runtime.handleAlarm)
     await this.#runtime.handleAlarm();
-
-    // Fire-and-forget event flushing
-    this.ctx.waitUntil(this.#runtime.flush());
   }
 }

@@ -55,9 +55,6 @@ const InternalWorkflowBaseFields = {
   executionId: Schema.optional(Schema.String),
 };
 
-/** @deprecated Use InternalWorkflowBaseFields instead */
-const InternalBaseEventFields = InternalWorkflowBaseFields;
-
 export const InternalBaseEventSchema = Schema.Struct(InternalWorkflowBaseFields);
 export type InternalBaseEvent = Schema.Schema.Type<typeof InternalBaseEventSchema>;
 
@@ -78,8 +75,10 @@ const InternalJobBaseFields = {
   ...SharedBaseFields,
   /** Event source discriminator */
   source: Schema.Literal("job"),
-  /** Durable Object instance ID */
+  /** Durable Object instance ID (format: {type}:{name}:{id}) */
   instanceId: Schema.String,
+  /** User-provided ID for business logic correlation */
+  id: Schema.optional(Schema.String),
   /** Job type discriminator */
   jobType: Schema.Literal("continuous", "debounce", "task", "workerPool"),
   /** Job definition name */
@@ -105,9 +104,6 @@ const WireWorkflowBaseFields = {
   serviceKey: Schema.String,
 };
 
-/** @deprecated Use WireWorkflowBaseFields instead */
-const WireBaseEventFields = WireWorkflowBaseFields;
-
 export const BaseEventSchema = Schema.Struct(WireWorkflowBaseFields);
 export type BaseEvent = Schema.Schema.Type<typeof BaseEventSchema>;
 
@@ -130,7 +126,7 @@ const WireJobBaseFields = {
  * Emitted when a workflow starts execution.
  */
 export const InternalWorkflowStartedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("workflow.started"),
   input: Schema.Unknown,
 });
@@ -140,7 +136,7 @@ export type InternalWorkflowStartedEvent = Schema.Schema.Type<typeof InternalWor
  * Emitted when a workflow is queued for async execution.
  */
 export const InternalWorkflowQueuedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("workflow.queued"),
   input: Schema.Unknown,
 });
@@ -150,7 +146,7 @@ export type InternalWorkflowQueuedEvent = Schema.Schema.Type<typeof InternalWork
  * Emitted when a workflow completes successfully.
  */
 export const InternalWorkflowCompletedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("workflow.completed"),
   completedSteps: Schema.Array(Schema.String),
   durationMs: Schema.Number,
@@ -171,7 +167,7 @@ const WorkflowErrorSchema = Schema.Struct({
  * Emitted when a workflow fails permanently.
  */
 export const InternalWorkflowFailedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("workflow.failed"),
   error: WorkflowErrorSchema,
   completedSteps: Schema.Array(Schema.String),
@@ -182,7 +178,7 @@ export type InternalWorkflowFailedEvent = Schema.Schema.Type<typeof InternalWork
  * Emitted when a workflow pauses (sleep or retry).
  */
 export const InternalWorkflowPausedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("workflow.paused"),
   reason: Schema.Literal("sleep", "retry"),
   resumeAt: Schema.optional(Schema.String),
@@ -194,7 +190,7 @@ export type InternalWorkflowPausedEvent = Schema.Schema.Type<typeof InternalWork
  * Emitted when a workflow resumes from a pause.
  */
 export const InternalWorkflowResumedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("workflow.resumed"),
 });
 export type InternalWorkflowResumedEvent = Schema.Schema.Type<typeof InternalWorkflowResumedEventSchema>;
@@ -203,7 +199,7 @@ export type InternalWorkflowResumedEvent = Schema.Schema.Type<typeof InternalWor
  * Emitted when a workflow is cancelled.
  */
 export const InternalWorkflowCancelledEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("workflow.cancelled"),
   reason: Schema.optional(Schema.String),
   completedSteps: Schema.Array(Schema.String),
@@ -218,7 +214,7 @@ export type InternalWorkflowCancelledEvent = Schema.Schema.Type<typeof InternalW
  * Emitted when a step starts execution.
  */
 export const InternalStepStartedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("step.started"),
   stepName: Schema.String,
   attempt: Schema.Number,
@@ -229,7 +225,7 @@ export type InternalStepStartedEvent = Schema.Schema.Type<typeof InternalStepSta
  * Emitted when a step completes successfully.
  */
 export const InternalStepCompletedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("step.completed"),
   stepName: Schema.String,
   attempt: Schema.Number,
@@ -251,7 +247,7 @@ const StepErrorSchema = Schema.Struct({
  * Emitted when a step fails.
  */
 export const InternalStepFailedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("step.failed"),
   stepName: Schema.String,
   attempt: Schema.Number,
@@ -269,7 +265,7 @@ export type InternalStepFailedEvent = Schema.Schema.Type<typeof InternalStepFail
  * Emitted when a retry is scheduled.
  */
 export const InternalRetryScheduledEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("retry.scheduled"),
   stepName: Schema.String,
   attempt: Schema.Number,
@@ -282,7 +278,7 @@ export type InternalRetryScheduledEvent = Schema.Schema.Type<typeof InternalRetr
  * Emitted when all retry attempts are exhausted.
  */
 export const InternalRetryExhaustedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("retry.exhausted"),
   stepName: Schema.String,
   attempts: Schema.Number,
@@ -297,7 +293,7 @@ export type InternalRetryExhaustedEvent = Schema.Schema.Type<typeof InternalRetr
  * Emitted when a sleep starts.
  */
 export const InternalSleepStartedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("sleep.started"),
   durationMs: Schema.Number,
   resumeAt: Schema.String,
@@ -308,7 +304,7 @@ export type InternalSleepStartedEvent = Schema.Schema.Type<typeof InternalSleepS
  * Emitted when a sleep completes.
  */
 export const InternalSleepCompletedEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("sleep.completed"),
   durationMs: Schema.Number,
 });
@@ -322,7 +318,7 @@ export type InternalSleepCompletedEvent = Schema.Schema.Type<typeof InternalSlee
  * Emitted when a timeout deadline is set.
  */
 export const InternalTimeoutSetEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("timeout.set"),
   stepName: Schema.String,
   deadline: Schema.String,
@@ -334,7 +330,7 @@ export type InternalTimeoutSetEvent = Schema.Schema.Type<typeof InternalTimeoutS
  * Emitted when a timeout deadline is exceeded.
  */
 export const InternalTimeoutExceededEventSchema = Schema.Struct({
-  ...InternalBaseEventFields,
+  ...InternalWorkflowBaseFields,
   type: Schema.Literal("timeout.exceeded"),
   stepName: Schema.String,
   timeoutMs: Schema.Number,
@@ -384,21 +380,21 @@ export type InternalWorkflowEvent = Schema.Schema.Type<typeof InternalWorkflowEv
 // =============================================================================
 
 export const WorkflowStartedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("workflow.started"),
   input: Schema.Unknown,
 });
 export type WorkflowStartedEvent = Schema.Schema.Type<typeof WorkflowStartedEventSchema>;
 
 export const WorkflowQueuedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("workflow.queued"),
   input: Schema.Unknown,
 });
 export type WorkflowQueuedEvent = Schema.Schema.Type<typeof WorkflowQueuedEventSchema>;
 
 export const WorkflowCompletedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("workflow.completed"),
   completedSteps: Schema.Array(Schema.String),
   durationMs: Schema.Number,
@@ -406,7 +402,7 @@ export const WorkflowCompletedEventSchema = Schema.Struct({
 export type WorkflowCompletedEvent = Schema.Schema.Type<typeof WorkflowCompletedEventSchema>;
 
 export const WorkflowFailedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("workflow.failed"),
   error: WorkflowErrorSchema,
   completedSteps: Schema.Array(Schema.String),
@@ -414,7 +410,7 @@ export const WorkflowFailedEventSchema = Schema.Struct({
 export type WorkflowFailedEvent = Schema.Schema.Type<typeof WorkflowFailedEventSchema>;
 
 export const WorkflowPausedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("workflow.paused"),
   reason: Schema.Literal("sleep", "retry"),
   resumeAt: Schema.optional(Schema.String),
@@ -423,13 +419,13 @@ export const WorkflowPausedEventSchema = Schema.Struct({
 export type WorkflowPausedEvent = Schema.Schema.Type<typeof WorkflowPausedEventSchema>;
 
 export const WorkflowResumedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("workflow.resumed"),
 });
 export type WorkflowResumedEvent = Schema.Schema.Type<typeof WorkflowResumedEventSchema>;
 
 export const WorkflowCancelledEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("workflow.cancelled"),
   reason: Schema.optional(Schema.String),
   completedSteps: Schema.Array(Schema.String),
@@ -437,7 +433,7 @@ export const WorkflowCancelledEventSchema = Schema.Struct({
 export type WorkflowCancelledEvent = Schema.Schema.Type<typeof WorkflowCancelledEventSchema>;
 
 export const StepStartedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("step.started"),
   stepName: Schema.String,
   attempt: Schema.Number,
@@ -445,7 +441,7 @@ export const StepStartedEventSchema = Schema.Struct({
 export type StepStartedEvent = Schema.Schema.Type<typeof StepStartedEventSchema>;
 
 export const StepCompletedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("step.completed"),
   stepName: Schema.String,
   attempt: Schema.Number,
@@ -455,7 +451,7 @@ export const StepCompletedEventSchema = Schema.Struct({
 export type StepCompletedEvent = Schema.Schema.Type<typeof StepCompletedEventSchema>;
 
 export const StepFailedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("step.failed"),
   stepName: Schema.String,
   attempt: Schema.Number,
@@ -465,7 +461,7 @@ export const StepFailedEventSchema = Schema.Struct({
 export type StepFailedEvent = Schema.Schema.Type<typeof StepFailedEventSchema>;
 
 export const RetryScheduledEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("retry.scheduled"),
   stepName: Schema.String,
   attempt: Schema.Number,
@@ -475,7 +471,7 @@ export const RetryScheduledEventSchema = Schema.Struct({
 export type RetryScheduledEvent = Schema.Schema.Type<typeof RetryScheduledEventSchema>;
 
 export const RetryExhaustedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("retry.exhausted"),
   stepName: Schema.String,
   attempts: Schema.Number,
@@ -483,7 +479,7 @@ export const RetryExhaustedEventSchema = Schema.Struct({
 export type RetryExhaustedEvent = Schema.Schema.Type<typeof RetryExhaustedEventSchema>;
 
 export const SleepStartedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("sleep.started"),
   durationMs: Schema.Number,
   resumeAt: Schema.String,
@@ -491,14 +487,14 @@ export const SleepStartedEventSchema = Schema.Struct({
 export type SleepStartedEvent = Schema.Schema.Type<typeof SleepStartedEventSchema>;
 
 export const SleepCompletedEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("sleep.completed"),
   durationMs: Schema.Number,
 });
 export type SleepCompletedEvent = Schema.Schema.Type<typeof SleepCompletedEventSchema>;
 
 export const TimeoutSetEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("timeout.set"),
   stepName: Schema.String,
   deadline: Schema.String,
@@ -507,7 +503,7 @@ export const TimeoutSetEventSchema = Schema.Struct({
 export type TimeoutSetEvent = Schema.Schema.Type<typeof TimeoutSetEventSchema>;
 
 export const TimeoutExceededEventSchema = Schema.Struct({
-  ...WireBaseEventFields,
+  ...WireWorkflowBaseFields,
   type: Schema.Literal("timeout.exceeded"),
   stepName: Schema.String,
   timeoutMs: Schema.Number,
@@ -865,11 +861,6 @@ export function createWorkflowBaseEvent(
   };
 }
 
-/**
- * Create the base fields for an internal workflow event.
- * @deprecated Use createWorkflowBaseEvent instead
- */
-export const createBaseEvent = createWorkflowBaseEvent;
 
 /**
  * Create the base fields for an internal job event.
@@ -878,11 +869,13 @@ export const createBaseEvent = createWorkflowBaseEvent;
  * @param instanceId - Durable Object instance ID
  * @param jobType - The job type (continuous, debounce, task, workerPool)
  * @param jobName - Job definition name
+ * @param id - Optional user-provided ID for business logic correlation
  */
 export function createJobBaseEvent(
   instanceId: string,
   jobType: JobType,
   jobName: string,
+  id?: string,
 ): InternalJobBaseEvent {
   return {
     eventId: uuidv7(),
@@ -891,6 +884,7 @@ export function createJobBaseEvent(
     instanceId,
     jobType,
     jobName,
+    ...(id !== undefined && { id }),
   };
 }
 
@@ -909,11 +903,6 @@ export function enrichWorkflowEvent<T extends InternalWorkflowEvent>(
   };
 }
 
-/**
- * Enrich an internal workflow event with env and serviceKey for wire transmission.
- * @deprecated Use enrichWorkflowEvent instead
- */
-export const enrichEvent = enrichWorkflowEvent;
 
 /**
  * Enrich an internal job event with env and serviceKey for wire transmission.

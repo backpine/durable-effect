@@ -35,6 +35,8 @@ export interface JobMetadata {
   readonly status: JobStatus;
   readonly createdAt: number;
   readonly updatedAt: number;
+  /** User-provided ID for business logic correlation */
+  readonly id?: string;
   /** Reason for stopping/terminating (if applicable) */
   readonly stopReason?: string;
 }
@@ -55,10 +57,14 @@ export interface JobMetadata {
 export interface MetadataServiceI {
   /**
    * Initialize metadata for a new job instance.
+   * @param type - Job type
+   * @param name - Job definition name
+   * @param id - Optional user-provided ID for business logic correlation
    */
   readonly initialize: (
     type: JobType,
-    name: string
+    name: string,
+    id?: string
   ) => Effect.Effect<void, StorageError>;
 
   /**
@@ -110,7 +116,7 @@ export const MetadataServiceLayer = Layer.effect(
     const runtime = yield* RuntimeAdapter;
 
     return {
-      initialize: (type: JobType, name: string) =>
+      initialize: (type: JobType, name: string, id?: string) =>
         Effect.gen(function* () {
           const now = yield* runtime.now();
           const metadata: JobMetadata = {
@@ -119,6 +125,7 @@ export const MetadataServiceLayer = Layer.effect(
             status: "initializing",
             createdAt: now,
             updatedAt: now,
+            ...(id !== undefined && { id }),
           };
           yield* storage.put(KEYS.META, metadata);
         }),
