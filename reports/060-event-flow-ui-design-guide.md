@@ -95,6 +95,7 @@ All job events include:
   timestamp: string;      // ISO 8601 - when event occurred
   source: "job";          // Discriminator
   instanceId: string;     // Durable Object ID (unique per instance)
+  id?: string;            // User-provided ID for business logic correlation
   jobType: "continuous" | "debounce" | "task" | "workerPool";
   jobName: string;        // Definition name (e.g., "tokenRefresher")
   env: string;            // Environment
@@ -686,84 +687,179 @@ Use WebSocket or SSE for live updates:
 
 ## Database Schema Recommendations
 
-### Events Table
+The schema uses separate tables for workflow and job events, with JSONB payload columns for event-specific data. This design:
+- Allows efficient queries within each event source
+- Supports full event history with common indexed fields
+- Stores event-specific data in flexible JSONB payload
+
+### Enums
 
 ```sql
-CREATE TABLE tracking_events (
-  event_id UUID PRIMARY KEY,        -- UUIDv7 from eventId
-  timestamp TIMESTAMPTZ NOT NULL,
-  source VARCHAR(10) NOT NULL,      -- 'workflow' or 'job'
-  type VARCHAR(50) NOT NULL,
-  env VARCHAR(50) NOT NULL,
-  service_key VARCHAR(100) NOT NULL,
+-- Workflow event types
+CREATE TYPE de_workflow_event_type AS ENUM (
+  'workflow.queued',
+  'workflow.started',
+  'workflow.paused',
+  'workflow.resumed',
+  'workflow.completed',
+  'workflow.failed',
+  'workflow.cancelled',
+  'step.started',
+  'step.completed',
+  'step.failed',
+  'sleep.started',
+  'sleep.completed',
+  'timeout.set',
+  'timeout.exceeded',
+  'retry.scheduled',
+  'retry.exhausted'
+);
 
-  -- Workflow fields (null for jobs)
-  workflow_id VARCHAR(100),
-  workflow_name VARCHAR(100),
-  execution_id VARCHAR(100),
+-- Job types
+CREATE TYPE de_job_type AS ENUM (
+  'continuous',
+  'debounce',
+  'task',
+  'workerPool'
+);
 
-  -- Job fields (null for workflows)
-  instance_id VARCHAR(100),
-  job_type VARCHAR(20),
-  job_name VARCHAR(100),
+-- Job event types
+CREATE TYPE de_job_event_type AS ENUM (
+  'job.started',
+  'job.executed',
+  'job.failed',
+  'job.retryExhausted',
+  'job.terminated',
+  'debounce.started',
+  'debounce.flushed',
+  'task.scheduled'
+);
+```
 
-  -- Event-specific payload
+### Workflow Events Table
+
+```sql
+CREATE TABLE de_workflow_events (
+  id UUID PRIMARY KEY,                           -- UUIDv7 from eventId
+  event_type de_workflow_event_type NOT NULL,
+  workflow_id TEXT NOT NULL,
+  workflow_name TEXT NOT NULL,
+
+  -- Environment & Service
+  env TEXT NOT NULL,
+  service_key TEXT NOT NULL,
+
+  -- Event timestamp
+  event_timestamp TIMESTAMPTZ NOT NULL,
+
+  -- Full event payload (event-specific data)
   payload JSONB NOT NULL,
 
-  -- Indexes
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  -- Processing metadata
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  processed BOOLEAN NOT NULL DEFAULT FALSE,
+  processed_at TIMESTAMPTZ,
+  processing_error TEXT
 );
 
--- Indexes for common queries
-CREATE INDEX idx_events_workflow ON tracking_events(workflow_id, timestamp DESC);
-CREATE INDEX idx_events_job ON tracking_events(instance_id, timestamp DESC);
-CREATE INDEX idx_events_type ON tracking_events(type, timestamp DESC);
-CREATE INDEX idx_events_env ON tracking_events(env, service_key, timestamp DESC);
+-- Indexes
+CREATE INDEX de_workflow_events_workflow_type_id_idx ON de_workflow_events(workflow_id, event_type, id);
+CREATE INDEX de_workflow_events_workflow_id_idx ON de_workflow_events(workflow_id, id);
+CREATE INDEX de_workflow_events_env_service_idx ON de_workflow_events(env, service_key);
+CREATE INDEX de_workflow_events_workflow_idx ON de_workflow_events(env, service_key, workflow_id, event_timestamp);
+CREATE INDEX de_workflow_events_env_type_idx ON de_workflow_events(env, event_type);
+CREATE INDEX de_workflow_events_unprocessed_idx ON de_workflow_events(received_at);
 ```
 
-### Workflow Runs Table (Materialized)
+### Job Events Table
 
 ```sql
-CREATE TABLE workflow_runs (
-  workflow_id VARCHAR(100) PRIMARY KEY,
-  workflow_name VARCHAR(100) NOT NULL,
-  execution_id VARCHAR(100),
-  env VARCHAR(50) NOT NULL,
-  service_key VARCHAR(100) NOT NULL,
+CREATE TABLE de_job_events (
+  id UUID PRIMARY KEY,                           -- UUIDv7 from eventId
+  event_type de_job_event_type NOT NULL,
+  instance_id TEXT NOT NULL,
+  user_provided_id TEXT,                         -- User-provided ID for business logic correlation
+  job_type de_job_type NOT NULL,
+  job_name TEXT NOT NULL,
 
-  status VARCHAR(20) NOT NULL,      -- running/paused/completed/failed/cancelled
-  started_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  duration_ms INTEGER,
+  -- Environment & Service
+  env TEXT NOT NULL,
+  service_key TEXT NOT NULL,
 
-  completed_steps TEXT[],
-  error_message TEXT,
+  -- Event timestamp
+  event_timestamp TIMESTAMPTZ NOT NULL,
 
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  -- Full event payload (event-specific data)
+  payload JSONB NOT NULL,
+
+  -- Processing metadata
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  processed BOOLEAN NOT NULL DEFAULT FALSE,
+  processed_at TIMESTAMPTZ,
+  processing_error TEXT
 );
+
+-- Indexes
+CREATE INDEX de_job_events_instance_type_id_idx ON de_job_events(instance_id, event_type, id);
+CREATE INDEX de_job_events_instance_id_idx ON de_job_events(instance_id, id);
+CREATE INDEX de_job_events_env_service_idx ON de_job_events(env, service_key);
+CREATE INDEX de_job_events_job_idx ON de_job_events(env, service_key, instance_id, event_timestamp);
+CREATE INDEX de_job_events_env_type_idx ON de_job_events(env, event_type);
+CREATE INDEX de_job_events_job_type_idx ON de_job_events(job_type);
+CREATE INDEX de_job_events_unprocessed_idx ON de_job_events(received_at);
 ```
 
-### Job Runs Table (Materialized)
+### Drizzle ORM Schema (TypeScript)
 
-```sql
-CREATE TABLE job_instances (
-  instance_id VARCHAR(100) PRIMARY KEY,
-  job_type VARCHAR(20) NOT NULL,
-  job_name VARCHAR(100) NOT NULL,
-  env VARCHAR(50) NOT NULL,
-  service_key VARCHAR(100) NOT NULL,
+The above SQL is generated from this Drizzle schema at `durable-effect-ui/worker/db/schema.ts`:
 
-  status VARCHAR(20) NOT NULL,      -- running/terminated
-  run_count INTEGER DEFAULT 0,
-  last_execution_at TIMESTAMPTZ,
-  last_duration_ms INTEGER,
+```typescript
+// Workflow events table
+export const workflowEvents = pgTable("de_workflow_events", {
+  id: uuid("id").primaryKey(),
+  eventType: workflowEventTypeEnum("event_type").notNull(),
+  workflowId: text("workflow_id").notNull(),
+  workflowName: text("workflow_name").notNull(),
+  env: text("env").notNull(),
+  serviceKey: text("service_key").notNull(),
+  eventTimestamp: timestamp("event_timestamp", { withTimezone: true }).notNull(),
+  payload: jsonb("payload").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  processed: boolean("processed").notNull().default(false),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  processingError: text("processing_error"),
+});
 
-  created_at TIMESTAMPTZ,
-  terminated_at TIMESTAMPTZ,
-
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+// Job events table
+export const jobEvents = pgTable("de_job_events", {
+  id: uuid("id").primaryKey(),
+  eventType: jobEventTypeEnum("event_type").notNull(),
+  instanceId: text("instance_id").notNull(),
+  userProvidedId: text("user_provided_id"), // User-provided ID for business logic correlation
+  jobType: jobTypeEnum("job_type").notNull(),
+  jobName: text("job_name").notNull(),
+  env: text("env").notNull(),
+  serviceKey: text("service_key").notNull(),
+  eventTimestamp: timestamp("event_timestamp", { withTimezone: true }).notNull(),
+  payload: jsonb("payload").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  processed: boolean("processed").notNull().default(false),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  processingError: text("processing_error"),
+});
 ```
+
+### Materialized State Tables
+
+For efficient querying of current workflow/job state, maintain materialized tables updated from events:
+
+**Workflows Table** (see `de_workflows` in schema.ts):
+- Current workflow status, progress, error info
+- Updated via event processing
+
+**Job Instances Table** (derived from job events):
+- Current job status, run count, last execution
+- Updated via event processing
 
 ---
 

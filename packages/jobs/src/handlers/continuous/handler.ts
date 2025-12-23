@@ -100,7 +100,8 @@ export const ContinuousHandlerLayer = Layer.effect(
 
     const runExecution = (
       def: ContinuousDefinition<unknown, unknown, never>,
-      runCount: number
+      runCount: number,
+      id?: string
     ): Effect.Effect<ExecutionResult, ExecutionError> =>
       execution.execute({
         jobType: "continuous",
@@ -108,6 +109,7 @@ export const ContinuousHandlerLayer = Layer.effect(
         schema: def.stateSchema,
         retryConfig: def.retry,
         runCount,
+        id,
         run: (ctx: ContinuousContext<unknown>) => def.execute(ctx),
         createContext: (base) => {
           const proxyHolder: StateHolder<any> = {
@@ -148,11 +150,11 @@ export const ContinuousHandlerLayer = Layer.effect(
           };
         }
 
-        yield* metadata.initialize("continuous", request.name);
+        yield* metadata.initialize("continuous", request.name, request.id);
 
         // Emit job.started event
         yield* emitEvent({
-          ...createJobBaseEvent(runtime.instanceId, "continuous", request.name),
+          ...createJobBaseEvent(runtime.instanceId, "continuous", request.name, request.id),
           type: "job.started" as const,
           input: request.input,
         } satisfies InternalJobStartedEvent);
@@ -175,7 +177,7 @@ export const ContinuousHandlerLayer = Layer.effect(
 
         if (def.startImmediately !== false) {
           const runCount = yield* incrementRunCount();
-          const result = yield* runExecution(def, runCount);
+          const result = yield* runExecution(def, runCount, request.id);
           
           if (result.terminated) {
             // Terminated - CleanupService has already purged everything
@@ -229,7 +231,7 @@ export const ContinuousHandlerLayer = Layer.effect(
 
         // Emit job.terminated event
         yield* emitEvent({
-          ...createJobBaseEvent(runtime.instanceId, "continuous", existing.name),
+          ...createJobBaseEvent(runtime.instanceId, "continuous", existing.name, existing.id),
           type: "job.terminated" as const,
           reason: request.reason,
           runCount,
@@ -271,7 +273,7 @@ export const ContinuousHandlerLayer = Layer.effect(
         yield* retryExecutor.reset().pipe(Effect.ignore);
 
         const runCount = yield* incrementRunCount();
-        const result = yield* runExecution(def, runCount);
+        const result = yield* runExecution(def, runCount, existing.id);
 
         if (result.terminated) {
           // Terminated - CleanupService has already purged everything
@@ -402,7 +404,7 @@ export const ContinuousHandlerLayer = Layer.effect(
             runCount = yield* incrementRunCount();
           }
 
-          const result = yield* runExecution(def, runCount);
+          const result = yield* runExecution(def, runCount, meta.id);
 
           if (result.retryScheduled) {
             return;

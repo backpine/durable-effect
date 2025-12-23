@@ -33,12 +33,12 @@ import { debounceExample } from "./basic-debounce";
 export const { Jobs, JobsClient, registry } = createDurableJobs(
   {
     // Task jobs
-    basicTask,
+    basicTask2: basicTask,
 
     // Continuous jobs
-    heartbeat,
+    heartbeat2: heartbeat,
     // Debounce job
-    debounceExample,
+    debounceExample2: debounceExample,
   },
   {
     tracker: {

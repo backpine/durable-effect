@@ -35,7 +35,7 @@ export const debounceRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(AddEventRequest);
 
-      const result = yield* client.debounce("debounceExample").add({
+      const result = yield* client.debounce("debounceExample2").add({
         id: body.id,
         event: {
           actionId: body.actionId,
@@ -53,7 +53,7 @@ export const debounceRoutes = HttpRouter.empty.pipe(
           created: result.created,
         },
       });
-    })
+    }),
   ),
 
   // POST /debounce/flush - Manually flush the buffer
@@ -64,7 +64,7 @@ export const debounceRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.debounce("debounceExample").flush(body.id);
+      const result = yield* client.debounce("debounceExample2").flush(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
@@ -74,7 +74,7 @@ export const debounceRoutes = HttpRouter.empty.pipe(
           reason: result.reason,
         },
       });
-    })
+    }),
   ),
 
   // POST /debounce/clear - Clear the buffer without flushing
@@ -85,7 +85,7 @@ export const debounceRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.debounce("debounceExample").clear(body.id);
+      const result = yield* client.debounce("debounceExample2").clear(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
@@ -94,7 +94,7 @@ export const debounceRoutes = HttpRouter.empty.pipe(
           discardedEvents: result.discardedEvents,
         },
       });
-    })
+    }),
   ),
 
   // POST /debounce/status - Get debounce status
@@ -105,13 +105,13 @@ export const debounceRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.debounce("debounceExample").status(body.id);
+      const result = yield* client.debounce("debounceExample2").status(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
         result,
       });
-    })
+    }),
   ),
 
   // POST /debounce/state - Get debounce state
@@ -122,7 +122,9 @@ export const debounceRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.debounce("debounceExample").getState(body.id);
+      const result = yield* client
+        .debounce("debounceExample2")
+        .getState(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
@@ -130,6 +132,6 @@ export const debounceRoutes = HttpRouter.empty.pipe(
           state: result.state,
         },
       });
-    })
-  )
+    }),
+  ),
 );

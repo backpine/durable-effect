@@ -1,5 +1,5 @@
 import { Continuous } from "@durable-effect/jobs";
-import { Effect, Schema } from "effect";
+import { Duration, Effect, Schema } from "effect";
 
 // =============================================================================
 // Heartbeat Job - Simple Continuous Job Example
@@ -41,10 +41,15 @@ export const heartbeat = Continuous.make({
   stateSchema: HeartbeatState,
 
   // Run every 10 seconds
-  schedule: Continuous.every("4 minutes"),
+  schedule: Continuous.every("4 seconds"),
 
   // Start immediately when created (default: true)
   startImmediately: true,
+
+  retry: {
+    maxAttempts: 3,
+    delay: Duration.seconds(1),
+  },
 
   // The execute function runs on each scheduled tick
   execute: (ctx) =>
@@ -55,6 +60,7 @@ export const heartbeat = Continuous.make({
       yield* Effect.log(
         `Heartbeat #${ctx.runCount}: ${currentState.name} - count=${currentState.count}`,
       );
+      // yield* Effect.fail("Heartbeat job failed");
 
       // Update state (Effect-based)
       yield* ctx.updateState((s) => ({
@@ -64,7 +70,7 @@ export const heartbeat = Continuous.make({
       }));
 
       // Example: auto-terminate after 10 heartbeats
-      if (currentState.count >= 9) {
+      if (currentState.count >= 2000) {
         yield* Effect.log(
           `Heartbeat ${currentState.name} reached max count, terminating`,
         );

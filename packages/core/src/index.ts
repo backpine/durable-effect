@@ -4,10 +4,8 @@ export { PauseSignal, StorageError, SchedulerError } from "./errors";
 // Event Schemas
 export {
   // Helper functions
-  createBaseEvent, // @deprecated Use createWorkflowBaseEvent
   createWorkflowBaseEvent,
   createJobBaseEvent,
-  enrichEvent, // @deprecated Use enrichWorkflowEvent
   enrichWorkflowEvent,
   enrichJobEvent,
 

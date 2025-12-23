@@ -82,7 +82,8 @@ export const DebounceHandlerLayer = Layer.effect(
 
     const runFlush = (
       def: DebounceDefinition<any, any, any, never>,
-      flushReason: "maxEvents" | "flushAfter" | "manual"
+      flushReason: "maxEvents" | "flushAfter" | "manual",
+      id?: string
     ): Effect.Effect<ExecutionResult, ExecutionError> =>
       execution.execute({
         jobType: "debounce",
@@ -90,6 +91,7 @@ export const DebounceHandlerLayer = Layer.effect(
         schema: def.stateSchema,
         retryConfig: def.retry,
         runCount: 0, // Debounce doesn't track runCount persistently in same way
+        id,
         run: (ctx: DebounceExecuteContext<any>) => def.execute(ctx),
         createContext: (base) => {
            return {
@@ -114,7 +116,7 @@ export const DebounceHandlerLayer = Layer.effect(
         const created = !meta;
 
         if (created) {
-          yield* metadata.initialize("debounce", request.name);
+          yield* metadata.initialize("debounce", request.name, request.id);
           yield* metadata.updateStatus("running");
           yield* setStartedAt();
           yield* setEventCount(0);
@@ -157,7 +159,7 @@ export const DebounceHandlerLayer = Layer.effect(
           // Emit debounce.started event for first event
           const scheduledAt = yield* alarm.getScheduled();
           yield* emitEvent({
-            ...createJobBaseEvent(runtime.instanceId, "debounce", request.name),
+            ...createJobBaseEvent(runtime.instanceId, "debounce", request.name, request.id),
             type: "debounce.started" as const,
             flushAt: scheduledAt ? new Date(scheduledAt).toISOString() : new Date().toISOString(),
           } satisfies InternalDebounceStartedEvent);
@@ -166,10 +168,23 @@ export const DebounceHandlerLayer = Layer.effect(
         const willFlushAt = yield* alarm.getScheduled();
 
         if (def.maxEvents !== undefined && nextCount >= def.maxEvents) {
-          // Immediate flush
-          const result = yield* runFlush(def, "maxEvents");
+          // Get startedAt for duration calculation before flush
+          const startedAt = yield* getStartedAt();
+          const durationMs = startedAt ? Date.now() - startedAt : 0;
+
+          // Immediate flush - use request.id since we just initialized or it's the same
+          const result = yield* runFlush(def, "maxEvents", request.id);
 
           if (result.success) {
+            // Emit debounce.flushed event for maxEvents trigger
+            yield* emitEvent({
+              ...createJobBaseEvent(runtime.instanceId, "debounce", def.name, request.id),
+              type: "debounce.flushed" as const,
+              eventCount: nextCount,
+              reason: "maxEvents" as const,
+              durationMs,
+            } satisfies InternalDebounceFlushedEvent);
+
             // Success - purge state after flush
             yield* purge();
           } else if (result.terminated) {
@@ -225,12 +240,12 @@ export const DebounceHandlerLayer = Layer.effect(
         const startedAt = yield* getStartedAt();
         const durationMs = startedAt ? Date.now() - startedAt : 0;
 
-        const result = yield* runFlush(def, reason);
+        const result = yield* runFlush(def, reason, meta.id);
 
         if (result.success) {
           // Emit debounce.flushed event
           yield* emitEvent({
-            ...createJobBaseEvent(runtime.instanceId, "debounce", def.name),
+            ...createJobBaseEvent(runtime.instanceId, "debounce", def.name, meta.id),
             type: "debounce.flushed" as const,
             eventCount,
             reason: reason === "flushAfter" ? "timeout" : reason,

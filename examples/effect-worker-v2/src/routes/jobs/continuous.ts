@@ -40,7 +40,7 @@ export const continuousRoutes = HttpRouter.empty.pipe(
       const body = yield* HttpServerRequest.schemaBodyJson(StartRequest);
 
       const now = Date.now();
-      const result = yield* client.continuous("heartbeat").start({
+      const result = yield* client.continuous("heartbeat2").start({
         id: body.id,
         input: {
           name: body.name,
@@ -69,7 +69,7 @@ export const continuousRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(TerminateRequest);
 
-      const result = yield* client.continuous("heartbeat").terminate(body.id, {
+      const result = yield* client.continuous("heartbeat2").terminate(body.id, {
         reason: body.reason,
       });
 
@@ -91,7 +91,7 @@ export const continuousRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.continuous("heartbeat").trigger(body.id);
+      const result = yield* client.continuous("heartbeat2").trigger(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
@@ -112,7 +112,7 @@ export const continuousRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.continuous("heartbeat").status(body.id);
+      const result = yield* client.continuous("heartbeat2").status(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
@@ -129,7 +129,7 @@ export const continuousRoutes = HttpRouter.empty.pipe(
       const client = JobsClient.fromBinding(env.JOBS);
       const body = yield* HttpServerRequest.schemaBodyJson(IdRequest);
 
-      const result = yield* client.continuous("heartbeat").getState(body.id);
+      const result = yield* client.continuous("heartbeat2").getState(body.id);
 
       return yield* HttpServerResponse.json({
         success: true,
