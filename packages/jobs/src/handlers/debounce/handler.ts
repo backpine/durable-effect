@@ -189,6 +189,9 @@ export const DebounceHandlerLayer = Layer.effect(
             yield* purge();
           } else if (result.terminated) {
             // Terminated by CleanupService - already purged
+          } else if (!result.retryScheduled && !result.rescheduled) {
+            // Execution failed without retry - purge to avoid zombie state
+            yield* purge();
           }
 
           return {
@@ -256,6 +259,9 @@ export const DebounceHandlerLayer = Layer.effect(
           yield* purge();
         } else if (result.terminated) {
           // Terminated by CleanupService - already purged
+        } else if (!result.retryScheduled && !result.rescheduled) {
+          // Execution failed without retry - purge to avoid zombie state
+          yield* purge();
         }
 
         return {

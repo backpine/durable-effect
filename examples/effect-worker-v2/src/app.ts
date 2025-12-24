@@ -54,8 +54,6 @@ export const AppCoreLayer = Layer.mergeAll(ConfigLive, KVLive, StorageLive);
  */
 export const AppLayer = Layer.mergeAll(
   ConfigLive,
-  KVLive,
-  StorageLive,
   // DatabaseLive,
 );
 
