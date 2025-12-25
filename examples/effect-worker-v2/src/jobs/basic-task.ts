@@ -18,6 +18,7 @@ export const basicTask = Task.make({
   eventSchema: TaskEvent,
   stateSchema: TaskState,
 
+  logging: true,
   onEvent: (event, ctx) =>
     Effect.gen(function* () {
       yield* Effect.log("Handling event");

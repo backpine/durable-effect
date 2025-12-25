@@ -75,10 +75,8 @@ export const emitEvent = <E extends BaseTrackingEvent>(
 ): Effect.Effect<void> =>
   Effect.flatMap(Effect.serviceOption(EventTracker), (option) => {
     if (option._tag === "Some") {
-      console.log(`[Tracker] emitEvent: type=${event.type}, eventId=${event.eventId}`);
       return option.value.emit(event);
     } else {
-      console.log(`[Tracker] emitEvent: tracker not available, event type=${event.type} dropped`);
       return Effect.void;
     }
   });
@@ -91,10 +89,8 @@ export const flushEvents: Effect.Effect<void> = Effect.flatMap(
   Effect.serviceOption(EventTracker),
   (option) => {
     if (option._tag === "Some") {
-      console.log("[Tracker] flushEvents: flushing...");
       return option.value.flush();
     } else {
-      console.log("[Tracker] flushEvents: tracker not available, nothing to flush");
       return Effect.void;
     }
   },

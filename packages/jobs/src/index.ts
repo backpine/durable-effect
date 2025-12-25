@@ -185,6 +185,8 @@ export {
   type TaskEventOf,
   // Types - Stored (for handlers)
   type StoredTaskDefinition,
+  // Types - Logging
+  type LoggingOption,
 } from "./registry";
 
 // =============================================================================

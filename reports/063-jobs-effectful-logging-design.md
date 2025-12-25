@@ -108,11 +108,20 @@ Effect.provide(program, Logger.structured)
 ### Recommended Pattern for Jobs
 
 ```typescript
+type LoggingOption = boolean | LogLevel.LogLevel;
+
+// Resolve user-friendly options to LogLevel
+const resolveLogLevel = (option?: LoggingOption): LogLevel.LogLevel => {
+  if (option === undefined || option === false) return LogLevel.Error; // Default: failures only
+  if (option === true) return LogLevel.Debug; // All logs
+  return option; // Use provided LogLevel
+};
+
 // Wrap job execution with log level control and annotations
 const withJobLogging = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   config: {
-    logging?: boolean;
+    logging?: LoggingOption;
     jobType: string;
     jobName: string;
     instanceId: string;
@@ -124,9 +133,7 @@ const withJobLogging = <A, E, R>(
       jobName: config.jobName,
       instanceId: config.instanceId,
     }),
-    config.logging
-      ? Logger.withMinimumLogLevel(LogLevel.Debug)
-      : Logger.withMinimumLogLevel(LogLevel.None)
+    Logger.withMinimumLogLevel(resolveLogLevel(config.logging))
   )
 ```
 
@@ -135,6 +142,8 @@ const withJobLogging = <A, E, R>(
 ### Add `logging` Option to Each Job Type
 
 ```typescript
+import { LogLevel } from "effect";
+
 // In ContinuousMakeConfig
 export interface ContinuousMakeConfig<S, E, R> {
   readonly stateSchema: Schema.Schema<S, any, never>;
@@ -142,25 +151,46 @@ export interface ContinuousMakeConfig<S, E, R> {
   readonly startImmediately?: boolean;
   readonly retry?: JobRetryConfig;
   /**
-   * Enable debug logging for this job.
-   * @default false
+   * Configure logging level for this job.
+   *
+   * - `true` → LogLevel.Debug (all logs)
+   * - `false` → LogLevel.Error (only failures logged) - DEFAULT
+   * - `LogLevel.None` → Completely silent
+   * - `LogLevel.Info` → Info and above
+   * - `LogLevel.Warning` → Warn and above
+   * - etc.
+   *
+   * @default false (LogLevel.Error - failures only)
    */
-  readonly logging?: boolean;
+  readonly logging?: boolean | LogLevel.LogLevel;
   execute(ctx: ContinuousContext<S>): Effect.Effect<void, E, R>;
 }
 
 // Same for DebounceMakeConfig, TaskMakeConfig
 ```
 
+### Log Level Resolution
+
+| Value | Resolved Level | What Gets Logged |
+|-------|----------------|------------------|
+| `undefined` / `false` | `LogLevel.Error` | Errors and failures only (default) |
+| `true` | `LogLevel.Debug` | Everything |
+| `LogLevel.None` | `LogLevel.None` | Nothing (truly silent) |
+| `LogLevel.Info` | `LogLevel.Info` | Info, Warn, Error, Fatal |
+| `LogLevel.Warning` | `LogLevel.Warning` | Warn, Error, Fatal |
+| `LogLevel.Error` | `LogLevel.Error` | Error, Fatal |
+
 ### Stored Definition Types
 
 ```typescript
+import { LogLevel } from "effect";
+
 // In StoredContinuousDefinition
 export interface StoredContinuousDefinition<S = unknown, R = never> {
   readonly _tag: "ContinuousDefinition";
   readonly name: string;
   // ... existing fields ...
-  readonly logging?: boolean;  // NEW
+  readonly logging?: boolean | LogLevel.LogLevel;  // NEW
 }
 ```
 
@@ -241,17 +271,37 @@ Use Effect's built-in log level control with annotations in object form:
 
 import { Effect, Logger, LogLevel } from "effect";
 
+type LoggingOption = boolean | LogLevel.LogLevel;
+
+/**
+ * Resolve logging option to an Effect LogLevel.
+ *
+ * - undefined/false → LogLevel.Error (failures only - default)
+ * - true → LogLevel.Debug (all logs)
+ * - LogLevel.* → Use as-is
+ */
+const resolveLogLevel = (option?: LoggingOption): LogLevel.LogLevel => {
+  if (option === undefined || option === false) {
+    return LogLevel.Error; // Default: only log failures
+  }
+  if (option === true) {
+    return LogLevel.Debug; // Shorthand for all logs
+  }
+  return option; // Use the provided LogLevel directly
+};
+
 /**
  * Wrap an effect with job-scoped logging.
  *
  * - Adds job context as annotations (propagates to all nested logs)
  * - Controls log level based on job's logging config
- * - When logging is disabled, sets level to None (zero overhead)
+ * - Default (false): Only errors logged
+ * - Use LogLevel.None for truly silent operation
  */
 export const withJobLogging = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   config: {
-    logging?: boolean;
+    logging?: LoggingOption;
     jobType: string;
     jobName: string;
     instanceId: string;
@@ -264,10 +314,8 @@ export const withJobLogging = <A, E, R>(
       jobName: config.jobName,
       instanceId: config.instanceId,
     }),
-    // Control log level - None disables all logging (zero overhead)
-    config.logging
-      ? Logger.withMinimumLogLevel(LogLevel.Debug)
-      : Logger.withMinimumLogLevel(LogLevel.None)
+    // Control log level based on config
+    Logger.withMinimumLogLevel(resolveLogLevel(config.logging))
   );
 
 /**
@@ -338,9 +386,11 @@ yield* Effect.gen(function* () {
 
 ```typescript
 // registry/types.ts
+import { LogLevel } from "effect";
+
 export interface UnregisteredContinuousDefinition<S, E, R> {
   // ... existing fields ...
-  readonly logging?: boolean;
+  readonly logging?: boolean | LogLevel.LogLevel;
 }
 
 // Same for UnregisteredDebounceDefinition, UnregisteredTaskDefinition
@@ -352,10 +402,18 @@ export interface UnregisteredContinuousDefinition<S, E, R> {
 // services/job-logging.ts
 import { Effect, Logger, LogLevel } from "effect";
 
+type LoggingOption = boolean | LogLevel.LogLevel;
+
+const resolveLogLevel = (option?: LoggingOption): LogLevel.LogLevel => {
+  if (option === undefined || option === false) return LogLevel.Error;
+  if (option === true) return LogLevel.Debug;
+  return option;
+};
+
 export const withJobLogging = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   config: {
-    logging?: boolean;
+    logging?: LoggingOption;
     jobType: string;
     jobName: string;
     instanceId: string;
@@ -367,9 +425,7 @@ export const withJobLogging = <A, E, R>(
       jobName: config.jobName,
       instanceId: config.instanceId,
     }),
-    config.logging
-      ? Logger.withMinimumLogLevel(LogLevel.Debug)
-      : Logger.withMinimumLogLevel(LogLevel.None)
+    Logger.withMinimumLogLevel(resolveLogLevel(config.logging))
   );
 
 export const withExecutionSpan = <A, E, R>(
@@ -383,14 +439,21 @@ export const withExecutionSpan = <A, E, R>(
 
 ```typescript
 // definitions/continuous.ts
+import { LogLevel } from "effect";
+
 export interface ContinuousMakeConfig<S, E, R> {
   // ... existing fields ...
   /**
-   * Enable debug logging for this job.
-   * When enabled, logs job lifecycle, execution, and retry events.
+   * Configure logging level for this job.
+   *
+   * - `true` → All logs (Debug level)
+   * - `false` → Failures only (Error level) - DEFAULT
+   * - `LogLevel.None` → Completely silent
+   * - `LogLevel.*` → Custom level
+   *
    * @default false
    */
-  readonly logging?: boolean;
+  readonly logging?: boolean | LogLevel.LogLevel;
 }
 
 export const Continuous = {
@@ -467,31 +530,60 @@ const handleStart = (def, request) =>
 ## Example: User Experience
 
 ```typescript
-// User enables logging for a specific job
-const tokenRefresher = Continuous.make({
+import { LogLevel } from "effect";
+
+// Default: Only errors are logged
+const defaultJob = Continuous.make({
   stateSchema: TokenState,
   schedule: Continuous.every("5 minutes"),
-  logging: true,  // <-- Enable logging
-  execute: (ctx) =>
-    Effect.gen(function* () {
-      const token = yield* refreshToken();
-      yield* ctx.setState({ token, refreshedAt: Date.now() });
-    }),
+  // logging: false (default) - only failures logged
+  execute: (ctx) => Effect.gen(function* () { ... }),
+});
+
+// Full debug logging
+const debugJob = Continuous.make({
+  stateSchema: TokenState,
+  schedule: Continuous.every("5 minutes"),
+  logging: true,  // All logs (Debug level)
+  execute: (ctx) => Effect.gen(function* () { ... }),
+});
+
+// Custom level - Info and above
+const infoJob = Continuous.make({
+  stateSchema: TokenState,
+  schedule: Continuous.every("5 minutes"),
+  logging: LogLevel.Info,  // Info, Warn, Error, Fatal
+  execute: (ctx) => Effect.gen(function* () { ... }),
+});
+
+// Completely silent
+const silentJob = Continuous.make({
+  stateSchema: TokenState,
+  schedule: Continuous.every("5 minutes"),
+  logging: LogLevel.None,  // No logs at all
+  execute: (ctx) => Effect.gen(function* () { ... }),
 });
 ```
 
-**Output when logging is enabled:**
+**Output with `logging: true` (Debug level):**
 
 ```
-timestamp=2024-01-15T10:30:00.000Z level=INFO fiber=#0 message="Job started" jobType=continuous jobName=tokenRefresher instanceId=abc123
-timestamp=2024-01-15T10:30:00.005Z level=DEBUG fiber=#0 message="Execution starting" jobType=continuous jobName=tokenRefresher instanceId=abc123 runCount=1 attempt=1
-timestamp=2024-01-15T10:30:00.150Z level=DEBUG fiber=#0 message="Execution completed" jobType=continuous jobName=tokenRefresher instanceId=abc123 execution=145ms
-timestamp=2024-01-15T10:30:00.152Z level=DEBUG fiber=#0 message="Next execution scheduled" jobType=continuous jobName=tokenRefresher instanceId=abc123 nextRunAt=2024-01-15T10:35:00.000Z
+timestamp=... level=INFO fiber=#0 message="Job started" jobType=continuous jobName=tokenRefresher instanceId=abc123
+timestamp=... level=DEBUG fiber=#0 message="Execution starting" jobType=continuous jobName=tokenRefresher instanceId=abc123 runCount=1 attempt=1
+timestamp=... level=DEBUG fiber=#0 message="Execution completed" jobType=continuous jobName=tokenRefresher instanceId=abc123 execution=145ms
+timestamp=... level=DEBUG fiber=#0 message="Next execution scheduled" jobType=continuous jobName=tokenRefresher instanceId=abc123 nextRunAt=2024-01-15T10:35:00.000Z
 ```
 
-Note: The `execution=145ms` is automatically added by `Effect.withLogSpan("execution")`.
+**Output with `logging: false` (default - Error level only):**
 
-**Debounce example:**
+```
+(no output on success)
+
+// On failure:
+timestamp=... level=ERROR fiber=#0 message="Execution failed" jobType=continuous jobName=tokenRefresher instanceId=abc123 error="Connection timeout"
+```
+
+**Debounce with `logging: true`:**
 
 ```
 timestamp=... level=INFO fiber=#0 message="Debounce started" jobType=debounce jobName=webhookBatch instanceId=xyz789 flushAt=2024-01-15T10:35:00.000Z
@@ -499,6 +591,8 @@ timestamp=... level=DEBUG fiber=#0 message="Event added" jobType=debounce jobNam
 timestamp=... level=DEBUG fiber=#0 message="Max events reached, flushing" jobType=debounce jobName=webhookBatch instanceId=xyz789 eventCount=10
 timestamp=... level=INFO fiber=#0 message="Debounce flushed" jobType=debounce jobName=webhookBatch instanceId=xyz789 eventCount=10 reason=maxEvents flush=523ms
 ```
+
+Note: The `execution=145ms` and `flush=523ms` are automatically added by `Effect.withLogSpan()`.
 
 ## Files to Modify
 

@@ -5,6 +5,7 @@ import type {
   UnregisteredContinuousDefinition,
   ContinuousSchedule,
   ContinuousContext,
+  LoggingOption,
 } from "../registry/types";
 import type { JobRetryConfig } from "../retry/types";
 
@@ -50,10 +51,30 @@ export interface ContinuousMakeConfig<S, E, R> {
   readonly retry?: JobRetryConfig;
 
   /**
+   * Control logging for this job.
+   *
+   * - `false` (default): Only log errors (LogLevel.Error)
+   * - `true`: Enable all logs (LogLevel.Debug)
+   * - `LogLevel.*`: Use a specific log level
+   * - `LogLevel.None`: Suppress all logs
+   *
+   * @example
+   * ```ts
+   * import { LogLevel } from "effect";
+   *
+   * // Enable debug logging
+   * logging: true,
+   *
+   * // Only warnings and above
+   * logging: LogLevel.Warning,
+   * ```
+   */
+  readonly logging?: LoggingOption;
+
+  /**
    * The function to execute on schedule.
    */
   execute(ctx: ContinuousContext<S>): Effect.Effect<void, E, R>;
-
 }
 
 /**
@@ -103,6 +124,7 @@ export const Continuous = {
     schedule: config.schedule,
     startImmediately: config.startImmediately,
     retry: config.retry,
+    logging: config.logging,
     execute: config.execute,
   }),
 

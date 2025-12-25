@@ -7,6 +7,7 @@ import type {
   TaskExecuteContext,
   TaskIdleContext,
   TaskErrorContext,
+  LoggingOption,
 } from "../registry/types";
 
 // =============================================================================
@@ -151,6 +152,27 @@ export interface TaskMakeConfig<S, E, Err, R> {
     error: Err,
     ctx: TaskErrorContext<S>
   ) => Effect.Effect<void, never, R>;
+
+  /**
+   * Control logging for this job.
+   *
+   * - `false` (default): Only log errors (LogLevel.Error)
+   * - `true`: Enable all logs (LogLevel.Debug)
+   * - `LogLevel.*`: Use a specific log level
+   * - `LogLevel.None`: Suppress all logs
+   *
+   * @example
+   * ```ts
+   * import { LogLevel } from "effect";
+   *
+   * // Enable debug logging
+   * logging: true,
+   *
+   * // Only warnings and above
+   * logging: LogLevel.Warning,
+   * ```
+   */
+  readonly logging?: LoggingOption;
 }
 
 /**
@@ -257,6 +279,7 @@ export const Task = {
     execute: config.execute,
     onIdle: config.onIdle,
     onError: config.onError,
+    logging: config.logging,
   }),
 } as const;
 

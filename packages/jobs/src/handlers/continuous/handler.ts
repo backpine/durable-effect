@@ -23,6 +23,7 @@ import {
   type JobError,
 } from "../../errors";
 import { RetryExecutor } from "../../retry";
+import { withJobLogging } from "../../services/job-logging";
 import type { ContinuousRequest } from "../../runtime/types";
 import type { ContinuousDefinition, ContinuousContext } from "../../registry/types";
 import type { ContinuousHandlerI, ContinuousResponse } from "./types";
@@ -345,18 +346,27 @@ export const ContinuousHandlerLayer = Layer.effect(
         Effect.gen(function* () {
           const def = yield* getDefinition(request.name);
 
-          switch (request.action) {
-            case "start":
-              return yield* handleStart(def, request);
-            case "terminate":
-              return yield* handleTerminate(request);
-            case "trigger":
-              return yield* handleTrigger(def);
-            case "status":
-              return yield* handleStatus();
-            case "getState":
-              return yield* handleGetState(def);
-          }
+          const handlerEffect = Effect.gen(function* () {
+            switch (request.action) {
+              case "start":
+                return yield* handleStart(def, request);
+              case "terminate":
+                return yield* handleTerminate(request);
+              case "trigger":
+                return yield* handleTrigger(def);
+              case "status":
+                return yield* handleStatus();
+              case "getState":
+                return yield* handleGetState(def);
+            }
+          });
+
+          return yield* withJobLogging(handlerEffect, {
+            logging: def.logging,
+            jobType: "continuous",
+            jobName: def.name,
+            instanceId: runtime.instanceId,
+          });
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(
@@ -393,33 +403,42 @@ export const ContinuousHandlerLayer = Layer.effect(
 
           const def = yield* getDefinition(meta.name);
 
-          const isRetrying = yield* retryExecutor.isRetrying().pipe(
-            Effect.catchAll(() => Effect.succeed(false)),
-          );
+          const alarmEffect = Effect.gen(function* () {
+            const isRetrying = yield* retryExecutor.isRetrying().pipe(
+              Effect.catchAll(() => Effect.succeed(false)),
+            );
 
-          let runCount: number;
-          if (isRetrying) {
-            runCount = yield* getRunCount();
-          } else {
-            runCount = yield* incrementRunCount();
-          }
+            let runCount: number;
+            if (isRetrying) {
+              runCount = yield* getRunCount();
+            } else {
+              runCount = yield* incrementRunCount();
+            }
 
-          const result = yield* runExecution(def, runCount, meta.id);
+            const result = yield* runExecution(def, runCount, meta.id);
 
-          if (result.retryScheduled) {
-            return;
-          }
+            if (result.retryScheduled) {
+              return;
+            }
 
-          if (result.terminated) {
-            // Terminated - CleanupService has already purged everything
-            return;
-          }
+            if (result.terminated) {
+              // Terminated - CleanupService has already purged everything
+              return;
+            }
 
-          const currentMeta = yield* metadata.get();
-          if (currentMeta && currentMeta.status === "running") {
-            yield* updateLastExecutedAt();
-            yield* scheduleNext(def);
-          }
+            const currentMeta = yield* metadata.get();
+            if (currentMeta && currentMeta.status === "running") {
+              yield* updateLastExecutedAt();
+              yield* scheduleNext(def);
+            }
+          });
+
+          yield* withJobLogging(alarmEffect, {
+            logging: def.logging,
+            jobType: "continuous",
+            jobName: def.name,
+            instanceId: runtime.instanceId,
+          });
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(
