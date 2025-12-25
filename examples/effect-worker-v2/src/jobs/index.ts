@@ -42,7 +42,7 @@ export const { Jobs, JobsClient, registry } = createDurableJobs(
   },
   {
     tracker: {
-      endpoint: "https://durable-effect-sync.backpine.workers.dev/sync",
+      endpoint: "http://localhost:3000/sync",
       env: "dev",
       serviceKey: "my-service-key",
     },

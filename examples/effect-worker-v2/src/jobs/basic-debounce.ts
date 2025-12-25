@@ -52,6 +52,10 @@ export const debounceExample = Debounce.make({
     Effect.gen(function* () {
       const state = yield* ctx.state;
       const eventCount = yield* ctx.eventCount;
+      const failChance = Math.random() < 0.5;
+      if (failChance) {
+        yield* Effect.fail("Debounce job randomly failed");
+      }
       yield* Effect.tryPromise(() => fetch("http://localhost:3000/api/health"));
       // yield* Effect.fail("Debounce job failed");
       yield* Effect.log(

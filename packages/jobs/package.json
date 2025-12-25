@@ -1,6 +1,6 @@
 {
   "name": "@durable-effect/jobs",
-  "version": "0.0.1-next.2",
+  "version": "0.0.1-next.3",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
