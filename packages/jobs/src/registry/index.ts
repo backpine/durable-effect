@@ -71,4 +71,6 @@ export type {
   // Registry types
   JobRegistry,
   InferRegistry,
+  // Logging types
+  LoggingOption,
 } from "./types";

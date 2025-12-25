@@ -39,7 +39,7 @@ export type HeartbeatState = typeof HeartbeatState.Type;
  */
 export const heartbeat = Continuous.make({
   stateSchema: HeartbeatState,
-
+  logging: true,
   // Run every 10 seconds
   schedule: Continuous.every("4 seconds"),
 
@@ -56,6 +56,7 @@ export const heartbeat = Continuous.make({
     Effect.gen(function* () {
       // Get current state (Effect-based)
       const currentState = yield* ctx.state;
+      const runCount = ctx.runCount;
 
       yield* Effect.log(
         `Heartbeat #${ctx.runCount}: ${currentState.name} - count=${currentState.count}`,
@@ -70,7 +71,7 @@ export const heartbeat = Continuous.make({
       }));
 
       // Example: auto-terminate after 10 heartbeats
-      if (currentState.count >= 2000) {
+      if (runCount >= 20) {
         yield* Effect.log(
           `Heartbeat ${currentState.name} reached max count, terminating`,
         );

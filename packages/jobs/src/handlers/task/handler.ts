@@ -23,6 +23,7 @@ import {
   type JobError,
 } from "../../errors";
 import { RetryExecutor } from "../../retry";
+import { withJobLogging } from "../../services/job-logging";
 import type { TaskRequest } from "../../runtime/types";
 import type { StoredTaskDefinition } from "../../registry/types";
 import type { TaskHandlerI, TaskResponse } from "./types";
@@ -418,18 +419,27 @@ export const TaskHandlerLayer = Layer.effect(
         Effect.gen(function* () {
           const def = yield* getDefinition(request.name);
 
-          switch (request.action) {
-            case "send":
-              return yield* handleSend(def, request);
-            case "trigger":
-              return yield* handleTrigger(def);
-            case "terminate":
-              return yield* handleTerminate();
-            case "status":
-              return yield* handleStatus();
-            case "getState":
-              return yield* handleGetState(def);
-          }
+          const handlerEffect = Effect.gen(function* () {
+            switch (request.action) {
+              case "send":
+                return yield* handleSend(def, request);
+              case "trigger":
+                return yield* handleTrigger(def);
+              case "terminate":
+                return yield* handleTerminate();
+              case "status":
+                return yield* handleStatus();
+              case "getState":
+                return yield* handleGetState(def);
+            }
+          });
+
+          return yield* withJobLogging(handlerEffect, {
+            logging: def.logging,
+            jobType: "task",
+            jobName: def.name,
+            instanceId: runtime.instanceId,
+          });
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(
@@ -452,8 +462,17 @@ export const TaskHandlerLayer = Layer.effect(
 
           const def = yield* getDefinition(meta.name);
 
-          yield* incrementExecuteCount();
-          yield* runExecution(def, 0, "execute", undefined, meta.id);
+          const alarmEffect = Effect.gen(function* () {
+            yield* incrementExecuteCount();
+            yield* runExecution(def, 0, "execute", undefined, meta.id);
+          });
+
+          yield* withJobLogging(alarmEffect, {
+            logging: def.logging,
+            jobType: "task",
+            jobName: def.name,
+            instanceId: runtime.instanceId,
+          });
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(

@@ -1,8 +1,22 @@
 // packages/jobs/src/registry/types.ts
 
-import type { Schema } from "effect";
+import type { Schema, LogLevel } from "effect";
 import type { Effect, Duration } from "effect";
 import type { JobRetryConfig } from "../retry/types";
+
+// =============================================================================
+// Logging Types
+// =============================================================================
+
+/**
+ * Logging configuration option.
+ *
+ * - `true` → LogLevel.Debug (all logs)
+ * - `false` → LogLevel.Error (only failures logged) - DEFAULT
+ * - `LogLevel.None` → Completely silent
+ * - `LogLevel.*` → Custom level
+ */
+export type LoggingOption = boolean | LogLevel.LogLevel;
 
 // =============================================================================
 // Schedule Types
@@ -46,6 +60,12 @@ export interface UnregisteredContinuousDefinition<
    * - Failed executions fail immediately
    */
   readonly retry?: JobRetryConfig;
+  /**
+   * Configure logging level for this job.
+   *
+   * @default false (LogLevel.Error - failures only)
+   */
+  readonly logging?: LoggingOption;
   /** Function to execute on schedule */
   execute(ctx: ContinuousContext<S>): Effect.Effect<void, E, R>;
 }
@@ -78,6 +98,12 @@ export interface UnregisteredDebounceDefinition<
    * - Failed flush fails immediately
    */
   readonly retry?: JobRetryConfig;
+  /**
+   * Configure logging level for this job.
+   *
+   * @default false (LogLevel.Error - failures only)
+   */
+  readonly logging?: LoggingOption;
   execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, E, R>;
   onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, R>;
 }
@@ -163,6 +189,13 @@ export interface UnregisteredTaskDefinition<
    * If not provided, errors are logged and task continues.
    */
   onError?(error: Err, ctx: TaskErrorContext<S>): Effect.Effect<void, never, R>;
+
+  /**
+   * Configure logging level for this job.
+   *
+   * @default false (LogLevel.Error - failures only)
+   */
+  readonly logging?: LoggingOption;
 }
 
 /**
@@ -202,6 +235,7 @@ export interface StoredContinuousDefinition<S = unknown, R = never> {
   readonly schedule: ContinuousSchedule;
   readonly startImmediately?: boolean;
   readonly retry?: StoredJobRetryConfig;
+  readonly logging?: LoggingOption;
   execute(ctx: ContinuousContext<S>): Effect.Effect<void, unknown, R>;
 }
 
@@ -216,6 +250,7 @@ export interface StoredDebounceDefinition<I = unknown, S = unknown, R = never> {
   readonly flushAfter: Duration.DurationInput;
   readonly maxEvents?: number;
   readonly retry?: StoredJobRetryConfig;
+  readonly logging?: LoggingOption;
   execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, unknown, R>;
   onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, R>;
 }
@@ -242,6 +277,7 @@ export interface StoredTaskDefinition<S = unknown, E = unknown, R = never> {
   readonly name: string;
   readonly stateSchema: Schema.Schema<S, any, never>;
   readonly eventSchema: Schema.Schema<E, any, never>;
+  readonly logging?: LoggingOption;
   onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, unknown, R>;
   execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, unknown, R>;
   onIdle?(ctx: TaskIdleContext<S>): Effect.Effect<void, never, R>;

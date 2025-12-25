@@ -21,6 +21,7 @@ import { createEntityStateService } from "./entity-state";
 import { CleanupService } from "./cleanup";
 import { AlarmService } from "./alarm";
 import { ExecutionError, TerminateSignal } from "../errors";
+import { withLogSpan } from "./job-logging";
 
 // =============================================================================
 // Types
@@ -130,17 +131,18 @@ export const JobExecutionServiceLayer = Layer.effect(
       execute: <S, E, R, Ctx>(
         options: ExecuteOptions<S, E, R, Ctx>,
       ): Effect.Effect<ExecutionResult, ExecutionError, R> =>
-        Effect.gen(function* () {
-          const {
-            jobType,
-            jobName,
-            schema,
-            retryConfig,
-            run,
-            createContext,
-            onRetryExhausted,
-            id,
-          } = options;
+        withLogSpan(
+          Effect.gen(function* () {
+            const {
+              jobType,
+              jobName,
+              schema,
+              retryConfig,
+              run,
+              createContext,
+              onRetryExhausted,
+              id,
+            } = options;
 
           // Track execution start time for duration calculation
           const startTime = Date.now();
@@ -416,6 +418,8 @@ export const JobExecutionServiceLayer = Layer.effect(
             terminateReason,
           };
         }),
+          "execution"
+        ),
     };
   }),
 );

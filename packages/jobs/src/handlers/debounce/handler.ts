@@ -24,6 +24,7 @@ import {
   type JobError,
 } from "../../errors";
 import { RetryExecutor } from "../../retry";
+import { withJobLogging } from "../../services/job-logging";
 import type { DebounceRequest } from "../../runtime/types";
 import type { DebounceDefinition, DebounceExecuteContext } from "../../registry/types";
 import type { DebounceHandlerI, DebounceResponse } from "./types";
@@ -335,22 +336,31 @@ export const DebounceHandlerLayer = Layer.effect(
         Effect.gen(function* () {
           const def = yield* getDefinition(request.name);
 
-          switch (request.action) {
-            case "add":
-              return yield* handleAdd(def, request);
-            case "flush":
-              return yield* handleFlush(def, "manual");
-            case "clear":
-              return yield* handleClear();
-            case "status":
-              return yield* handleStatus();
-            case "getState":
-              return yield* handleGetState(def);
-            default:
-              return yield* Effect.fail(
-                new UnknownJobTypeError({ type: `debounce/${(request as any).action}` })
-              );
-          }
+          const handlerEffect = Effect.gen(function* () {
+            switch (request.action) {
+              case "add":
+                return yield* handleAdd(def, request);
+              case "flush":
+                return yield* handleFlush(def, "manual");
+              case "clear":
+                return yield* handleClear();
+              case "status":
+                return yield* handleStatus();
+              case "getState":
+                return yield* handleGetState(def);
+              default:
+                return yield* Effect.fail(
+                  new UnknownJobTypeError({ type: `debounce/${(request as any).action}` })
+                );
+            }
+          });
+
+          return yield* withJobLogging(handlerEffect, {
+            logging: def.logging,
+            jobType: "debounce",
+            jobName: def.name,
+            instanceId: runtime.instanceId,
+          });
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(
@@ -383,22 +393,31 @@ export const DebounceHandlerLayer = Layer.effect(
 
           const def = yield* getDefinition(meta.name);
 
-          // Check if this is a retry alarm
-          const isRetrying = yield* retryExecutor.isRetrying().pipe(
-            Effect.catchAll(() => Effect.succeed(false)),
-          );
+          const alarmEffect = Effect.gen(function* () {
+            // Check if this is a retry alarm
+            const isRetrying = yield* retryExecutor.isRetrying().pipe(
+              Effect.catchAll(() => Effect.succeed(false)),
+            );
 
-          // Reset retry state if manual trigger while retrying
-          if (!isRetrying) {
-            yield* retryExecutor.reset().pipe(Effect.ignore);
-          }
+            // Reset retry state if manual trigger while retrying
+            if (!isRetrying) {
+              yield* retryExecutor.reset().pipe(Effect.ignore);
+            }
 
-          const result = yield* handleFlush(def, "flushAfter");
-          void result;
-          
-          // Note: handleFlush already purges on success.
-          // If retryScheduled, handleFlush returns retryScheduled=true.
-          // We don't need to do anything else.
+            const result = yield* handleFlush(def, "flushAfter");
+            void result;
+
+            // Note: handleFlush already purges on success.
+            // If retryScheduled, handleFlush returns retryScheduled=true.
+            // We don't need to do anything else.
+          });
+
+          yield* withJobLogging(alarmEffect, {
+            logging: def.logging,
+            jobType: "debounce",
+            jobName: def.name,
+            instanceId: runtime.instanceId,
+          });
         }).pipe(
           Effect.catchTag("StorageError", (e) =>
             Effect.fail(

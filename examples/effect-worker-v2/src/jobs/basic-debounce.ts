@@ -38,6 +38,7 @@ export const debounceExample = Debounce.make({
 
   // Flush after 5 seconds of inactivity
   flushAfter: "5 seconds",
+  logging: true,
 
   // Or flush immediately when 10 events accumulated
   maxEvents: 10,

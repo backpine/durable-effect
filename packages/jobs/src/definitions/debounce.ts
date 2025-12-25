@@ -5,6 +5,7 @@ import type {
   UnregisteredDebounceDefinition,
   DebounceEventContext,
   DebounceExecuteContext,
+  LoggingOption,
 } from "../registry/types";
 import type { JobRetryConfig } from "../retry/types";
 
@@ -53,6 +54,27 @@ export interface DebounceMakeConfig<I, S, E, R> {
   readonly retry?: JobRetryConfig;
 
   /**
+   * Control logging for this job.
+   *
+   * - `false` (default): Only log errors (LogLevel.Error)
+   * - `true`: Enable all logs (LogLevel.Debug)
+   * - `LogLevel.*`: Use a specific log level
+   * - `LogLevel.None`: Suppress all logs
+   *
+   * @example
+   * ```ts
+   * import { LogLevel } from "effect";
+   *
+   * // Enable debug logging
+   * logging: true,
+   *
+   * // Only warnings and above
+   * logging: LogLevel.Warning,
+   * ```
+   */
+  readonly logging?: LoggingOption;
+
+  /**
    * Reducer for each incoming event. Defaults to returning the latest event.
    */
   onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, R>;
@@ -90,6 +112,7 @@ export const Debounce = {
     flushAfter: config.flushAfter,
     maxEvents: config.maxEvents,
     retry: config.retry,
+    logging: config.logging,
     onEvent:
       config.onEvent ??
       ((ctx: DebounceEventContext<I, S>) =>
