@@ -1,6 +1,6 @@
 // packages/jobs/src/registry/types.ts
 
-import type { Schema, LogLevel } from "effect";
+import type { Schema, LogLevel, Cron } from "effect";
 import type { Effect, Duration } from "effect";
 import type { JobRetryConfig } from "../retry/types";
 
@@ -27,7 +27,7 @@ export type LoggingOption = boolean | LogLevel.LogLevel;
  */
 export type ContinuousSchedule =
   | { readonly _tag: "Every"; readonly interval: Duration.DurationInput }
-  | { readonly _tag: "Cron"; readonly expression: string };
+  | { readonly _tag: "Cron"; readonly cron: Cron.Cron };
 
 // =============================================================================
 // Unregistered Definition Types (what user creates - no name)

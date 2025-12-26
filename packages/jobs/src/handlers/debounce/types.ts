@@ -19,6 +19,6 @@ export type DebounceResponse =
   | DebounceGetStateResponse;
 
 export interface DebounceHandlerI {
-  handle(request: DebounceRequest): Effect.Effect<DebounceResponse, JobError>;
-  handleAlarm(): Effect.Effect<void, JobError>;
+  handle(request: DebounceRequest): Effect.Effect<DebounceResponse, JobError, any>;
+  handleAlarm(): Effect.Effect<void, JobError, any>;
 }

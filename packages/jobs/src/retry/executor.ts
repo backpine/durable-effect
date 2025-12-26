@@ -181,7 +181,7 @@ export const RetryExecutorLayer = Layer.effect(
 
           // Check if attempts exhausted
           if (attempt >= config.maxAttempts) {
-            // Exhausted - signal it (handler will call onRetryExhausted or terminate)
+            // Exhausted - signal it (handler will terminate the job)
             const startedAt = (yield* getStartedAt()) ?? now;
             yield* reset();
 

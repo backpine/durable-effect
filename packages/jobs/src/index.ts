@@ -43,7 +43,6 @@ export {
   InvalidStateError,
   ValidationError,
   ExecutionError,
-  RetryExhaustedError,
   UnknownJobTypeError,
   DuplicateEventError,
   // Terminate signal (for advanced use cases)

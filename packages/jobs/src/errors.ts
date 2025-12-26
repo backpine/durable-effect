@@ -72,21 +72,6 @@ export class ExecutionError extends Data.TaggedError("ExecutionError")<{
 }
 
 /**
- * Retry attempts exhausted (WorkerPool job).
- */
-export class RetryExhaustedError extends Data.TaggedError(
-  "RetryExhaustedError"
-)<{
-  readonly eventId: string;
-  readonly attempts: number;
-  readonly lastError: unknown;
-}> {
-  get message(): string {
-    return `Retry exhausted for event ${this.eventId} after ${this.attempts} attempts`;
-  }
-}
-
-/**
  * Unknown job type in request.
  */
 export class UnknownJobTypeError extends Data.TaggedError(
@@ -144,6 +129,5 @@ export type JobError =
   | InvalidStateError
   | ValidationError
   | ExecutionError
-  | RetryExhaustedError
   | UnknownJobTypeError
   | DuplicateEventError;

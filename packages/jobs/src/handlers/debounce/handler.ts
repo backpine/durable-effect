@@ -15,7 +15,10 @@ import { MetadataService } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
 import { createEntityStateService } from "../../services/entity-state";
 import { RegistryService } from "../../services/registry";
-import { JobExecutionService, type ExecutionResult } from "../../services/execution";
+import {
+  JobExecutionService,
+  type ExecutionResult,
+} from "../../services/execution";
 import { KEYS } from "../../storage-keys";
 import {
   JobNotFoundError,
@@ -26,11 +29,14 @@ import {
 import { RetryExecutor } from "../../retry";
 import { withJobLogging } from "../../services/job-logging";
 import type { DebounceRequest } from "../../runtime/types";
-import type { DebounceDefinition, DebounceExecuteContext } from "../../registry/types";
+import type {
+  StoredDebounceDefinition,
+  DebounceExecuteContext,
+} from "../../registry/types";
 import type { DebounceHandlerI, DebounceResponse } from "./types";
 
 export class DebounceHandler extends Context.Tag(
-  "@durable-effect/jobs/DebounceHandler"
+  "@durable-effect/jobs/DebounceHandler",
 )<DebounceHandler, DebounceHandlerI>() {}
 
 type HandlerError = JobError | StorageError | SchedulerError;
@@ -47,21 +53,24 @@ export const DebounceHandlerLayer = Layer.effect(
     const retryExecutor = yield* RetryExecutor;
 
     const withStorage = <A, E>(
-      effect: Effect.Effect<A, E, StorageAdapter>
-    ): Effect.Effect<A, E> => Effect.provideService(effect, StorageAdapter, storage);
+      effect: Effect.Effect<A, E, StorageAdapter>,
+    ): Effect.Effect<A, E> =>
+      Effect.provideService(effect, StorageAdapter, storage);
 
     const getDefinition = (
-      name: string
-    ): Effect.Effect<DebounceDefinition<any, any, any, never>, JobNotFoundError> => {
+      name: string,
+    ): Effect.Effect<StoredDebounceDefinition<any, any, any>, JobNotFoundError> => {
       const def = registryService.registry.debounce[name];
       if (!def) {
         return Effect.fail(new JobNotFoundError({ type: "debounce", name }));
       }
-      return Effect.succeed(def as DebounceDefinition<any, any, any, never>);
+      return Effect.succeed(def);
     };
 
     const getEventCount = (): Effect.Effect<number, StorageError> =>
-      storage.get<number>(KEYS.DEBOUNCE.EVENT_COUNT).pipe(Effect.map((n) => n ?? 0));
+      storage
+        .get<number>(KEYS.DEBOUNCE.EVENT_COUNT)
+        .pipe(Effect.map((n) => n ?? 0));
 
     const setEventCount = (count: number): Effect.Effect<void, StorageError> =>
       storage.put(KEYS.DEBOUNCE.EVENT_COUNT, count);
@@ -82,10 +91,10 @@ export const DebounceHandlerLayer = Layer.effect(
       });
 
     const runFlush = (
-      def: DebounceDefinition<any, any, any, never>,
+      def: StoredDebounceDefinition<any, any, any>,
       flushReason: "maxEvents" | "flushAfter" | "manual",
-      id?: string
-    ): Effect.Effect<ExecutionResult, ExecutionError> =>
+      id?: string,
+    ) =>
       execution.execute({
         jobType: "debounce",
         jobName: def.name,
@@ -95,23 +104,26 @@ export const DebounceHandlerLayer = Layer.effect(
         id,
         run: (ctx: DebounceExecuteContext<any>) => def.execute(ctx),
         createContext: (base) => {
-           return {
-             state: Effect.succeed(base.getState()), // Snapshotted state
-             eventCount: getEventCount().pipe(Effect.orDie), // Live event count
-             instanceId: base.instanceId,
-             debounceStartedAt: getStartedAt().pipe(Effect.orDie, Effect.map(t => t ?? 0)),
-             executionStartedAt: Date.now(),
-             flushReason,
-             attempt: base.attempt,
-             isRetry: base.isRetry
-           } as DebounceExecuteContext<any>;
-        }
+          return {
+            state: Effect.succeed(base.getState()), // Snapshotted state
+            eventCount: getEventCount().pipe(Effect.orDie), // Live event count
+            instanceId: base.instanceId,
+            debounceStartedAt: getStartedAt().pipe(
+              Effect.orDie,
+              Effect.map((t) => t ?? 0),
+            ),
+            executionStartedAt: Date.now(),
+            flushReason,
+            attempt: base.attempt,
+            isRetry: base.isRetry,
+          } as DebounceExecuteContext<any>;
+        },
       });
 
     const handleAdd = (
-      def: DebounceDefinition<any, any, any, never>,
-      request: DebounceRequest
-    ): Effect.Effect<DebounceResponse, HandlerError> =>
+      def: StoredDebounceDefinition<any, any, any>,
+      request: DebounceRequest,
+    ): Effect.Effect<DebounceResponse, HandlerError, any> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         const created = !meta;
@@ -123,21 +135,24 @@ export const DebounceHandlerLayer = Layer.effect(
           yield* setEventCount(0);
         }
 
-        const stateService = yield* withStorage(createEntityStateService(def.stateSchema));
+        const stateService = yield* withStorage(
+          createEntityStateService(def.stateSchema),
+        );
         const currentState = yield* stateService.get();
         const currentCount = yield* getEventCount();
         const nextCount = currentCount + 1;
 
         const decodeEvent = Schema.decodeUnknown(def.eventSchema);
         const validatedEvent = yield* decodeEvent(request.event).pipe(
-          Effect.mapError((e) =>
-            new ExecutionError({
-              jobType: "debounce",
-              jobName: def.name,
-              instanceId: runtime.instanceId,
-              cause: e,
-            })
-          )
+          Effect.mapError(
+            (e) =>
+              new ExecutionError({
+                jobType: "debounce",
+                jobName: def.name,
+                instanceId: runtime.instanceId,
+                cause: e,
+              }),
+          ),
         );
 
         const stateForContext = currentState ?? (validatedEvent as unknown);
@@ -160,9 +175,16 @@ export const DebounceHandlerLayer = Layer.effect(
           // Emit debounce.started event for first event
           const scheduledAt = yield* alarm.getScheduled();
           yield* emitEvent({
-            ...createJobBaseEvent(runtime.instanceId, "debounce", request.name, request.id),
+            ...createJobBaseEvent(
+              runtime.instanceId,
+              "debounce",
+              request.name,
+              request.id,
+            ),
             type: "debounce.started" as const,
-            flushAt: scheduledAt ? new Date(scheduledAt).toISOString() : new Date().toISOString(),
+            flushAt: scheduledAt
+              ? new Date(scheduledAt).toISOString()
+              : new Date().toISOString(),
           } satisfies InternalDebounceStartedEvent);
         }
 
@@ -179,7 +201,12 @@ export const DebounceHandlerLayer = Layer.effect(
           if (result.success) {
             // Emit debounce.flushed event for maxEvents trigger
             yield* emitEvent({
-              ...createJobBaseEvent(runtime.instanceId, "debounce", def.name, request.id),
+              ...createJobBaseEvent(
+                runtime.instanceId,
+                "debounce",
+                def.name,
+                request.id,
+              ),
               type: "debounce.flushed" as const,
               eventCount: nextCount,
               reason: "maxEvents" as const,
@@ -199,7 +226,9 @@ export const DebounceHandlerLayer = Layer.effect(
             _type: "debounce.add" as const,
             instanceId: runtime.instanceId,
             eventCount: nextCount,
-            willFlushAt: result.retryScheduled ? ((yield* alarm.getScheduled()) ?? null) : null,
+            willFlushAt: result.retryScheduled
+              ? ((yield* alarm.getScheduled()) ?? null)
+              : null,
             created,
             retryScheduled: result.retryScheduled,
           };
@@ -215,9 +244,9 @@ export const DebounceHandlerLayer = Layer.effect(
       });
 
     const handleFlush = (
-      def: DebounceDefinition<any, any, any, never>,
-      reason: "manual" | "flushAfter" | "maxEvents"
-    ): Effect.Effect<DebounceResponse, HandlerError> =>
+      def: StoredDebounceDefinition<any, any, any>,
+      reason: "manual" | "flushAfter" | "maxEvents",
+    ): Effect.Effect<DebounceResponse, HandlerError, any> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         if (!meta) {
@@ -249,7 +278,12 @@ export const DebounceHandlerLayer = Layer.effect(
         if (result.success) {
           // Emit debounce.flushed event
           yield* emitEvent({
-            ...createJobBaseEvent(runtime.instanceId, "debounce", def.name, meta.id),
+            ...createJobBaseEvent(
+              runtime.instanceId,
+              "debounce",
+              def.name,
+              meta.id,
+            ),
             type: "debounce.flushed" as const,
             eventCount,
             reason: reason === "flushAfter" ? "timeout" : reason,
@@ -270,7 +304,7 @@ export const DebounceHandlerLayer = Layer.effect(
           flushed: true,
           eventCount,
           reason,
-          retryScheduled: result.retryScheduled
+          retryScheduled: result.retryScheduled,
         };
       });
 
@@ -319,10 +353,12 @@ export const DebounceHandlerLayer = Layer.effect(
       });
 
     const handleGetState = (
-      def: DebounceDefinition<any, any, any, never>
+      def: StoredDebounceDefinition<any, any, any>,
     ): Effect.Effect<DebounceResponse, HandlerError> =>
       Effect.gen(function* () {
-        const stateService = yield* withStorage(createEntityStateService(def.stateSchema));
+        const stateService = yield* withStorage(
+          createEntityStateService(def.stateSchema),
+        );
         const state = yield* stateService.get();
 
         return {
@@ -332,7 +368,9 @@ export const DebounceHandlerLayer = Layer.effect(
       });
 
     return {
-      handle: (request: DebounceRequest): Effect.Effect<DebounceResponse, JobError> =>
+      handle: (
+        request: DebounceRequest,
+      ): Effect.Effect<DebounceResponse, JobError, any> =>
         Effect.gen(function* () {
           const def = yield* getDefinition(request.name);
 
@@ -350,7 +388,9 @@ export const DebounceHandlerLayer = Layer.effect(
                 return yield* handleGetState(def);
               default:
                 return yield* Effect.fail(
-                  new UnknownJobTypeError({ type: `debounce/${(request as any).action}` })
+                  new UnknownJobTypeError({
+                    type: `debounce/${(request as any).action}`,
+                  }),
                 );
             }
           });
@@ -369,8 +409,8 @@ export const DebounceHandlerLayer = Layer.effect(
                 jobName: request.name,
                 instanceId: runtime.instanceId,
                 cause: e,
-              })
-            )
+              }),
+            ),
           ),
           Effect.catchTag("SchedulerError", (e) =>
             Effect.fail(
@@ -379,15 +419,19 @@ export const DebounceHandlerLayer = Layer.effect(
                 jobName: request.name,
                 instanceId: runtime.instanceId,
                 cause: e,
-              })
-            )
-          )
+              }),
+            ),
+          ),
         ),
 
-      handleAlarm: (): Effect.Effect<void, JobError> =>
+      handleAlarm: (): Effect.Effect<void, JobError, any> =>
         Effect.gen(function* () {
           const meta = yield* metadata.get();
-          if (!meta || meta.status === "stopped" || meta.status === "terminated") {
+          if (
+            !meta ||
+            meta.status === "stopped" ||
+            meta.status === "terminated"
+          ) {
             return;
           }
 
@@ -395,9 +439,9 @@ export const DebounceHandlerLayer = Layer.effect(
 
           const alarmEffect = Effect.gen(function* () {
             // Check if this is a retry alarm
-            const isRetrying = yield* retryExecutor.isRetrying().pipe(
-              Effect.catchAll(() => Effect.succeed(false)),
-            );
+            const isRetrying = yield* retryExecutor
+              .isRetrying()
+              .pipe(Effect.catchAll(() => Effect.succeed(false)));
 
             // Reset retry state if manual trigger while retrying
             if (!isRetrying) {
@@ -426,8 +470,8 @@ export const DebounceHandlerLayer = Layer.effect(
                 jobName: "unknown",
                 instanceId: runtime.instanceId,
                 cause: e,
-              })
-            )
+              }),
+            ),
           ),
           Effect.catchTag("SchedulerError", (e) =>
             Effect.fail(
@@ -436,10 +480,10 @@ export const DebounceHandlerLayer = Layer.effect(
                 jobName: "unknown",
                 instanceId: runtime.instanceId,
                 cause: e,
-              })
-            )
-          )
+              }),
+            ),
+          ),
         ),
     };
-  })
+  }),
 );

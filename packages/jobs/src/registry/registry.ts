@@ -7,6 +7,10 @@ import type {
   ContinuousDefinition,
   JobRegistry,
   WorkerPoolDefinition,
+  StoredContinuousDefinition,
+  StoredDebounceDefinition,
+  StoredWorkerPoolDefinition,
+  StoredTaskDefinition,
 } from "./types";
 import type { TypedJobRegistry, RuntimeJobRegistry } from "./typed";
 
@@ -40,25 +44,29 @@ export function createJobRegistry<
     workerPool: new Map<string, WorkerPoolDefinition<any, any, any>>(),
   };
 
+  // Type casts are needed because Object.entries loses the discriminated union
+  // narrowing after the spread operation ({ ...def, name })
   for (const [name, def] of Object.entries(definitions)) {
-    // Assign the name from the key
     const withName = { ...def, name };
 
     switch (def._tag) {
       case "ContinuousDefinition":
         registry.continuous.set(
           name,
-          withName as ContinuousDefinition<any, any, any>
+          withName as ContinuousDefinition<any, any, any>,
         );
         break;
       case "DebounceDefinition":
         registry.debounce.set(
           name,
-          withName as DebounceDefinition<any, any, any, any>
+          withName as DebounceDefinition<any, any, any, any>,
         );
         break;
       case "WorkerPoolDefinition":
-        registry.workerPool.set(name, withName as WorkerPoolDefinition<any, any, any>);
+        registry.workerPool.set(
+          name,
+          withName as WorkerPoolDefinition<any, any, any>,
+        );
         break;
     }
   }
@@ -129,16 +137,26 @@ export function createTypedJobRegistry<
  * Convert a TypedJobRegistry to a RuntimeJobRegistry for handler use.
  *
  * This provides a consistent interface for handlers to access definitions
- * without needing to know the full generic type.
+ * without needing to know the full generic type. The conversion widens
+ * error types to `unknown` via the Stored definition types.
  */
-export function toRuntimeRegistry<T extends Record<string, AnyUnregisteredDefinition>>(
-  registry: TypedJobRegistry<T>,
-): RuntimeJobRegistry {
+export function toRuntimeRegistry<
+  T extends Record<string, AnyUnregisteredDefinition>,
+>(registry: TypedJobRegistry<T>): RuntimeJobRegistry {
   return {
-    continuous: registry.continuous as Record<string, ContinuousDefinition<any, any, any>>,
-    debounce: registry.debounce as Record<string, DebounceDefinition<any, any, any, any>>,
-    workerPool: registry.workerPool as Record<string, WorkerPoolDefinition<any, any, any>>,
-    task: registry.task as Record<string, any>,
+    continuous: registry.continuous as Record<
+      string,
+      StoredContinuousDefinition<any, any>
+    >,
+    debounce: registry.debounce as Record<
+      string,
+      StoredDebounceDefinition<any, any, any>
+    >,
+    workerPool: registry.workerPool as Record<
+      string,
+      StoredWorkerPoolDefinition<any, any>
+    >,
+    task: registry.task as Record<string, StoredTaskDefinition<any, any, any>>,
   };
 }
 
@@ -152,7 +170,7 @@ export function toRuntimeRegistry<T extends Record<string, AnyUnregisteredDefini
  */
 export function getContinuousDefinition(
   registry: JobRegistry,
-  name: string
+  name: string,
 ): ContinuousDefinition<any, any, any> | undefined {
   return registry.continuous.get(name);
 }
@@ -163,7 +181,7 @@ export function getContinuousDefinition(
  */
 export function getDebounceDefinition(
   registry: JobRegistry,
-  name: string
+  name: string,
 ): DebounceDefinition<any, any, any, any> | undefined {
   return registry.debounce.get(name);
 }
@@ -174,7 +192,7 @@ export function getDebounceDefinition(
  */
 export function getWorkerPoolDefinition(
   registry: JobRegistry,
-  name: string
+  name: string,
 ): WorkerPoolDefinition<any, any, any> | undefined {
   return registry.workerPool.get(name);
 }
@@ -186,7 +204,7 @@ export function getWorkerPoolDefinition(
 export function getJobDefinition(
   registry: JobRegistry,
   type: "continuous" | "debounce" | "workerPool",
-  name: string
+  name: string,
 ): AnyJobDefinition | undefined {
   switch (type) {
     case "continuous":

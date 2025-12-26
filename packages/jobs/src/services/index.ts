@@ -43,7 +43,6 @@ export {
   type ExecuteOptions,
   type ExecutionResult,
   type ExecutionContextBase,
-  type OnRetryExhaustedContext,
 } from "./execution";
 
 // Cleanup

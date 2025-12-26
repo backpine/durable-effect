@@ -1,6 +1,6 @@
 // packages/jobs/src/definitions/continuous.ts
 
-import { Duration, type Effect, type Schema } from "effect";
+import { Cron, DateTime, Duration, type Effect, type Schema } from "effect";
 import type {
   UnregisteredContinuousDefinition,
   ContinuousSchedule,
@@ -145,19 +145,28 @@ export const Continuous = {
   /**
    * Create a schedule based on a cron expression.
    *
+   * Uses Effect's built-in Cron module for parsing and scheduling.
+   *
+   * @param expression - Standard cron expression (6 fields: seconds minutes hours days months weekdays)
+   * @param tz - Optional timezone name (e.g., "America/New_York", "UTC")
+   *
    * @example
    * ```ts
-   * // Every day at midnight
-   * Continuous.cron("0 0 * * *")
+   * // Every day at 4am UTC
+   * Continuous.cron("0 0 4 * * *")
    *
-   * // Every Monday at 9am
-   * Continuous.cron("0 9 * * 1")
+   * // Every Monday at 9am in New York
+   * Continuous.cron("0 0 9 * * 1", "America/New_York")
    * ```
    */
-  cron: (expression: string): ContinuousSchedule => ({
-    _tag: "Cron",
-    expression,
-  }),
+  cron: (expression: string, tz?: string): ContinuousSchedule => {
+    const timezone = tz ? DateTime.zoneUnsafeMakeNamed(tz) : undefined;
+    const cron = Cron.unsafeParse(expression, timezone);
+    return {
+      _tag: "Cron",
+      cron,
+    };
+  },
 } as const;
 
 /**

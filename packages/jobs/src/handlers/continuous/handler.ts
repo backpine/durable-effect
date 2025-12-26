@@ -1,6 +1,6 @@
 // packages/jobs/src/handlers/continuous/handler.ts
 
-import { Context, Effect, Layer } from "effect";
+import { Context, Cron, Effect, Layer } from "effect";
 import {
   RuntimeAdapter,
   StorageAdapter,
@@ -15,17 +15,19 @@ import { MetadataService, type JobStatus } from "../../services/metadata";
 import { AlarmService } from "../../services/alarm";
 import { createEntityStateService } from "../../services/entity-state";
 import { RegistryService } from "../../services/registry";
-import { JobExecutionService, type ExecutionResult } from "../../services/execution";
-import { KEYS } from "../../storage-keys";
 import {
-  JobNotFoundError,
-  ExecutionError,
-  type JobError,
-} from "../../errors";
+  JobExecutionService,
+  type ExecutionResult,
+} from "../../services/execution";
+import { KEYS } from "../../storage-keys";
+import { JobNotFoundError, ExecutionError, type JobError } from "../../errors";
 import { RetryExecutor } from "../../retry";
 import { withJobLogging } from "../../services/job-logging";
 import type { ContinuousRequest } from "../../runtime/types";
-import type { ContinuousDefinition, ContinuousContext } from "../../registry/types";
+import type {
+  StoredContinuousDefinition,
+  ContinuousContext,
+} from "../../registry/types";
 import type { ContinuousHandlerI, ContinuousResponse } from "./types";
 import { createContinuousContext, type StateHolder } from "./context";
 
@@ -48,17 +50,12 @@ export const ContinuousHandlerLayer = Layer.effect(
 
     const getDefinition = (
       name: string,
-    ): Effect.Effect<
-      ContinuousDefinition<unknown, unknown, never>,
-      JobNotFoundError
-    > => {
+    ): Effect.Effect<StoredContinuousDefinition<any, any>, JobNotFoundError> => {
       const def = registryService.registry.continuous[name];
       if (!def) {
         return Effect.fail(new JobNotFoundError({ type: "continuous", name }));
       }
-      return Effect.succeed(
-        def as ContinuousDefinition<unknown, unknown, never>,
-      );
+      return Effect.succeed(def);
     };
 
     const getRunCount = (): Effect.Effect<number, StorageError> =>
@@ -81,29 +78,26 @@ export const ContinuousHandlerLayer = Layer.effect(
       });
 
     const scheduleNext = (
-      def: ContinuousDefinition<unknown, unknown, never>,
+      def: StoredContinuousDefinition<any, any>,
     ): Effect.Effect<void, SchedulerError | ExecutionError> => {
       const schedule = def.schedule;
       switch (schedule._tag) {
         case "Every":
           return alarm.schedule(schedule.interval);
         case "Cron":
-          return Effect.fail(
-            new ExecutionError({
-              jobType: "continuous",
-              jobName: def.name,
-              instanceId: runtime.instanceId,
-              cause: new Error("Cron schedules are not supported yet"),
-            }),
-          );
+          return Effect.gen(function* () {
+            const now = yield* runtime.now();
+            const nextDate = Cron.next(schedule.cron, new Date(now));
+            yield* alarm.schedule(nextDate);
+          });
       }
     };
 
     const runExecution = (
-      def: ContinuousDefinition<unknown, unknown, never>,
+      def: StoredContinuousDefinition<any, any>,
       runCount: number,
-      id?: string
-    ): Effect.Effect<ExecutionResult, ExecutionError> =>
+      id?: string,
+    ) =>
       execution.execute({
         jobType: "continuous",
         jobName: def.name,
@@ -120,26 +114,27 @@ export const ContinuousHandlerLayer = Layer.effect(
             set current(val) {
               base.setState(val);
             },
-            get dirty() { return true; }, // Dummy, handled by service
-            set dirty(_) { /* no-op */ }
+            get dirty() {
+              return true;
+            }, // Dummy, handled by service
+            set dirty(_) {
+              /* no-op */
+            },
           };
           return createContinuousContext(
             proxyHolder,
             base.instanceId,
             base.runCount,
             def.name,
-            base.attempt
+            base.attempt,
           );
-        }
+        },
       });
 
     const handleStart = (
-      def: ContinuousDefinition<unknown, unknown, never>,
+      def: StoredContinuousDefinition<any, any>,
       request: ContinuousRequest,
-    ): Effect.Effect<
-      ContinuousResponse,
-      HandlerError
-    > =>
+    ): Effect.Effect<ContinuousResponse, HandlerError, any> =>
       Effect.gen(function* () {
         const existing = yield* metadata.get();
         if (existing) {
@@ -155,21 +150,20 @@ export const ContinuousHandlerLayer = Layer.effect(
 
         // Emit job.started event
         yield* emitEvent({
-          ...createJobBaseEvent(runtime.instanceId, "continuous", request.name, request.id),
+          ...createJobBaseEvent(
+            runtime.instanceId,
+            "continuous",
+            request.name,
+            request.id,
+          ),
           type: "job.started" as const,
           input: request.input,
         } satisfies InternalJobStartedEvent);
 
-        // Initial state set
-        // TODO: ExecutionService handles loading, but here we need to set INITIAL state
-        // We can use execution service to "seed" state? No, we should just use storage directly for init.
-        // Or we use a special "init" execution?
-        // Let's use direct storage access for init as before.
-        const stateService = yield* createEntityStateService(def.stateSchema).pipe(
-            Effect.provideService(StorageAdapter, storage)
-        );
+        const stateService = yield* createEntityStateService(
+          def.stateSchema,
+        ).pipe(Effect.provideService(StorageAdapter, storage));
         yield* stateService.set(request.input);
-
 
         yield* storage.put(KEYS.CONTINUOUS.RUN_COUNT, 0);
         yield* metadata.updateStatus("running");
@@ -179,31 +173,31 @@ export const ContinuousHandlerLayer = Layer.effect(
         if (def.startImmediately !== false) {
           const runCount = yield* incrementRunCount();
           const result = yield* runExecution(def, runCount, request.id);
-          
+
           if (result.terminated) {
             // Terminated - CleanupService has already purged everything
             return {
               _type: "continuous.start" as const,
               instanceId: runtime.instanceId,
               created: true,
-              status: "terminated" as JobStatus
+              status: "terminated" as JobStatus,
             };
           }
-          
+
           // Only update last executed if successful (or handled error)
           if (result.success) {
-             yield* updateLastExecutedAt();
+            yield* updateLastExecutedAt();
           }
-          
+
           // If retry scheduled, we don't schedule next run yet (handled by retry alarm)
           if (result.retryScheduled) {
-             // Do nothing, alarm is set
+            // Do nothing, alarm is set
           } else if (!result.terminated) {
-             // Success, schedule next
-             yield* scheduleNext(def);
+            // Success, schedule next
+            yield* scheduleNext(def);
           }
         } else {
-           yield* scheduleNext(def);
+          yield* scheduleNext(def);
         }
 
         return {
@@ -232,7 +226,12 @@ export const ContinuousHandlerLayer = Layer.effect(
 
         // Emit job.terminated event
         yield* emitEvent({
-          ...createJobBaseEvent(runtime.instanceId, "continuous", existing.name, existing.id),
+          ...createJobBaseEvent(
+            runtime.instanceId,
+            "continuous",
+            existing.name,
+            existing.id,
+          ),
           type: "job.terminated" as const,
           reason: request.reason,
           runCount,
@@ -252,11 +251,8 @@ export const ContinuousHandlerLayer = Layer.effect(
       });
 
     const handleTrigger = (
-      def: ContinuousDefinition<unknown, unknown, never>,
-    ): Effect.Effect<
-      ContinuousResponse,
-      HandlerError
-    > =>
+      def: StoredContinuousDefinition<any, any>,
+    ): Effect.Effect<ContinuousResponse, HandlerError, any> =>
       Effect.gen(function* () {
         const existing = yield* metadata.get();
         if (
@@ -281,16 +277,16 @@ export const ContinuousHandlerLayer = Layer.effect(
           return {
             _type: "continuous.trigger" as const,
             triggered: true,
-            terminated: true
+            terminated: true,
           };
         }
 
         if (result.retryScheduled) {
-             return {
-               _type: "continuous.trigger" as const,
-               triggered: true,
-               retryScheduled: true
-             };
+          return {
+            _type: "continuous.trigger" as const,
+            triggered: true,
+            retryScheduled: true,
+          };
         }
 
         yield* updateLastExecutedAt();
@@ -325,12 +321,12 @@ export const ContinuousHandlerLayer = Layer.effect(
       });
 
     const handleGetState = (
-      def: ContinuousDefinition<unknown, unknown, never>,
+      def: StoredContinuousDefinition<any, any>,
     ): Effect.Effect<ContinuousResponse, HandlerError> =>
       Effect.gen(function* () {
-        const stateService = yield* createEntityStateService(def.stateSchema).pipe(
-            Effect.provideService(StorageAdapter, storage)
-        );
+        const stateService = yield* createEntityStateService(
+          def.stateSchema,
+        ).pipe(Effect.provideService(StorageAdapter, storage));
         const state = yield* stateService.get();
 
         return {
@@ -342,7 +338,7 @@ export const ContinuousHandlerLayer = Layer.effect(
     return {
       handle: (
         request: ContinuousRequest,
-      ): Effect.Effect<ContinuousResponse, JobError> =>
+      ): Effect.Effect<ContinuousResponse, JobError, any> =>
         Effect.gen(function* () {
           const def = yield* getDefinition(request.name);
 
@@ -390,7 +386,7 @@ export const ContinuousHandlerLayer = Layer.effect(
           ),
         ),
 
-      handleAlarm: (): Effect.Effect<void, JobError> =>
+      handleAlarm: (): Effect.Effect<void, JobError, any> =>
         Effect.gen(function* () {
           const meta = yield* metadata.get();
           if (
@@ -404,9 +400,9 @@ export const ContinuousHandlerLayer = Layer.effect(
           const def = yield* getDefinition(meta.name);
 
           const alarmEffect = Effect.gen(function* () {
-            const isRetrying = yield* retryExecutor.isRetrying().pipe(
-              Effect.catchAll(() => Effect.succeed(false)),
-            );
+            const isRetrying = yield* retryExecutor
+              .isRetrying()
+              .pipe(Effect.catchAll(() => Effect.succeed(false)));
 
             let runCount: number;
             if (isRetrying) {

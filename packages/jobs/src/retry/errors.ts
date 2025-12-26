@@ -7,9 +7,7 @@ import type { RetryExhaustedInfo } from "./types";
  * Signal that all retry attempts have been exhausted.
  *
  * This is a control flow signal, not a true error. It's caught by
- * JobExecutionService which then either:
- * - Calls onRetryExhausted if defined on the job
- * - Terminates the job (default behavior for cost control)
+ * JobExecutionService which terminates the job (state purged).
  */
 export class RetryExhaustedSignal extends Data.TaggedError("RetryExhaustedSignal")<
   RetryExhaustedInfo & {

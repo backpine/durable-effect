@@ -5,8 +5,7 @@ import type { BaseRetryConfig } from "@durable-effect/core";
 /**
  * Information provided when all retry attempts are exhausted.
  *
- * This is passed to the RetryExhaustedSignal and can be used by
- * the job's onRetryExhausted handler.
+ * This is passed to the RetryExhaustedSignal.
  */
 export interface RetryExhaustedInfo {
   readonly jobType: "continuous" | "debounce" | "task" | "workerPool";
@@ -21,12 +20,9 @@ export interface RetryExhaustedInfo {
  * Retry configuration for job execute handlers.
  *
  * Simplified configuration focused only on retry timing.
- * All errors from execute are retryable - use onRetryExhausted
- * at the job definition level for custom exhaustion handling.
+ * All errors from execute are retryable.
  *
- * When retries are exhausted:
- * - If onRetryExhausted is defined on the job: it's called with the typed error
- * - If not defined: the job is terminated (state purged) by default
+ * When retries are exhausted, the job is terminated (state purged).
  */
 export interface JobRetryConfig extends BaseRetryConfig {
   // Inherits from BaseRetryConfig:

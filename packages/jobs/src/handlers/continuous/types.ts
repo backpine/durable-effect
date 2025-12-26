@@ -46,12 +46,12 @@ export interface ContinuousHandlerI {
    */
   readonly handle: (
     request: ContinuousRequest
-  ) => Effect.Effect<ContinuousResponse, JobError>;
+  ) => Effect.Effect<ContinuousResponse, JobError, any>;
 
   /**
    * Handle an alarm for this continuous job.
    */
-  readonly handleAlarm: () => Effect.Effect<void, JobError>;
+  readonly handleAlarm: () => Effect.Effect<void, JobError, any>;
 }
 
 // =============================================================================
