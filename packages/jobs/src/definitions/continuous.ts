@@ -16,7 +16,7 @@ import type { JobRetryConfig } from "../retry/types";
 /**
  * Input config for creating a continuous job definition.
  */
-export interface ContinuousMakeConfig<S, E, R> {
+export interface ContinuousMakeConfig<S, E> {
   /**
    * Schema for validating and serializing state.
    * Accepts any Effect Schema (Struct, Class, etc.)
@@ -73,8 +73,20 @@ export interface ContinuousMakeConfig<S, E, R> {
 
   /**
    * The function to execute on schedule.
+   *
+   * Must return Effect<void, E, never> - all service requirements must be satisfied.
+   * If your effect requires services, provide them via .pipe(Effect.provide(layer)).
+   *
+   * @example
+   * ```ts
+   * execute: (ctx) =>
+   *   Effect.gen(function* () {
+   *     const random = yield* Random;
+   *     // ...
+   *   }).pipe(Effect.provide(RandomLive))
+   * ```
    */
-  execute(ctx: ContinuousContext<S>): Effect.Effect<void, E, R>;
+  execute(ctx: ContinuousContext<S>): Effect.Effect<void, E, never>;
 }
 
 /**
@@ -116,9 +128,9 @@ export const Continuous = {
    * @param config - Configuration for the job
    * @returns An UnregisteredContinuousDefinition that can be registered
    */
-  make: <S, E = never, R = never>(
-    config: ContinuousMakeConfig<S, E, R>
-  ): UnregisteredContinuousDefinition<S, E, R> => ({
+  make: <S, E = never>(
+    config: ContinuousMakeConfig<S, E>
+  ): UnregisteredContinuousDefinition<S, E> => ({
     _tag: "ContinuousDefinition",
     stateSchema: config.stateSchema,
     schedule: config.schedule,

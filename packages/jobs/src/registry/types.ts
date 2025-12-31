@@ -37,12 +37,11 @@ export type ContinuousSchedule =
  * Unregistered continuous job definition.
  * Created by Continuous.make() - does not have a name yet.
  * Name is assigned when registered via createDurableJobs().
+ *
+ * Note: The execute function must return Effect<void, E, never>.
+ * If your effect requires services, provide them via .pipe(Effect.provide(layer)).
  */
-export interface UnregisteredContinuousDefinition<
-  S = unknown,
-  E = unknown,
-  R = never,
-> {
+export interface UnregisteredContinuousDefinition<S = unknown, E = unknown> {
   readonly _tag: "ContinuousDefinition";
   /** Schema for state - encoded type can be anything (typically same as S for simple schemas) */
   readonly stateSchema: Schema.Schema<S, any, never>;
@@ -66,19 +65,35 @@ export interface UnregisteredContinuousDefinition<
    * @default false (LogLevel.Error - failures only)
    */
   readonly logging?: LoggingOption;
-  /** Function to execute on schedule */
-  execute(ctx: ContinuousContext<S>): Effect.Effect<void, E, R>;
+  /**
+   * Function to execute on schedule.
+   *
+   * Must return Effect<void, E, never> - all service requirements must be satisfied.
+   * Use .pipe(Effect.provide(layer)) to provide custom services.
+   *
+   * @example
+   * ```ts
+   * execute: (ctx) =>
+   *   Effect.gen(function* () {
+   *     const random = yield* Random;
+   *     // ...
+   *   }).pipe(Effect.provide(RandomLive))
+   * ```
+   */
+  execute(ctx: ContinuousContext<S>): Effect.Effect<void, E, never>;
 }
 
 /**
  * Unregistered debounce job definition.
  * Created by Debounce.make() - does not have a name yet.
+ *
+ * Note: All handler functions must return Effect with R = never.
+ * If your effect requires services, provide them via .pipe(Effect.provide(layer)).
  */
 export interface UnregisteredDebounceDefinition<
   I = unknown,
   S = unknown,
   E = unknown,
-  R = never,
 > {
   readonly _tag: "DebounceDefinition";
   readonly eventSchema: Schema.Schema<I, any, never>;
@@ -104,8 +119,16 @@ export interface UnregisteredDebounceDefinition<
    * @default false (LogLevel.Error - failures only)
    */
   readonly logging?: LoggingOption;
-  execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, E, R>;
-  onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, R>;
+  /**
+   * Execute handler called on flush.
+   * Must return Effect<void, E, never> - all service requirements must be satisfied.
+   */
+  execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, E, never>;
+  /**
+   * Optional event handler to transform state on each event.
+   * Must return Effect<S, never, never> - all service requirements must be satisfied.
+   */
+  onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, never>;
 }
 
 /**
@@ -121,19 +144,18 @@ export interface WorkerPoolRetryConfig {
 /**
  * Unregistered workerPool job definition.
  * Created by WorkerPool.make() - does not have a name yet.
+ *
+ * Note: All handler functions must return Effect with R = never.
+ * If your effect requires services, provide them via .pipe(Effect.provide(layer)).
  */
-export interface UnregisteredWorkerPoolDefinition<
-  E = unknown,
-  Err = unknown,
-  R = never,
-> {
+export interface UnregisteredWorkerPoolDefinition<E = unknown, Err = unknown> {
   readonly _tag: "WorkerPoolDefinition";
   readonly eventSchema: Schema.Schema<E, any, never>;
   readonly concurrency: number;
   readonly retry?: WorkerPoolRetryConfig;
-  execute(ctx: WorkerPoolExecuteContext<E>): Effect.Effect<void, Err, R>;
-  onDeadLetter?(event: E, error: Err, ctx: WorkerPoolDeadLetterContext): Effect.Effect<void, never, R>;
-  onEmpty?(ctx: WorkerPoolEmptyContext): Effect.Effect<void, never, R>;
+  execute(ctx: WorkerPoolExecuteContext<E>): Effect.Effect<void, Err, never>;
+  onDeadLetter?(event: E, error: Err, ctx: WorkerPoolDeadLetterContext): Effect.Effect<void, never, never>;
+  onEmpty?(ctx: WorkerPoolEmptyContext): Effect.Effect<void, never, never>;
 }
 
 /**
@@ -149,13 +171,14 @@ export interface UnregisteredWorkerPoolDefinition<
  * - S: State schema type (decoded)
  * - E: Event schema type (decoded)
  * - Err: Error type from handlers
- * - R: Effect requirements (context)
+ *
+ * Note: All handler functions must return Effect with R = never.
+ * If your effect requires services, provide them via .pipe(Effect.provide(layer)).
  */
 export interface UnregisteredTaskDefinition<
   S = unknown,
   E = unknown,
   Err = unknown,
-  R = never,
 > {
   readonly _tag: "TaskDefinition";
   /** Schema for validating and serializing state */
@@ -166,29 +189,33 @@ export interface UnregisteredTaskDefinition<
   /**
    * Handler called for each incoming event.
    * Updates state and optionally schedules execution.
+   * Must return Effect<void, Err, never> - all service requirements must be satisfied.
    *
    * @param event - The incoming event (already validated against eventSchema)
    * @param ctx - Context for state access, scheduling, and metadata
    */
-  onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, Err, R>;
+  onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, Err, never>;
 
   /**
    * Handler called when alarm fires.
    * Processes state and optionally schedules next execution.
+   * Must return Effect<void, Err, never> - all service requirements must be satisfied.
    */
-  execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, Err, R>;
+  execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, Err, never>;
 
   /**
    * Optional handler called when either `onEvent` or `execute` completes
    * and no alarm is scheduled.
+   * Must return Effect<void, never, never> - all service requirements must be satisfied.
    */
-  onIdle?(ctx: TaskIdleContext<S>): Effect.Effect<void, never, R>;
+  onIdle?(ctx: TaskIdleContext<S>): Effect.Effect<void, never, never>;
 
   /**
    * Optional error handler for onEvent/execute failures.
    * If not provided, errors are logged and task continues.
+   * Must return Effect<void, never, never> - all service requirements must be satisfied.
    */
-  onError?(error: Err, ctx: TaskErrorContext<S>): Effect.Effect<void, never, R>;
+  onError?(error: Err, ctx: TaskErrorContext<S>): Effect.Effect<void, never, never>;
 
   /**
    * Configure logging level for this job.
@@ -201,14 +228,14 @@ export interface UnregisteredTaskDefinition<
 /**
  * Union of all unregistered job definition types.
  *
- * Note: Error types use `unknown` to accept definitions with any error type.
- * The stored types (below) handle the runtime representation with unknown errors.
+ * Note: Uses `unknown` for all type parameters to accept any definition.
+ * Specific types are preserved through TypedJobRegistry's __definitions property.
  */
 export type AnyUnregisteredDefinition =
-  | UnregisteredContinuousDefinition<any, unknown, any>
-  | UnregisteredDebounceDefinition<any, any, unknown, any>
-  | UnregisteredWorkerPoolDefinition<any, unknown, any>
-  | UnregisteredTaskDefinition<any, any, unknown, any>;
+  | UnregisteredContinuousDefinition<any, any>
+  | UnregisteredDebounceDefinition<any, any, any>
+  | UnregisteredWorkerPoolDefinition<any, any>
+  | UnregisteredTaskDefinition<any, any, any>;
 
 // =============================================================================
 // Stored Definition Types (error type widened to unknown for registry storage)
@@ -228,7 +255,7 @@ export interface StoredJobRetryConfig {
 /**
  * Stored continuous job definition (error type widened to unknown).
  */
-export interface StoredContinuousDefinition<S = unknown, R = never> {
+export interface StoredContinuousDefinition<S = unknown> {
   readonly _tag: "ContinuousDefinition";
   readonly name: string;
   readonly stateSchema: Schema.Schema<S, any, never>;
@@ -236,13 +263,13 @@ export interface StoredContinuousDefinition<S = unknown, R = never> {
   readonly startImmediately?: boolean;
   readonly retry?: StoredJobRetryConfig;
   readonly logging?: LoggingOption;
-  execute(ctx: ContinuousContext<S>): Effect.Effect<void, unknown, R>;
+  execute(ctx: ContinuousContext<S>): Effect.Effect<void, unknown, never>;
 }
 
 /**
  * Stored debounce job definition (error type widened to unknown).
  */
-export interface StoredDebounceDefinition<I = unknown, S = unknown, R = never> {
+export interface StoredDebounceDefinition<I = unknown, S = unknown> {
   readonly _tag: "DebounceDefinition";
   readonly name: string;
   readonly eventSchema: Schema.Schema<I, any, never>;
@@ -251,37 +278,37 @@ export interface StoredDebounceDefinition<I = unknown, S = unknown, R = never> {
   readonly maxEvents?: number;
   readonly retry?: StoredJobRetryConfig;
   readonly logging?: LoggingOption;
-  execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, unknown, R>;
-  onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, R>;
+  execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, unknown, never>;
+  onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, never>;
 }
 
 /**
  * Stored workerPool job definition (error type widened to unknown).
  */
-export interface StoredWorkerPoolDefinition<E = unknown, R = never> {
+export interface StoredWorkerPoolDefinition<E = unknown> {
   readonly _tag: "WorkerPoolDefinition";
   readonly name: string;
   readonly eventSchema: Schema.Schema<E, any, never>;
   readonly concurrency: number;
   readonly retry?: WorkerPoolRetryConfig;
-  execute(ctx: WorkerPoolExecuteContext<E>): Effect.Effect<void, unknown, R>;
-  onDeadLetter?(event: E, error: unknown, ctx: WorkerPoolDeadLetterContext): Effect.Effect<void, never, R>;
-  onEmpty?(ctx: WorkerPoolEmptyContext): Effect.Effect<void, never, R>;
+  execute(ctx: WorkerPoolExecuteContext<E>): Effect.Effect<void, unknown, never>;
+  onDeadLetter?(event: E, error: unknown, ctx: WorkerPoolDeadLetterContext): Effect.Effect<void, never, never>;
+  onEmpty?(ctx: WorkerPoolEmptyContext): Effect.Effect<void, never, never>;
 }
 
 /**
  * Stored task job definition (error type widened to unknown).
  */
-export interface StoredTaskDefinition<S = unknown, E = unknown, R = never> {
+export interface StoredTaskDefinition<S = unknown, E = unknown> {
   readonly _tag: "TaskDefinition";
   readonly name: string;
   readonly stateSchema: Schema.Schema<S, any, never>;
   readonly eventSchema: Schema.Schema<E, any, never>;
   readonly logging?: LoggingOption;
-  onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, unknown, R>;
-  execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, unknown, R>;
-  onIdle?(ctx: TaskIdleContext<S>): Effect.Effect<void, never, R>;
-  onError?(error: unknown, ctx: TaskErrorContext<S>): Effect.Effect<void, never, R>;
+  onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, unknown, never>;
+  execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, unknown, never>;
+  onIdle?(ctx: TaskIdleContext<S>): Effect.Effect<void, never, never>;
+  onError?(error: unknown, ctx: TaskErrorContext<S>): Effect.Effect<void, never, never>;
 }
 
 // =============================================================================
@@ -294,8 +321,7 @@ export interface StoredTaskDefinition<S = unknown, E = unknown, R = never> {
 export interface ContinuousDefinition<
   S = unknown,
   E = unknown,
-  R = never,
-> extends UnregisteredContinuousDefinition<S, E, R> {
+> extends UnregisteredContinuousDefinition<S, E> {
   readonly name: string;
 }
 
@@ -306,8 +332,7 @@ export interface DebounceDefinition<
   I = unknown,
   S = unknown,
   E = unknown,
-  R = never,
-> extends UnregisteredDebounceDefinition<I, S, E, R> {
+> extends UnregisteredDebounceDefinition<I, S, E> {
   readonly name: string;
 }
 
@@ -317,8 +342,7 @@ export interface DebounceDefinition<
 export interface WorkerPoolDefinition<
   E = unknown,
   Err = unknown,
-  R = never,
-> extends UnregisteredWorkerPoolDefinition<E, Err, R> {
+> extends UnregisteredWorkerPoolDefinition<E, Err> {
   readonly name: string;
 }
 
@@ -329,8 +353,7 @@ export interface TaskDefinition<
   S = unknown,
   E = unknown,
   Err = unknown,
-  R = never,
-> extends UnregisteredTaskDefinition<S, E, Err, R> {
+> extends UnregisteredTaskDefinition<S, E, Err> {
   readonly name: string;
 }
 
@@ -338,10 +361,10 @@ export interface TaskDefinition<
  * Union of all registered job definition types.
  */
 export type AnyJobDefinition =
-  | ContinuousDefinition<any, any, any>
-  | DebounceDefinition<any, any, any, any>
-  | WorkerPoolDefinition<any, any, any>
-  | TaskDefinition<any, any, any, any>;
+  | ContinuousDefinition<unknown, unknown>
+  | DebounceDefinition<unknown, unknown, unknown>
+  | WorkerPoolDefinition<unknown, unknown>
+  | TaskDefinition<unknown, unknown, unknown>;
 
 // =============================================================================
 // Context Types (provided to user functions)
@@ -642,9 +665,9 @@ export interface TaskErrorContext<S> {
  * Organized by job type for efficient lookup.
  */
 export interface JobRegistry {
-  readonly continuous: Map<string, ContinuousDefinition<any, any, any>>;
-  readonly debounce: Map<string, DebounceDefinition<any, any, any, any>>;
-  readonly workerPool: Map<string, WorkerPoolDefinition<any, any, any>>;
+  readonly continuous: Map<string, ContinuousDefinition<unknown, unknown>>;
+  readonly debounce: Map<string, DebounceDefinition<unknown, unknown, unknown>>;
+  readonly workerPool: Map<string, WorkerPoolDefinition<unknown, unknown>>;
 }
 
 /**
@@ -652,24 +675,24 @@ export interface JobRegistry {
  */
 export type InferRegistry<T extends Record<string, AnyJobDefinition>> = {
   continuous: {
-    [K in keyof T as T[K] extends ContinuousDefinition<any, any, any>
+    [K in keyof T as T[K] extends ContinuousDefinition<unknown, unknown>
       ? K
-      : never]: T[K] extends ContinuousDefinition<infer S, infer E, infer R>
-      ? ContinuousDefinition<S, E, R>
+      : never]: T[K] extends ContinuousDefinition<infer S, infer E>
+      ? ContinuousDefinition<S, E>
       : never;
   };
   debounce: {
-    [K in keyof T as T[K] extends DebounceDefinition<any, any, any, any>
+    [K in keyof T as T[K] extends DebounceDefinition<unknown, unknown, unknown>
       ? K
-      : never]: T[K] extends DebounceDefinition<infer I, infer S, infer E, infer R>
-      ? DebounceDefinition<I, S, E, R>
+      : never]: T[K] extends DebounceDefinition<infer I, infer S, infer E>
+      ? DebounceDefinition<I, S, E>
       : never;
   };
   workerPool: {
-    [K in keyof T as T[K] extends WorkerPoolDefinition<any, any, any>
+    [K in keyof T as T[K] extends WorkerPoolDefinition<unknown, unknown>
       ? K
-      : never]: T[K] extends WorkerPoolDefinition<infer E, infer Err, infer R>
-      ? WorkerPoolDefinition<E, Err, R>
+      : never]: T[K] extends WorkerPoolDefinition<infer E, infer Err>
+      ? WorkerPoolDefinition<E, Err>
       : never;
   };
 };

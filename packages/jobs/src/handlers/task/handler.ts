@@ -59,7 +59,7 @@ export const TaskHandlerLayer = Layer.effect(
 
     const getDefinition = (
       name: string,
-    ): Effect.Effect<StoredTaskDefinition<any, any, any>, JobNotFoundError> => {
+    ): Effect.Effect<StoredTaskDefinition, JobNotFoundError> => {
       const def = registryService.registry.task[name];
       if (!def) {
         return Effect.fail(new JobNotFoundError({ type: "task", name }));
@@ -146,10 +146,10 @@ export const TaskHandlerLayer = Layer.effect(
       });
 
     const runExecution = (
-      def: StoredTaskDefinition<any, any, any>,
+      def: StoredTaskDefinition,
       runCount: number,
       triggerType: "execute" | "onEvent",
-      event?: any,
+      event?: unknown,
       id?: string,
     ) =>
       execution.execute({
@@ -168,7 +168,7 @@ export const TaskHandlerLayer = Layer.effect(
           };
 
           // Proxy state holder for the legacy context factories
-          const proxyStateHolder: TaskStateHolder<any> = {
+          const proxyStateHolder: TaskStateHolder<unknown> = {
             get current() {
               return base.getState();
             },
@@ -191,7 +191,7 @@ export const TaskHandlerLayer = Layer.effect(
 
             // Define error handler for this scope
             const runWithErrorHandling = (
-              effect: Effect.Effect<void, any, any>,
+              effect: Effect.Effect<void, unknown, never>,
               errorSource: "onEvent" | "execute",
             ) =>
               effect.pipe(
@@ -320,9 +320,9 @@ export const TaskHandlerLayer = Layer.effect(
       });
 
     const handleSend = (
-      def: StoredTaskDefinition<any, any, any>,
+      def: StoredTaskDefinition,
       request: TaskRequest,
-    ): Effect.Effect<TaskResponse, HandlerError, any> =>
+    ): Effect.Effect<TaskResponse, HandlerError> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         const created = !meta;
@@ -364,8 +364,8 @@ export const TaskHandlerLayer = Layer.effect(
       });
 
     const handleTrigger = (
-      def: StoredTaskDefinition<any, any, any>,
-    ): Effect.Effect<TaskResponse, HandlerError, any> =>
+      def: StoredTaskDefinition,
+    ): Effect.Effect<TaskResponse, HandlerError> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         if (!meta) {
@@ -436,7 +436,7 @@ export const TaskHandlerLayer = Layer.effect(
       });
 
     const handleGetState = (
-      def: StoredTaskDefinition<any, any, any>,
+      def: StoredTaskDefinition,
     ): Effect.Effect<TaskResponse, HandlerError> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
