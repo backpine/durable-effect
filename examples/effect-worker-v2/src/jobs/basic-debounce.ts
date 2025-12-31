@@ -1,5 +1,10 @@
 import { Debounce } from "@durable-effect/jobs";
-import { Effect, Schema } from "effect";
+import { Context, Effect, Schema } from "effect";
+
+class Random extends Context.Tag("MyRandomService")<
+  Random,
+  { readonly next: Effect.Effect<number> }
+>() {}
 
 // =============================================================================
 // Debounce Job - Batches events and flushes after delay
@@ -53,10 +58,12 @@ export const debounceExample = Debounce.make({
     Effect.gen(function* () {
       const state = yield* ctx.state;
       const eventCount = yield* ctx.eventCount;
-      const failChance = Math.random() < 0.5;
-      if (failChance) {
+      const random = yield* Random;
+      const failChance = yield* random.next;
+      if (failChance < 0.5) {
         yield* Effect.fail("Debounce job randomly failed");
       }
+
       yield* Effect.tryPromise(() => fetch("http://localhost:3000/api/health"));
       // yield* Effect.fail("Debounce job failed");
       yield* Effect.log(

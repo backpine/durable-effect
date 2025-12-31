@@ -74,7 +74,7 @@ export const workflowRoutes = HttpRouter.empty.pipe(
           id: result.id,
         },
       });
-    })
+    }),
   ),
 
   // POST /workflows/runAsync - Run workflow asynchronously (returns immediately)
@@ -104,7 +104,7 @@ export const workflowRoutes = HttpRouter.empty.pipe(
           message: "Workflow started asynchronously",
         },
       });
-    })
+    }),
   ),
 
   // POST /workflows/status - Get workflow status
@@ -127,7 +127,7 @@ export const workflowRoutes = HttpRouter.empty.pipe(
           status,
         },
       });
-    })
+    }),
   ),
 
   // POST /workflows/steps - Get completed steps
@@ -149,7 +149,7 @@ export const workflowRoutes = HttpRouter.empty.pipe(
           completedSteps: steps,
         },
       });
-    })
+    }),
   ),
 
   // POST /workflows/cancel - Cancel a running workflow
@@ -172,6 +172,6 @@ export const workflowRoutes = HttpRouter.empty.pipe(
           reason: result.reason,
         },
       });
-    })
-  )
+    }),
+  ),
 );

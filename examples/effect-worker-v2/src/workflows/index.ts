@@ -41,9 +41,13 @@ export const { Workflows, WorkflowClient } = createDurableWorkflows(
   },
   {
     tracker: {
-      endpoint: "http://localhost:3000/sync",
+      endpoint: "https://durable-effect-sync.backpine.workers.dev/sync",
       env: "dev",
       serviceKey: "my-service-key",
+      headers: {
+        "X-API-KEY":
+          "ea5557a625992bf5d3639ac2b750da99c3092a062259ccaf50d2f3c974c77c57",
+      },
     },
   },
 );

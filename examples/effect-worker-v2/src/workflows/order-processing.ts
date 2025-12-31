@@ -4,6 +4,11 @@
 import { Effect } from "effect";
 import { Workflow, Backoff } from "@durable-effect/workflow";
 
+// class Random extends Context.Tag("MyRandomService")<
+//   Random,
+//   { readonly next: Effect.Effect<number> }
+// >() {}
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -61,6 +66,8 @@ export const orderProcessing = Workflow.make((input: OrderInput) =>
         console.log(
           `[Order ${input.orderId}] Reserving inventory for ${validation.itemCount} items...`,
         );
+        // const random = yield* Random;
+        // const randomNumber = yield* random.next;
         yield* Effect.sleep("100 millis");
         return { reserved: true };
       }),
