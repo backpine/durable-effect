@@ -50,7 +50,7 @@ export const ContinuousHandlerLayer = Layer.effect(
 
     const getDefinition = (
       name: string,
-    ): Effect.Effect<StoredContinuousDefinition<any, any>, JobNotFoundError> => {
+    ): Effect.Effect<StoredContinuousDefinition, JobNotFoundError> => {
       const def = registryService.registry.continuous[name];
       if (!def) {
         return Effect.fail(new JobNotFoundError({ type: "continuous", name }));
@@ -78,7 +78,7 @@ export const ContinuousHandlerLayer = Layer.effect(
       });
 
     const scheduleNext = (
-      def: StoredContinuousDefinition<any, any>,
+      def: StoredContinuousDefinition,
     ): Effect.Effect<void, SchedulerError | ExecutionError> => {
       const schedule = def.schedule;
       switch (schedule._tag) {
@@ -94,7 +94,7 @@ export const ContinuousHandlerLayer = Layer.effect(
     };
 
     const runExecution = (
-      def: StoredContinuousDefinition<any, any>,
+      def: StoredContinuousDefinition,
       runCount: number,
       id?: string,
     ) =>
@@ -107,7 +107,7 @@ export const ContinuousHandlerLayer = Layer.effect(
         id,
         run: (ctx: ContinuousContext<unknown>) => def.execute(ctx),
         createContext: (base) => {
-          const proxyHolder: StateHolder<any> = {
+          const proxyHolder: StateHolder<unknown> = {
             get current() {
               return base.getState();
             },
@@ -132,9 +132,9 @@ export const ContinuousHandlerLayer = Layer.effect(
       });
 
     const handleStart = (
-      def: StoredContinuousDefinition<any, any>,
+      def: StoredContinuousDefinition,
       request: ContinuousRequest,
-    ): Effect.Effect<ContinuousResponse, HandlerError, any> =>
+    ): Effect.Effect<ContinuousResponse, HandlerError> =>
       Effect.gen(function* () {
         const existing = yield* metadata.get();
         if (existing) {
@@ -251,8 +251,8 @@ export const ContinuousHandlerLayer = Layer.effect(
       });
 
     const handleTrigger = (
-      def: StoredContinuousDefinition<any, any>,
-    ): Effect.Effect<ContinuousResponse, HandlerError, any> =>
+      def: StoredContinuousDefinition,
+    ): Effect.Effect<ContinuousResponse, HandlerError> =>
       Effect.gen(function* () {
         const existing = yield* metadata.get();
         if (
@@ -321,7 +321,7 @@ export const ContinuousHandlerLayer = Layer.effect(
       });
 
     const handleGetState = (
-      def: StoredContinuousDefinition<any, any>,
+      def: StoredContinuousDefinition,
     ): Effect.Effect<ContinuousResponse, HandlerError> =>
       Effect.gen(function* () {
         const stateService = yield* createEntityStateService(

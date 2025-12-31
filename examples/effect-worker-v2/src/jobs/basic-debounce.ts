@@ -6,6 +6,12 @@ class Random extends Context.Tag("MyRandomService")<
   { readonly next: Effect.Effect<number> }
 >() {}
 
+import { Layer } from "effect";
+
+const RandomLive = Layer.succeed(Random, {
+  next: Effect.sync(() => Math.random()),
+});
+
 // =============================================================================
 // Debounce Job - Batches events and flushes after delay
 // =============================================================================
@@ -69,5 +75,5 @@ export const debounceExample = Debounce.make({
       yield* Effect.log(
         `Debounce flushed! Events: ${eventCount}, Last action: ${state?.actionId}, Reason: ${ctx.flushReason}`,
       );
-    }),
+    }).pipe(Effect.provide(RandomLive)),
 });

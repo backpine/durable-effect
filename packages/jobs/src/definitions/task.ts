@@ -22,12 +22,14 @@ import type {
  * - Execute runs when alarm fires
  * - User controls the full lifecycle via schedule/clear
  *
+ * Note: All handler functions must return Effect with R = never.
+ * If your effect requires services, provide them via .pipe(Effect.provide(layer)).
+ *
  * @typeParam S - State type (inferred from stateSchema)
  * @typeParam E - Event type (inferred from eventSchema)
  * @typeParam Err - Error type (inferred from handlers)
- * @typeParam R - Effect requirements (inferred from handlers)
  */
-export interface TaskMakeConfig<S, E, Err, R> {
+export interface TaskMakeConfig<S, E, Err> {
   /**
    * Schema for validating and serializing state.
    * State is persisted durably and survives restarts.
@@ -42,6 +44,7 @@ export interface TaskMakeConfig<S, E, Err, R> {
 
   /**
    * Handler called for each incoming event.
+   * Must return Effect<void, Err, never> - all service requirements must be satisfied.
    *
    * The event is passed as the first parameter (not on ctx) to make it
    * clear that it's a direct value, not an Effect that needs yielding.
@@ -76,10 +79,11 @@ export interface TaskMakeConfig<S, E, Err, R> {
    * })
    * ```
    */
-  onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, Err, R>;
+  onEvent(event: E, ctx: TaskEventContext<S>): Effect.Effect<void, Err, never>;
 
   /**
    * Handler called when the scheduled alarm fires.
+   * Must return Effect<void, Err, never> - all service requirements must be satisfied.
    *
    * Responsibilities:
    * - Process the current state
@@ -100,11 +104,12 @@ export interface TaskMakeConfig<S, E, Err, R> {
    * })
    * ```
    */
-  execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, Err, R>;
+  execute(ctx: TaskExecuteContext<S>): Effect.Effect<void, Err, never>;
 
   /**
    * Optional handler called when either `onEvent` or `execute` completes
    * and no alarm is scheduled.
+   * Must return Effect<void, never, never> - all service requirements must be satisfied.
    *
    * Use this to:
    * - Schedule delayed cleanup
@@ -119,10 +124,11 @@ export interface TaskMakeConfig<S, E, Err, R> {
    * })
    * ```
    */
-  readonly onIdle?: (ctx: TaskIdleContext<S>) => Effect.Effect<void, never, R>;
+  readonly onIdle?: (ctx: TaskIdleContext<S>) => Effect.Effect<void, never, never>;
 
   /**
    * Optional error handler for onEvent/execute failures.
+   * Must return Effect<void, never, never> - all service requirements must be satisfied.
    *
    * Use this to:
    * - Log errors
@@ -151,7 +157,7 @@ export interface TaskMakeConfig<S, E, Err, R> {
   readonly onError?: (
     error: Err,
     ctx: TaskErrorContext<S>
-  ) => Effect.Effect<void, never, R>;
+  ) => Effect.Effect<void, never, never>;
 
   /**
    * Control logging for this job.
@@ -269,9 +275,9 @@ export const Task = {
    * @param config - Configuration for the task
    * @returns An UnregisteredTaskDefinition that can be registered
    */
-  make: <S, E, Err = never, R = never>(
-    config: TaskMakeConfig<S, E, Err, R>
-  ): UnregisteredTaskDefinition<S, E, Err, R> => ({
+  make: <S, E, Err = never>(
+    config: TaskMakeConfig<S, E, Err>
+  ): UnregisteredTaskDefinition<S, E, Err> => ({
     _tag: "TaskDefinition",
     stateSchema: config.stateSchema,
     eventSchema: config.eventSchema,

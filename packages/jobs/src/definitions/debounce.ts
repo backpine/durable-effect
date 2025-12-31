@@ -15,8 +15,11 @@ import type { JobRetryConfig } from "../retry/types";
 
 /**
  * Configuration for creating a debounce job definition.
+ *
+ * Note: All handler functions must return Effect with R = never.
+ * If your effect requires services, provide them via .pipe(Effect.provide(layer)).
  */
-export interface DebounceMakeConfig<I, S, E, R> {
+export interface DebounceMakeConfig<I, S, E> {
   /**
    * Schema for validating incoming events.
    */
@@ -76,14 +79,24 @@ export interface DebounceMakeConfig<I, S, E, R> {
 
   /**
    * Reducer for each incoming event. Defaults to returning the latest event.
+   * Must return Effect<S, never, never> - all service requirements must be satisfied.
    */
-  onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, R>;
+  onEvent?(ctx: DebounceEventContext<I, S>): Effect.Effect<S, never, never>;
 
   /**
    * Effect executed when the debounce flushes.
+   * Must return Effect<void, E, never> - all service requirements must be satisfied.
+   *
+   * @example
+   * ```ts
+   * execute: (ctx) =>
+   *   Effect.gen(function* () {
+   *     const random = yield* Random;
+   *     // ...
+   *   }).pipe(Effect.provide(RandomLive))
+   * ```
    */
-  execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, E, R>;
-
+  execute(ctx: DebounceExecuteContext<S>): Effect.Effect<void, E, never>;
 }
 
 /**
@@ -99,14 +112,14 @@ export interface DebounceMakeConfig<I, S, E, R> {
  * ```
  */
 export const Debounce = {
-  make: <I, S = I, E = never, R = never>(
-    config: DebounceMakeConfig<I, S, E, R>
-  ): UnregisteredDebounceDefinition<I, S, E, R> => ({
+  make: <I, S = I, E = never>(
+    config: DebounceMakeConfig<I, S, E>
+  ): UnregisteredDebounceDefinition<I, S, E> => ({
     _tag: "DebounceDefinition",
     eventSchema: config.eventSchema,
     stateSchema: (config.stateSchema ?? config.eventSchema) as Schema.Schema<
       S,
-      any,
+      unknown,
       never
     >,
     flushAfter: config.flushAfter,

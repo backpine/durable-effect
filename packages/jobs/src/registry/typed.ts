@@ -30,32 +30,30 @@ import type {
 
 /**
  * Extract keys from T that are continuous definitions.
- *
- * Note: Uses `unknown` for error type to match AnyUnregisteredDefinition.
  */
 export type ContinuousKeysOf<T extends Record<string, AnyUnregisteredDefinition>> = {
-  [K in keyof T]: T[K] extends UnregisteredContinuousDefinition<any, unknown, any> ? K : never;
+  [K in keyof T]: T[K] extends UnregisteredContinuousDefinition<any, any> ? K : never;
 }[keyof T] & string;
 
 /**
  * Extract keys from T that are debounce definitions.
  */
 export type DebounceKeysOf<T extends Record<string, AnyUnregisteredDefinition>> = {
-  [K in keyof T]: T[K] extends UnregisteredDebounceDefinition<any, any, unknown, any> ? K : never;
+  [K in keyof T]: T[K] extends UnregisteredDebounceDefinition<any, any, any> ? K : never;
 }[keyof T] & string;
 
 /**
  * Extract keys from T that are workerPool definitions.
  */
 export type WorkerPoolKeysOf<T extends Record<string, AnyUnregisteredDefinition>> = {
-  [K in keyof T]: T[K] extends UnregisteredWorkerPoolDefinition<any, unknown, any> ? K : never;
+  [K in keyof T]: T[K] extends UnregisteredWorkerPoolDefinition<any, any> ? K : never;
 }[keyof T] & string;
 
 /**
  * Extract keys from T that are task definitions.
  */
 export type TaskKeysOf<T extends Record<string, AnyUnregisteredDefinition>> = {
-  [K in keyof T]: T[K] extends UnregisteredTaskDefinition<any, any, unknown, any> ? K : never;
+  [K in keyof T]: T[K] extends UnregisteredTaskDefinition<any, any, any> ? K : never;
 }[keyof T] & string;
 
 // =============================================================================
@@ -68,7 +66,7 @@ export type TaskKeysOf<T extends Record<string, AnyUnregisteredDefinition>> = {
 export type ContinuousStateOf<
   T extends Record<string, AnyUnregisteredDefinition>,
   K extends ContinuousKeysOf<T>,
-> = T[K] extends UnregisteredContinuousDefinition<infer S, unknown, any> ? S : never;
+> = T[K] extends UnregisteredContinuousDefinition<infer S, any> ? S : never;
 
 /**
  * Extract the error type from a continuous definition.
@@ -76,7 +74,7 @@ export type ContinuousStateOf<
 export type ContinuousErrorOf<
   T extends Record<string, AnyUnregisteredDefinition>,
   K extends ContinuousKeysOf<T>,
-> = T[K] extends UnregisteredContinuousDefinition<any, infer E, any> ? E : never;
+> = T[K] extends UnregisteredContinuousDefinition<any, infer E> ? E : never;
 
 /**
  * Extract the event type from a debounce definition.
@@ -84,7 +82,7 @@ export type ContinuousErrorOf<
 export type DebounceEventOf<
   T extends Record<string, AnyUnregisteredDefinition>,
   K extends DebounceKeysOf<T>,
-> = T[K] extends UnregisteredDebounceDefinition<infer I, any, unknown, any> ? I : never;
+> = T[K] extends UnregisteredDebounceDefinition<infer I, any, any> ? I : never;
 
 /**
  * Extract the state type from a debounce definition.
@@ -92,7 +90,7 @@ export type DebounceEventOf<
 export type DebounceStateOf<
   T extends Record<string, AnyUnregisteredDefinition>,
   K extends DebounceKeysOf<T>,
-> = T[K] extends UnregisteredDebounceDefinition<any, infer S, unknown, any> ? S : never;
+> = T[K] extends UnregisteredDebounceDefinition<any, infer S, any> ? S : never;
 
 /**
  * Extract the event type from a workerPool definition.
@@ -100,7 +98,7 @@ export type DebounceStateOf<
 export type WorkerPoolEventOf<
   T extends Record<string, AnyUnregisteredDefinition>,
   K extends WorkerPoolKeysOf<T>,
-> = T[K] extends UnregisteredWorkerPoolDefinition<infer E, unknown, any> ? E : never;
+> = T[K] extends UnregisteredWorkerPoolDefinition<infer E, any> ? E : never;
 
 /**
  * Extract the state type from a task definition.
@@ -108,7 +106,7 @@ export type WorkerPoolEventOf<
 export type TaskStateOf<
   T extends Record<string, AnyUnregisteredDefinition>,
   K extends TaskKeysOf<T>,
-> = T[K] extends UnregisteredTaskDefinition<infer S, any, unknown, any> ? S : never;
+> = T[K] extends UnregisteredTaskDefinition<infer S, any, any> ? S : never;
 
 /**
  * Extract the event type from a task definition.
@@ -116,7 +114,7 @@ export type TaskStateOf<
 export type TaskEventOf<
   T extends Record<string, AnyUnregisteredDefinition>,
   K extends TaskKeysOf<T>,
-> = T[K] extends UnregisteredTaskDefinition<any, infer E, unknown, any> ? E : never;
+> = T[K] extends UnregisteredTaskDefinition<any, infer E, any> ? E : never;
 
 // =============================================================================
 // Registered Definition Types (with name added)
@@ -124,35 +122,33 @@ export type TaskEventOf<
 
 /**
  * Add the name property to a definition, making it a registered definition.
- *
- * Note: Uses `unknown` for error type in extends clause to match AnyUnregisteredDefinition.
  */
 type RegisterContinuous<
-  D extends UnregisteredContinuousDefinition<any, unknown, any>,
+  D extends UnregisteredContinuousDefinition<any, any>,
   N extends string,
-> = D extends UnregisteredContinuousDefinition<infer S, infer E, infer R>
-  ? ContinuousDefinition<S, E, R> & { readonly name: N }
+> = D extends UnregisteredContinuousDefinition<infer S, infer E>
+  ? ContinuousDefinition<S, E> & { readonly name: N }
   : never;
 
 type RegisterDebounce<
-  D extends UnregisteredDebounceDefinition<any, any, unknown, any>,
+  D extends UnregisteredDebounceDefinition<any, any, any>,
   N extends string,
-> = D extends UnregisteredDebounceDefinition<infer I, infer S, infer E, infer R>
-  ? DebounceDefinition<I, S, E, R> & { readonly name: N }
+> = D extends UnregisteredDebounceDefinition<infer I, infer S, infer E>
+  ? DebounceDefinition<I, S, E> & { readonly name: N }
   : never;
 
 type RegisterWorkerPool<
-  D extends UnregisteredWorkerPoolDefinition<any, unknown, any>,
+  D extends UnregisteredWorkerPoolDefinition<any, any>,
   N extends string,
-> = D extends UnregisteredWorkerPoolDefinition<infer E, infer Err, infer R>
-  ? WorkerPoolDefinition<E, Err, R> & { readonly name: N }
+> = D extends UnregisteredWorkerPoolDefinition<infer E, infer Err>
+  ? WorkerPoolDefinition<E, Err> & { readonly name: N }
   : never;
 
 type RegisterTask<
-  D extends UnregisteredTaskDefinition<any, any, unknown, any>,
+  D extends UnregisteredTaskDefinition<any, any, any>,
   N extends string,
-> = D extends UnregisteredTaskDefinition<infer S, infer E, infer Err, infer R>
-  ? TaskDefinition<S, E, Err, R> & { readonly name: N }
+> = D extends UnregisteredTaskDefinition<infer S, infer E, infer Err>
+  ? TaskDefinition<S, E, Err> & { readonly name: N }
   : never;
 
 // =============================================================================
@@ -171,7 +167,7 @@ export interface TypedJobRegistry<T extends Record<string, AnyUnregisteredDefini
    */
   readonly continuous: {
     [K in ContinuousKeysOf<T>]: RegisterContinuous<
-      Extract<T[K], UnregisteredContinuousDefinition<any, unknown, any>>,
+      Extract<T[K], UnregisteredContinuousDefinition<any, any>>,
       K
     >;
   };
@@ -181,7 +177,7 @@ export interface TypedJobRegistry<T extends Record<string, AnyUnregisteredDefini
    */
   readonly debounce: {
     [K in DebounceKeysOf<T>]: RegisterDebounce<
-      Extract<T[K], UnregisteredDebounceDefinition<any, any, unknown, any>>,
+      Extract<T[K], UnregisteredDebounceDefinition<any, any, any>>,
       K
     >;
   };
@@ -191,7 +187,7 @@ export interface TypedJobRegistry<T extends Record<string, AnyUnregisteredDefini
    */
   readonly workerPool: {
     [K in WorkerPoolKeysOf<T>]: RegisterWorkerPool<
-      Extract<T[K], UnregisteredWorkerPoolDefinition<any, unknown, any>>,
+      Extract<T[K], UnregisteredWorkerPoolDefinition<any, any>>,
       K
     >;
   };
@@ -201,7 +197,7 @@ export interface TypedJobRegistry<T extends Record<string, AnyUnregisteredDefini
    */
   readonly task: {
     [K in TaskKeysOf<T>]: RegisterTask<
-      Extract<T[K], UnregisteredTaskDefinition<any, any, unknown, any>>,
+      Extract<T[K], UnregisteredTaskDefinition<any, any, any>>,
       K
     >;
   };
@@ -221,13 +217,13 @@ export interface TypedJobRegistry<T extends Record<string, AnyUnregisteredDefini
  * Runtime-accessible registry interface.
  *
  * Handlers use this interface for lookups. Uses stored types
- * with unknown error to avoid contravariance issues.
+ * with unknown state/event types to allow any definition.
  */
 export interface RuntimeJobRegistry {
-  readonly continuous: Record<string, StoredContinuousDefinition<any, any>>;
-  readonly debounce: Record<string, StoredDebounceDefinition<any, any, any>>;
-  readonly workerPool: Record<string, StoredWorkerPoolDefinition<any, any>>;
-  readonly task: Record<string, StoredTaskDefinition<any, any, any>>;
+  readonly continuous: Record<string, StoredContinuousDefinition>;
+  readonly debounce: Record<string, StoredDebounceDefinition>;
+  readonly workerPool: Record<string, StoredWorkerPoolDefinition>;
+  readonly task: Record<string, StoredTaskDefinition>;
 }
 
 // =============================================================================

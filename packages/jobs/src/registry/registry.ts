@@ -39,9 +39,9 @@ export function createJobRegistry<
   T extends Record<string, AnyUnregisteredDefinition>,
 >(definitions: T): JobRegistry {
   const registry: JobRegistry = {
-    continuous: new Map<string, ContinuousDefinition<any, any, any>>(),
-    debounce: new Map<string, DebounceDefinition<any, any, any, any>>(),
-    workerPool: new Map<string, WorkerPoolDefinition<any, any, any>>(),
+    continuous: new Map<string, ContinuousDefinition<any, any>>(),
+    debounce: new Map<string, DebounceDefinition<any, any, any>>(),
+    workerPool: new Map<string, WorkerPoolDefinition<any, any>>(),
   };
 
   // Type casts are needed because Object.entries loses the discriminated union
@@ -53,19 +53,19 @@ export function createJobRegistry<
       case "ContinuousDefinition":
         registry.continuous.set(
           name,
-          withName as ContinuousDefinition<any, any, any>,
+          withName as ContinuousDefinition<any, any>,
         );
         break;
       case "DebounceDefinition":
         registry.debounce.set(
           name,
-          withName as DebounceDefinition<any, any, any, any>,
+          withName as DebounceDefinition<any, any, any>,
         );
         break;
       case "WorkerPoolDefinition":
         registry.workerPool.set(
           name,
-          withName as WorkerPoolDefinition<any, any, any>,
+          withName as WorkerPoolDefinition<any, any>,
         );
         break;
     }
@@ -146,17 +146,17 @@ export function toRuntimeRegistry<
   return {
     continuous: registry.continuous as Record<
       string,
-      StoredContinuousDefinition<any, any>
+      StoredContinuousDefinition
     >,
     debounce: registry.debounce as Record<
       string,
-      StoredDebounceDefinition<any, any, any>
+      StoredDebounceDefinition
     >,
     workerPool: registry.workerPool as Record<
       string,
-      StoredWorkerPoolDefinition<any, any>
+      StoredWorkerPoolDefinition
     >,
-    task: registry.task as Record<string, StoredTaskDefinition<any, any, any>>,
+    task: registry.task as Record<string, StoredTaskDefinition>,
   };
 }
 
@@ -171,7 +171,7 @@ export function toRuntimeRegistry<
 export function getContinuousDefinition(
   registry: JobRegistry,
   name: string,
-): ContinuousDefinition<any, any, any> | undefined {
+): ContinuousDefinition<any, any> | undefined {
   return registry.continuous.get(name);
 }
 
@@ -182,7 +182,7 @@ export function getContinuousDefinition(
 export function getDebounceDefinition(
   registry: JobRegistry,
   name: string,
-): DebounceDefinition<any, any, any, any> | undefined {
+): DebounceDefinition<any, any, any> | undefined {
   return registry.debounce.get(name);
 }
 
@@ -193,7 +193,7 @@ export function getDebounceDefinition(
 export function getWorkerPoolDefinition(
   registry: JobRegistry,
   name: string,
-): WorkerPoolDefinition<any, any, any> | undefined {
+): WorkerPoolDefinition<any, any> | undefined {
   return registry.workerPool.get(name);
 }
 

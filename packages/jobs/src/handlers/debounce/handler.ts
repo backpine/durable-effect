@@ -59,7 +59,7 @@ export const DebounceHandlerLayer = Layer.effect(
 
     const getDefinition = (
       name: string,
-    ): Effect.Effect<StoredDebounceDefinition<any, any, any>, JobNotFoundError> => {
+    ): Effect.Effect<StoredDebounceDefinition, JobNotFoundError> => {
       const def = registryService.registry.debounce[name];
       if (!def) {
         return Effect.fail(new JobNotFoundError({ type: "debounce", name }));
@@ -91,7 +91,7 @@ export const DebounceHandlerLayer = Layer.effect(
       });
 
     const runFlush = (
-      def: StoredDebounceDefinition<any, any, any>,
+      def: StoredDebounceDefinition,
       flushReason: "maxEvents" | "flushAfter" | "manual",
       id?: string,
     ) =>
@@ -102,7 +102,7 @@ export const DebounceHandlerLayer = Layer.effect(
         retryConfig: def.retry,
         runCount: 0, // Debounce doesn't track runCount persistently in same way
         id,
-        run: (ctx: DebounceExecuteContext<any>) => def.execute(ctx),
+        run: (ctx: DebounceExecuteContext<unknown>) => def.execute(ctx),
         createContext: (base) => {
           return {
             state: Effect.succeed(base.getState()), // Snapshotted state
@@ -116,14 +116,14 @@ export const DebounceHandlerLayer = Layer.effect(
             flushReason,
             attempt: base.attempt,
             isRetry: base.isRetry,
-          } as DebounceExecuteContext<any>;
+          } as DebounceExecuteContext<unknown>;
         },
       });
 
     const handleAdd = (
-      def: StoredDebounceDefinition<any, any, any>,
+      def: StoredDebounceDefinition,
       request: DebounceRequest,
-    ): Effect.Effect<DebounceResponse, HandlerError, any> =>
+    ): Effect.Effect<DebounceResponse, HandlerError> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         const created = !meta;
@@ -158,13 +158,12 @@ export const DebounceHandlerLayer = Layer.effect(
         const stateForContext = currentState ?? (validatedEvent as unknown);
 
         const onEvent = def.onEvent!;
-        // Cast is still needed unless we fix Definition generic constraints
         const reducedState = yield* onEvent({
           event: validatedEvent as unknown,
           state: stateForContext,
           eventCount: nextCount,
           instanceId: runtime.instanceId,
-        } as any);
+        });
 
         yield* stateService.set(reducedState);
         yield* setEventCount(nextCount);
@@ -244,9 +243,9 @@ export const DebounceHandlerLayer = Layer.effect(
       });
 
     const handleFlush = (
-      def: StoredDebounceDefinition<any, any, any>,
+      def: StoredDebounceDefinition,
       reason: "manual" | "flushAfter" | "maxEvents",
-    ): Effect.Effect<DebounceResponse, HandlerError, any> =>
+    ): Effect.Effect<DebounceResponse, HandlerError> =>
       Effect.gen(function* () {
         const meta = yield* metadata.get();
         if (!meta) {
@@ -353,7 +352,7 @@ export const DebounceHandlerLayer = Layer.effect(
       });
 
     const handleGetState = (
-      def: StoredDebounceDefinition<any, any, any>,
+      def: StoredDebounceDefinition,
     ): Effect.Effect<DebounceResponse, HandlerError> =>
       Effect.gen(function* () {
         const stateService = yield* withStorage(
