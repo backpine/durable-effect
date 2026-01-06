@@ -6,7 +6,7 @@ import { createTestRuntime } from "@durable-effect/core";
 import {
   MetadataService,
   MetadataServiceLayer,
-  type PrimitiveMetadata,
+  type JobMetadata,
 } from "../../src/services/metadata";
 
 describe("MetadataService", () => {
@@ -46,7 +46,7 @@ describe("MetadataService", () => {
       status: "initializing",
       createdAt: 1000000,
       updatedAt: 1000000,
-    } satisfies PrimitiveMetadata);
+    } satisfies JobMetadata);
   });
 
   it("updates status", async () => {
@@ -71,7 +71,7 @@ describe("MetadataService", () => {
       status: "running",
       createdAt: 1000000,
       updatedAt: 1005000,
-    } satisfies PrimitiveMetadata);
+    } satisfies JobMetadata);
   });
 
   it("does not update status if not initialized", async () => {

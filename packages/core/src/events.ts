@@ -588,6 +588,8 @@ export const InternalJobExecutedEventSchema = Schema.Struct({
   durationMs: Schema.Number,
   /** Current retry attempt (1 = first attempt) */
   attempt: Schema.Number,
+  /** State snapshot before execution (for tracking/debugging) */
+  preExecutionState: Schema.optional(Schema.Unknown),
 });
 export type InternalJobExecutedEvent = Schema.Schema.Type<typeof InternalJobExecutedEventSchema>;
 
@@ -604,6 +606,8 @@ export const InternalJobFailedEventSchema = Schema.Struct({
   attempt: Schema.Number,
   /** Whether a retry will be attempted */
   willRetry: Schema.Boolean,
+  /** State snapshot before execution (for tracking/debugging) */
+  preExecutionState: Schema.optional(Schema.Unknown),
 });
 export type InternalJobFailedEvent = Schema.Schema.Type<typeof InternalJobFailedEventSchema>;
 
@@ -728,6 +732,7 @@ export const JobExecutedEventSchema = Schema.Struct({
   runCount: Schema.Number,
   durationMs: Schema.Number,
   attempt: Schema.Number,
+  preExecutionState: Schema.optional(Schema.Unknown),
 });
 export type JobExecutedEvent = Schema.Schema.Type<typeof JobExecutedEventSchema>;
 
@@ -738,6 +743,7 @@ export const JobFailedEventSchema = Schema.Struct({
   runCount: Schema.Number,
   attempt: Schema.Number,
   willRetry: Schema.Boolean,
+  preExecutionState: Schema.optional(Schema.Unknown),
 });
 export type JobFailedEvent = Schema.Schema.Type<typeof JobFailedEventSchema>;
 
