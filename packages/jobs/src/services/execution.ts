@@ -45,6 +45,8 @@ export interface ExecuteOptions<S, E, R, Ctx> {
   readonly allowNullState?: boolean;
   /** User-provided ID for business logic correlation (included in events) */
   readonly id?: string;
+  /** Include pre-execution state in tracking events (default: true) */
+  readonly includeStateInEvents?: boolean;
 
   readonly run: (ctx: Ctx) => Effect.Effect<void, E, R>;
   readonly createContext: (base: ExecutionContextBase<S>) => Ctx;
@@ -104,6 +106,7 @@ export const JobExecutionServiceLayer = Layer.effect(
               run,
               createContext,
               id,
+              includeStateInEvents = true,
             } = options;
 
             // Track execution start time for duration calculation
@@ -136,6 +139,12 @@ export const JobExecutionServiceLayer = Layer.effect(
                 retryExhausted: false,
               };
             }
+
+            // Capture pre-execution state snapshot for tracking events
+            // This is the state BEFORE user code runs
+            const preExecutionState = includeStateInEvents
+              ? loadedState
+              : undefined;
 
             const stateHolder = {
               current: loadedState as S | null,
@@ -220,6 +229,7 @@ export const JobExecutionServiceLayer = Layer.effect(
                     runCount: options.runCount ?? 0,
                     attempt: failedAttempt,
                     willRetry: true,
+                    ...(preExecutionState !== undefined && { preExecutionState }),
                   } satisfies InternalJobFailedEvent);
                 }
 
@@ -281,6 +291,7 @@ export const JobExecutionServiceLayer = Layer.effect(
                   runCount: options.runCount ?? 0,
                   attempt,
                   willRetry: false,
+                  ...(preExecutionState !== undefined && { preExecutionState }),
                 } satisfies InternalJobFailedEvent).pipe(
                   Effect.zipRight(Effect.fail(wrapError(error))),
                 );
@@ -308,6 +319,7 @@ export const JobExecutionServiceLayer = Layer.effect(
                 runCount: options.runCount ?? 0,
                 durationMs,
                 attempt,
+                ...(preExecutionState !== undefined && { preExecutionState }),
               } satisfies InternalJobExecutedEvent);
             }
 

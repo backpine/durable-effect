@@ -108,7 +108,33 @@ const createTestRegistry = (): RuntimeJobRegistry => ({
   } as Record<string, any>,
   debounce: {} as Record<string, any>,
   workerPool: {} as Record<string, any>,
+  task: {} as Record<string, any>,
 });
+
+// =============================================================================
+// Test Helpers
+// =============================================================================
+
+// Helper to run Effect with layer, bypassing strict R parameter checking
+// This is needed because the test registry uses `as Record<string, any>` which
+// causes `any` to leak into Effect R parameters
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const runWithLayer = <A, E>(
+  effect: Effect.Effect<A, E, any>,
+  layer: Layer.Layer<ContinuousHandler>
+): Promise<A> =>
+  Effect.runPromise(
+    effect.pipe(Effect.provide(layer)) as Effect.Effect<A, E, never>
+  );
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const runExitWithLayer = <A, E>(
+  effect: Effect.Effect<A, E, any>,
+  layer: Layer.Layer<ContinuousHandler>
+) =>
+  Effect.runPromiseExit(
+    effect.pipe(Effect.provide(layer)) as Effect.Effect<A, E, never>
+  );
 
 // =============================================================================
 // Test Setup
@@ -148,7 +174,7 @@ const createTestLayer = (initialTime = 1000000) => {
     Layer.provideMerge(servicesLayer),
     Layer.provideMerge(retryLayer),
     Layer.provideMerge(executionLayer)
-  );
+  ) as Layer.Layer<ContinuousHandler>;
 
   return { layer: handlerLayer, time, handles, coreLayer };
 };
@@ -168,16 +194,18 @@ describe("ContinuousHandler", () => {
     it("creates a new instance and executes immediately by default", async () => {
       const { layer } = createTestLayer(1000000);
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
           return yield* handler.handle({
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 0, lastRun: null },
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.start");
@@ -196,7 +224,7 @@ describe("ContinuousHandler", () => {
     it("returns existing instance if already started", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -205,6 +233,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 0, lastRun: null },
           });
 
@@ -213,9 +242,11 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 100, lastRun: null },
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.start");
@@ -229,16 +260,18 @@ describe("ContinuousHandler", () => {
     it("respects startImmediately: false", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
           return yield* handler.handle({
             type: "continuous",
             action: "start",
             name: "no-immediate",
+            id: "no-immediate-1",
             input: { count: 0, lastRun: null },
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.start");
@@ -253,7 +286,7 @@ describe("ContinuousHandler", () => {
     it("terminates a running instance and deletes all storage", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -262,6 +295,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 0, lastRun: null },
           });
 
@@ -270,6 +304,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "terminate",
             name: "counter",
+            id: "counter-1",
             reason: "user requested",
           });
 
@@ -278,10 +313,12 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "status",
             name: "counter",
+            id: "counter-1",
           });
 
           return { terminateResult, statusResult };
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result.terminateResult._type).toBe("continuous.terminate");
@@ -295,16 +332,18 @@ describe("ContinuousHandler", () => {
     it("returns not_found for non-existent instance", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
           return yield* handler.handle({
             type: "continuous",
             action: "terminate",
             name: "counter",
+            id: "counter-1",
             reason: "test",
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.terminate");
@@ -315,7 +354,7 @@ describe("ContinuousHandler", () => {
     it("returns not_found when called twice (since first terminate deletes all storage)", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -324,6 +363,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 0, lastRun: null },
           });
 
@@ -332,6 +372,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "terminate",
             name: "counter",
+            id: "counter-1",
             reason: "first terminate",
           });
 
@@ -340,9 +381,11 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "terminate",
             name: "counter",
+            id: "counter-1",
             reason: "second terminate",
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.terminate");
@@ -355,7 +398,7 @@ describe("ContinuousHandler", () => {
     it("triggers immediate execution", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -364,6 +407,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 0, lastRun: null },
           });
 
@@ -372,8 +416,10 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "trigger",
             name: "counter",
+            id: "counter-1",
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.trigger");
@@ -387,15 +433,17 @@ describe("ContinuousHandler", () => {
     it("returns triggered: false for non-existent instance", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
           return yield* handler.handle({
             type: "continuous",
             action: "trigger",
             name: "counter",
+            id: "counter-1",
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.trigger");
@@ -405,7 +453,7 @@ describe("ContinuousHandler", () => {
     it("returns triggered: false for terminated instance", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -413,6 +461,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 0, lastRun: null },
           });
 
@@ -420,6 +469,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "terminate",
             name: "counter",
+            id: "counter-1",
             reason: "terminating",
           });
 
@@ -427,8 +477,10 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "trigger",
             name: "counter",
+            id: "counter-1",
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.trigger");
@@ -440,7 +492,7 @@ describe("ContinuousHandler", () => {
     it("returns status for running instance", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -448,6 +500,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 0, lastRun: null },
           });
 
@@ -455,8 +508,10 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "status",
             name: "counter",
+            id: "counter-1",
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.status");
@@ -467,15 +522,17 @@ describe("ContinuousHandler", () => {
     it("returns not_found for non-existent instance", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
           return yield* handler.handle({
             type: "continuous",
             action: "status",
             name: "counter",
+            id: "counter-1",
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.status");
@@ -487,7 +544,7 @@ describe("ContinuousHandler", () => {
     it("returns current state", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -495,6 +552,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 5, lastRun: null },
           });
 
@@ -502,8 +560,10 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "getState",
             name: "counter",
+            id: "counter-1",
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.getState");
@@ -516,7 +576,7 @@ describe("ContinuousHandler", () => {
     it("executes on alarm and schedules next", async () => {
       const { layer, time, handles } = createTestLayer(1000000);
 
-      await Effect.runPromise(
+      await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -525,6 +585,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 0, lastRun: null },
           });
 
@@ -534,7 +595,8 @@ describe("ContinuousHandler", () => {
           // Advance time and simulate alarm
           time.advance(Duration.toMillis("30 minutes"));
           yield* handler.handleAlarm();
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       // Verify execution happened
@@ -549,7 +611,7 @@ describe("ContinuousHandler", () => {
     it("does nothing when terminated", async () => {
       const { layer, time } = createTestLayer();
 
-      await Effect.runPromise(
+      await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -557,6 +619,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "counter",
+            id: "counter-1",
             input: { count: 0, lastRun: null },
           });
 
@@ -564,6 +627,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "terminate",
             name: "counter",
+            id: "counter-1",
             reason: "terminating",
           });
 
@@ -571,7 +635,8 @@ describe("ContinuousHandler", () => {
 
           time.advance(Duration.toMillis("30 minutes"));
           yield* handler.handleAlarm();
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       // No execution should happen
@@ -583,7 +648,7 @@ describe("ContinuousHandler", () => {
     it("fails with ExecutionError when execute fails without retry config", async () => {
       const { layer } = createTestLayer();
 
-      const resultExit = await Effect.runPromiseExit(
+      const resultExit = await runExitWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -591,9 +656,11 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "failing",
+            id: "failing-1",
             input: { count: 0, lastRun: null },
           });
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       // Without onError or retry, the job should fail with an error
@@ -605,7 +672,7 @@ describe("ContinuousHandler", () => {
     it("terminates on first run when condition met (purges state by default)", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -614,6 +681,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "terminating",
+            id: "terminating-1",
             input: { maxRuns: 1, currentRun: 0 },
           });
 
@@ -622,10 +690,12 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "status",
             name: "terminating",
+            id: "terminating-1",
           });
 
           return { startResult, statusResult };
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       // Start should return terminated status
@@ -645,7 +715,7 @@ describe("ContinuousHandler", () => {
     it("terminates during alarm and stops further alarms", async () => {
       const { layer, time, handles } = createTestLayer(1000000);
 
-      await Effect.runPromise(
+      await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -654,6 +724,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "terminating",
+            id: "terminating-1",
             input: { maxRuns: 2, currentRun: 0 },
           });
 
@@ -670,11 +741,13 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "status",
             name: "terminating",
+            id: "terminating-1",
           });
 
           // After purge, job is completely deleted
           expect((status as any).status).toBe("not_found");
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       // Execution happened once (during alarm)
@@ -692,7 +765,7 @@ describe("ContinuousHandler", () => {
     it("trigger action returns terminated: true when terminate called", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -701,6 +774,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "terminating",
+            id: "terminating-1",
             input: { maxRuns: 2, currentRun: 0 },
           });
 
@@ -709,10 +783,12 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "trigger",
             name: "terminating",
+            id: "terminating-1",
           });
 
           return triggerResult;
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.trigger");
@@ -723,7 +799,7 @@ describe("ContinuousHandler", () => {
     it("trigger action returns triggered: false for terminated instance", async () => {
       const { layer } = createTestLayer();
 
-      const result = await Effect.runPromise(
+      const result = await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -732,6 +808,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "terminating",
+            id: "terminating-1",
             input: { maxRuns: 1, currentRun: 0 },
           });
 
@@ -740,10 +817,12 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "trigger",
             name: "terminating",
+            id: "terminating-1",
           });
 
           return triggerResult;
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       expect(result._type).toBe("continuous.trigger");
@@ -753,7 +832,7 @@ describe("ContinuousHandler", () => {
     it("handleAlarm does nothing for terminated instance", async () => {
       const { layer, time } = createTestLayer();
 
-      await Effect.runPromise(
+      await runWithLayer(
         Effect.gen(function* () {
           const handler = yield* ContinuousHandler;
 
@@ -762,6 +841,7 @@ describe("ContinuousHandler", () => {
             type: "continuous",
             action: "start",
             name: "terminating",
+            id: "terminating-1",
             input: { maxRuns: 1, currentRun: 0 },
           });
 
@@ -772,7 +852,8 @@ describe("ContinuousHandler", () => {
           // Try to trigger alarm on terminated instance
           time.advance(Duration.toMillis("10 minutes"));
           yield* handler.handleAlarm();
-        }).pipe(Effect.provide(layer))
+        }),
+        layer
       );
 
       // No execution should happen

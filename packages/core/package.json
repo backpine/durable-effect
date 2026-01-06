@@ -1,6 +1,6 @@
 {
   "name": "@durable-effect/core",
-  "version": "0.0.1-next.14",
+  "version": "0.0.1-next.15",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

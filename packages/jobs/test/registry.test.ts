@@ -28,7 +28,6 @@ const TokenState = Schema.Struct({
 
 const testContinuous: UnregisteredContinuousDefinition<
   typeof TokenState.Type,
-  never,
   never
 > = {
   _tag: "ContinuousDefinition",
@@ -43,14 +42,18 @@ const WebhookEvent = Schema.Struct({
   data: Schema.Unknown,
 });
 
+const DebounceState = Schema.Struct({
+  events: Schema.Array(WebhookEvent),
+});
+
 const testDebounce: UnregisteredDebounceDefinition<
   typeof WebhookEvent.Type,
-  { events: Array<typeof WebhookEvent.Type> },
-  never,
+  typeof DebounceState.Type,
   never
 > = {
   _tag: "DebounceDefinition",
   eventSchema: WebhookEvent,
+  stateSchema: DebounceState,
   flushAfter: "5 minutes",
   maxEvents: 100,
   execute: () => Effect.void,
@@ -61,7 +64,7 @@ const EmailEvent = Schema.Struct({
   template: Schema.String,
 });
 
-const testWorkerPool: UnregisteredWorkerPoolDefinition<typeof EmailEvent.Type, Error, never> = {
+const testWorkerPool: UnregisteredWorkerPoolDefinition<typeof EmailEvent.Type, Error> = {
   _tag: "WorkerPoolDefinition",
   eventSchema: EmailEvent,
   concurrency: 5,
@@ -261,7 +264,7 @@ describe("getAllJobNames", () => {
   });
 
   it("handles multiple definitions per type", () => {
-    const secondContinuous: UnregisteredContinuousDefinition<unknown, never, never> = {
+    const secondContinuous: UnregisteredContinuousDefinition<unknown, never> = {
       _tag: "ContinuousDefinition",
       stateSchema: Schema.Unknown,
       schedule: { _tag: "Every", interval: "1 minute" },
