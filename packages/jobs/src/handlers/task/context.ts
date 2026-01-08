@@ -199,6 +199,7 @@ export function createTaskExecuteContext<S>(
 
 /**
  * Create TaskIdleContext for onIdle handler.
+ * Full parity with TaskEventContext/TaskExecuteContext.
  */
 export function createTaskIdleContext<S>(
   stateHolder: TaskStateHolder<S>,
@@ -212,15 +213,37 @@ export function createTaskIdleContext<S>(
   const scheduling = createSchedulingEffects(scheduleHolder, getScheduledFromStorage);
 
   return {
+    // State access
     state: stateHolder.dirty
       ? Effect.succeed(stateHolder.current)
       : getState(),
 
-    schedule: scheduling.schedule,
+    // State mutations
+    setState: (state: S): Effect.Effect<void, never, never> =>
+      Effect.sync(() => {
+        stateHolder.current = state;
+        stateHolder.dirty = true;
+      }),
 
+    updateState: (fn: (current: S) => S): Effect.Effect<void, never, never> =>
+      Effect.gen(function* () {
+        const current = stateHolder.dirty
+          ? stateHolder.current
+          : yield* getState();
+        if (current !== null) {
+          stateHolder.current = fn(current);
+          stateHolder.dirty = true;
+        }
+      }),
+
+    // Scheduling (full access)
+    ...scheduling,
+
+    // Cleanup
     terminate: (): Effect.Effect<never, never, never> =>
       Effect.fail(new TerminateSignal({ reason: "terminate", purgeState: true })) as Effect.Effect<never, never, never>,
 
+    // Metadata
     instanceId,
     jobName,
     idleReason,
@@ -229,6 +252,7 @@ export function createTaskIdleContext<S>(
 
 /**
  * Create TaskErrorContext for onError handler.
+ * Full parity with TaskEventContext/TaskExecuteContext.
  */
 export function createTaskErrorContext<S>(
   stateHolder: TaskStateHolder<S>,
@@ -242,9 +266,17 @@ export function createTaskErrorContext<S>(
   const scheduling = createSchedulingEffects(scheduleHolder, getScheduledFromStorage);
 
   return {
+    // State access
     state: stateHolder.dirty
       ? Effect.succeed(stateHolder.current)
       : getState(),
+
+    // State mutations
+    setState: (state: S): Effect.Effect<void, never, never> =>
+      Effect.sync(() => {
+        stateHolder.current = state;
+        stateHolder.dirty = true;
+      }),
 
     updateState: (fn: (current: S) => S): Effect.Effect<void, never, never> =>
       Effect.gen(function* () {
@@ -257,11 +289,14 @@ export function createTaskErrorContext<S>(
         }
       }),
 
-    schedule: scheduling.schedule,
+    // Scheduling (full access)
+    ...scheduling,
 
+    // Cleanup
     terminate: (): Effect.Effect<never, never, never> =>
       Effect.fail(new TerminateSignal({ reason: "terminate", purgeState: true })) as Effect.Effect<never, never, never>,
 
+    // Metadata
     instanceId,
     jobName,
     errorSource,

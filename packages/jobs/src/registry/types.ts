@@ -613,16 +613,32 @@ export interface TaskExecuteContext<S> {
  * Context provided to task onIdle handler.
  *
  * Called when either onEvent or execute completes without scheduling
- * another execution. Use this to schedule cleanup or maintenance.
+ * another execution. Use this to update state, schedule cleanup, or terminate.
  */
 export interface TaskIdleContext<S> {
+  // State access
   /** Get current state */
   readonly state: Effect.Effect<S | null, never, never>;
+
+  // State mutations
+  /** Replace the entire state */
+  readonly setState: (state: S) => Effect.Effect<void, never, never>;
+  /** Update state via transformation function (no-op if state is null) */
+  readonly updateState: (fn: (current: S) => S) => Effect.Effect<void, never, never>;
+
+  // Scheduling
   /** Schedule execution (e.g., for delayed cleanup) */
   readonly schedule: (when: Duration.DurationInput | number | Date) => Effect.Effect<void, never, never>;
+  /** Cancel any scheduled execution */
+  readonly cancelSchedule: () => Effect.Effect<void, never, never>;
+  /** Get the currently scheduled execution time (null if none) */
+  readonly getScheduledTime: () => Effect.Effect<number | null, never, never>;
+
+  // Cleanup
   /** Terminate the task immediately - cancel alarms and delete all state */
   readonly terminate: () => Effect.Effect<never, never, never>;
 
+  // Metadata
   /** The unique instance ID for this task */
   readonly instanceId: string;
   /** The name of this job (as registered) */
@@ -635,18 +651,32 @@ export interface TaskIdleContext<S> {
  * Context provided to task onError handler.
  *
  * Called when onEvent or execute throws an error.
- * Use this to log errors, update state, or schedule retries.
+ * Use this to log errors, update state, schedule retries, or terminate.
  */
 export interface TaskErrorContext<S> {
+  // State access
   /** Get current state */
   readonly state: Effect.Effect<S | null, never, never>;
+
+  // State mutations
+  /** Replace the entire state */
+  readonly setState: (state: S) => Effect.Effect<void, never, never>;
   /** Update state (e.g., to track error count) */
   readonly updateState: (fn: (current: S) => S) => Effect.Effect<void, never, never>;
+
+  // Scheduling
   /** Schedule execution (e.g., for retry) */
   readonly schedule: (when: Duration.DurationInput | number | Date) => Effect.Effect<void, never, never>;
+  /** Cancel any scheduled execution */
+  readonly cancelSchedule: () => Effect.Effect<void, never, never>;
+  /** Get the currently scheduled execution time (null if none) */
+  readonly getScheduledTime: () => Effect.Effect<number | null, never, never>;
+
+  // Cleanup
   /** Terminate the task immediately - cancel alarms and delete all state */
   readonly terminate: () => Effect.Effect<never, never, never>;
 
+  // Metadata
   /** The unique instance ID for this task */
   readonly instanceId: string;
   /** The name of this job (as registered) */
