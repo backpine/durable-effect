@@ -148,10 +148,7 @@ export function toRuntimeRegistry<
       string,
       StoredContinuousDefinition
     >,
-    debounce: registry.debounce as Record<
-      string,
-      StoredDebounceDefinition
-    >,
+    debounce: registry.debounce as Record<string, StoredDebounceDefinition>,
     workerPool: registry.workerPool as Record<
       string,
       StoredWorkerPoolDefinition
