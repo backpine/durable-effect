@@ -2,6 +2,18 @@ import type { Effect, Schema } from "effect"
 import type { TaskContext } from "./TaskContext.js"
 
 // ---------------------------------------------------------------------------
+// PureSchema — a schema with no service requirements for encoding/decoding.
+// Task schemas must be pure (no service deps) so that decode/encode can
+// run without needing additional services in the Effect context.
+// ---------------------------------------------------------------------------
+
+export type PureSchema<T> = Schema.Top & {
+  readonly "Type": T
+  readonly "DecodingServices": never
+  readonly "EncodingServices": never
+}
+
+// ---------------------------------------------------------------------------
 // TaskDefineConfig — what the user passes to Task.define()
 // Separate error params per handler for correct inference
 // ---------------------------------------------------------------------------
@@ -14,8 +26,8 @@ export interface TaskDefineConfig<
   R,
   OErr = never,
 > {
-  readonly state: Schema.Schema<S>
-  readonly event: Schema.Schema<E>
+  readonly state: PureSchema<S>
+  readonly event: PureSchema<E>
   readonly onEvent: (
     ctx: TaskContext<S>,
     event: E,
@@ -35,8 +47,8 @@ export interface TaskDefineConfig<
 
 export interface TaskDefinition<S, E, Err, R> {
   readonly _tag: "TaskDefinition"
-  readonly state: Schema.Schema<S>
-  readonly event: Schema.Schema<E>
+  readonly state: PureSchema<S>
+  readonly event: PureSchema<E>
   readonly onEvent: (
     ctx: TaskContext<S>,
     event: E,

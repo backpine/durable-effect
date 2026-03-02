@@ -14,12 +14,13 @@ export { Alarm, AlarmError } from "./services/Alarm.js"
 // User-facing API
 export { Task } from "./Task.js"
 export type { TaskContext } from "./TaskContext.js"
-export type { TaskDefineConfig, TaskDefinition } from "./TaskDefinition.js"
+export type { PureSchema, TaskDefineConfig, TaskDefinition } from "./TaskDefinition.js"
 
 // Framework services
 export {
   TaskRegistry,
   registerTask,
+  registerTaskWithLayer,
   buildRegistryLayer,
 } from "./services/TaskRegistry.js"
 export type {
@@ -27,3 +28,10 @@ export type {
   TaskRegistryConfig,
 } from "./services/TaskRegistry.js"
 export { TaskRunner } from "./services/TaskRunner.js"
+
+// Live implementations
+export { TaskRunnerLive } from "./live/TaskRunnerLive.js"
+export { makeInMemoryStorage } from "./live/InMemoryStorage.js"
+export type { InMemoryStorageHandle } from "./live/InMemoryStorage.js"
+export { makeInMemoryAlarm } from "./live/InMemoryAlarm.js"
+export type { InMemoryAlarmHandle } from "./live/InMemoryAlarm.js"

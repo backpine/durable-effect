@@ -7,6 +7,7 @@ import {
   TaskRunner,
   TaskRegistry,
   registerTask,
+  registerTaskWithLayer,
   buildRegistryLayer,
   TaskError,
   PurgeSignal,
@@ -105,8 +106,8 @@ describe("registerTask()", () => {
     })
 
     const entry = registerTask(def)
-    expect(entry.definition).toBe(def)
-    expect(entry.layer).toBeUndefined()
+    expect(typeof entry.handleEvent).toBe("function")
+    expect(typeof entry.handleAlarm).toBe("function")
   })
 
   it("registers a task with services", () => {
@@ -125,9 +126,9 @@ describe("registerTask()", () => {
       send: (_to, _body) => Effect.void,
     })
 
-    const entry = registerTask(def, emailLayer)
-    expect(entry.definition).toBe(def)
-    expect(entry.layer).toBe(emailLayer)
+    const entry = registerTaskWithLayer(def, emailLayer)
+    expect(typeof entry.handleEvent).toBe("function")
+    expect(typeof entry.handleAlarm).toBe("function")
   })
 })
 
