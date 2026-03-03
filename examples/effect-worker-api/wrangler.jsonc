@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "effect-worker-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-11-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "development",
+    "LOG_LEVEL": "debug"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TASKS_DO",
+        "class_name": "TasksDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["CounterDO"]
+    },
+    {
+      "tag": "v2",
+      "new_classes": ["TasksDO"],
+      "deleted_classes": ["CounterDO"]
+    }
+  ]
+}
