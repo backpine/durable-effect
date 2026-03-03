@@ -1,13 +1,20 @@
 {
-  "name": "@backpine/task",
+  "name": "@durable-effect/task",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare/index.d.ts",
+      "import": "./dist/cloudflare/index.js"
     }
   },
   "files": [
@@ -17,12 +24,17 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
-    "typecheck:test": "tsc --noEmit --project tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "peerDependencies": {
-    "effect": "^4.0.0-beta.21"
+    "effect": "^4.0.0-beta.21",
+    "@cloudflare/workers-types": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@cloudflare/workers-types": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "effect": "4.0.0-beta.21",

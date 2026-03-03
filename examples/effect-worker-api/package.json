@@ -1,0 +1,21 @@
+{
+  "name": "effect-worker-api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "tsc --noEmit",
+    "cf-typegen": "wrangler types --env-interface Env"
+  },
+  "dependencies": {
+    "@backpine/task-v2": "workspace:*",
+    "effect": "4.0.0-beta.21"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.55.0"
+  }
+}

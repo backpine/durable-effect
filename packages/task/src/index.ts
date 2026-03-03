@@ -1,42 +1,38 @@
+// Errors
 export {
-  StoreError,
-  SchedulerError,
-  ValidationError,
-  TaskNotFoundError,
-  ClientError,
+  TaskError,
   PurgeSignal,
-} from "./errors.js";
+  TaskNotFoundError,
+  TaskValidationError,
+  TaskExecutionError,
+} from "./errors.js"
 
-export type {
-  TaskContext,
-  TaskDefineConfig,
-  TaskDefinition,
-  ProvidedTaskDefinition,
-} from "./types.js";
+// Platform services
+export { Storage, StorageError } from "./services/Storage.js"
+export { Alarm, AlarmError } from "./services/Alarm.js"
 
-export { Task } from "./define.js";
+// User-facing API
+export { Task } from "./Task.js"
+export type { TaskContext } from "./TaskContext.js"
+export type { PureSchema, TaskDefineConfig, TaskDefinition } from "./TaskDefinition.js"
+export { withServices } from "./TaskDefinition.js"
 
-// Adapter layer
-export { KEYS } from "./adapter/keys.js";
-export { Store } from "./adapter/store.js";
-export { Scheduler } from "./adapter/scheduler.js";
-export { Instance } from "./adapter/instance.js";
-export { createTaskContext } from "./adapter/context.js";
-export type { StoreShape, SchedulerShape, CreateTaskContextOptions } from "./adapter/context.js";
-export { createTaskRegistry } from "./adapter/registry.js";
-export type { TaskRegistry } from "./adapter/registry.js";
-export { createTaskExecutor } from "./adapter/executor.js";
-export type { TaskExecutor } from "./adapter/executor.js";
-
-// Testing utilities
+// Framework services
 export {
-  createTestStore,
-  createTestScheduler,
-  createTestLayer,
-} from "./testing/index.js";
+  TaskRegistry,
+  registerTask,
+  registerTaskWithLayer,
+  buildRegistryLayer,
+} from "./services/TaskRegistry.js"
 export type {
-  TestStoreHandle,
-  TestSchedulerHandle,
-  TestClock,
-  TestHandles,
-} from "./testing/index.js";
+  RegisteredTask,
+  TaskRegistryConfig,
+} from "./services/TaskRegistry.js"
+export { TaskRunner } from "./services/TaskRunner.js"
+
+// Live implementations
+export { TaskRunnerLive } from "./live/TaskRunnerLive.js"
+export { makeInMemoryStorage } from "./live/InMemoryStorage.js"
+export type { InMemoryStorageHandle } from "./live/InMemoryStorage.js"
+export { makeInMemoryAlarm } from "./live/InMemoryAlarm.js"
+export type { InMemoryAlarmHandle } from "./live/InMemoryAlarm.js"
