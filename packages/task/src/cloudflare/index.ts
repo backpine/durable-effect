@@ -8,5 +8,5 @@ export type { DurableObjectState } from "./TaskEngine.js"
 
 // Factory + typed client
 export { createTasks } from "./createTasks.js"
-export type { TasksAccessor, TaskHandle, DurableObjectNamespaceLike, EventOf } from "./createTasks.js"
+export type { TasksAccessor, TaskHandle, DurableObjectNamespaceLike, EventOf, StateOf } from "./createTasks.js"
 export { TaskClientError } from "./errors.js"

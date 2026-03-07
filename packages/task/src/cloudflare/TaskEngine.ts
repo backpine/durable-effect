@@ -93,6 +93,14 @@ export function makeTaskEngine(
           return new Response("ok", { status: 200 })
         }
 
+        if (body.type === "state") {
+          const raw = await state.storage.get("t:state")
+          return new Response(JSON.stringify({ state: raw ?? null }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        }
+
         return new Response(
           JSON.stringify({ error: `Unknown type: ${body.type}` }),
           { status: 400, headers: { "Content-Type": "application/json" } },

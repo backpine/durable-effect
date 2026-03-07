@@ -9,6 +9,7 @@ import {
   makeInMemoryStorage,
   makeInMemoryAlarm,
 } from "../src/index.js";
+import { createTasks } from "../src/cloudflare/index.js";
 
 // ---------------------------------------------------------------------------
 // Test schemas
@@ -254,5 +255,123 @@ describe("TaskRunnerLive", () => {
     expect(errorHandlerCalled).toBe(true);
     expect(capturedError).toBeInstanceOf(Error);
     expect(storageHandle.getData().get("t:state")).toEqual({ count: -1 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTasks / getState integration tests
+// ---------------------------------------------------------------------------
+
+describe("createTasks getState", () => {
+  const counterTask = Task.define({
+    state: CounterState,
+    event: IncrementEvent,
+    onEvent: (ctx, event) =>
+      Effect.gen(function* () {
+        const current = yield* ctx.recall();
+        const count = current ? current.count : 0;
+        yield* ctx.save({ count: count + event.amount });
+      }),
+    onAlarm: () => Effect.void,
+  });
+
+  const { TasksDO, tasks } = createTasks({ counter: counterTask });
+
+  // Mock DurableObjectState backed by a simple Map
+  function makeMockDOState() {
+    const data = new Map<string, unknown>();
+    let alarmTime: number | null = null;
+    return {
+      id: { toString: () => "mock-do-id" },
+      storage: {
+        get: (key: string) => Promise.resolve(data.get(key) ?? null),
+        put: (key: string, value: unknown) => {
+          data.set(key, value);
+          return Promise.resolve();
+        },
+        delete: (key: string) => {
+          data.delete(key);
+          return Promise.resolve(true);
+        },
+        deleteAll: () => {
+          data.clear();
+          return Promise.resolve();
+        },
+        getAlarm: () => Promise.resolve(alarmTime),
+        setAlarm: (ts: number) => {
+          alarmTime = ts;
+          return Promise.resolve();
+        },
+        deleteAlarm: () => {
+          alarmTime = null;
+          return Promise.resolve();
+        },
+      },
+      data,
+    };
+  }
+
+  // Mock DurableObjectNamespace that routes to a real TasksDO instance
+  function makeMockNamespace() {
+    const instances = new Map<string, InstanceType<typeof TasksDO>>();
+    const states = new Map<string, ReturnType<typeof makeMockDOState>>();
+
+    return {
+      idFromName: (name: string) => ({ toString: () => name }),
+      get: (id: { toString(): string }) => {
+        const key = id.toString();
+        if (!instances.has(key)) {
+          const mockState = makeMockDOState();
+          states.set(key, mockState);
+          instances.set(key, new TasksDO(mockState));
+        }
+        const instance = instances.get(key)!;
+        return {
+          fetch: (input: RequestInfo, init?: RequestInit) => {
+            const request = new Request(
+              typeof input === "string" ? input : (input as Request).url,
+              init,
+            );
+            return instance.fetch(request);
+          },
+        };
+      },
+      getState: (key: string) => states.get(key),
+    };
+  }
+
+  it("getState returns null when no state exists", async () => {
+    const ns = makeMockNamespace();
+    const handle = tasks(ns, "counter");
+
+    const result = await Effect.runPromise(handle.getState("new-task"));
+    expect(result).toBeNull();
+  });
+
+  it("getState returns state after send", async () => {
+    const ns = makeMockNamespace();
+    const handle = tasks(ns, "counter");
+
+    await Effect.runPromise(
+      handle.send("c-1", { _tag: "Increment", amount: 5 }),
+    );
+
+    const state = await Effect.runPromise(handle.getState("c-1"));
+    expect(state).toEqual({ count: 5 });
+  });
+
+  it("getState reflects accumulated state from multiple sends", async () => {
+    const ns = makeMockNamespace();
+    const handle = tasks(ns, "counter");
+
+    await Effect.runPromise(
+      handle.send("c-2", { _tag: "Increment", amount: 3 }),
+    );
+    await Effect.runPromise(
+      handle.send("c-2", { _tag: "Increment", amount: 7 }),
+    );
+
+    const state = await Effect.runPromise(handle.getState("c-2"));
+    expect(state).toEqual({ count: 10 });
   });
 });

@@ -107,9 +107,9 @@ Bind the DO class in your `wrangler.jsonc` (or `wrangler.toml`):
 }
 ```
 
-### 4. Send Events
+### 4. Send Events & Read State
 
-Use the `tasks` accessor to get a type-safe handle for a specific task, then call `send()`.
+Use the `tasks` accessor to get a type-safe handle for a specific task, then call `send()`, `getState()`, or `alarm()`.
 
 ```typescript
 import { Effect } from "effect"
@@ -121,16 +121,21 @@ const counter = tasks(env.TASKS_DO, "counter")
 
 // Send an event — event shape is type-checked against the task's schema
 yield* counter.send("my-counter-id", { _tag: "Start" }).pipe(Effect.orDie)
+
+// Read the current state — returns S | null (null if no state has been saved yet)
+const state = yield* counter.getState("my-counter-id").pipe(Effect.orDie)
+// state is typed as { count: number } | null
 ```
 
-The accessor signature is `tasks(doNamespace, taskName)` and returns a `TaskHandle` bound to that namespace and task. The handle has two methods:
+The accessor signature is `tasks(doNamespace, taskName)` and returns a `TaskHandle` bound to that namespace and task. The handle has three methods:
 
 ```typescript
-counter.send(id: string, event: StartEvent) // => Effect<void, TaskClientError>
-counter.alarm(id: string)                   // => Effect<void, TaskClientError>
+counter.send(id: string, event: StartEvent)     // => Effect<void, TaskClientError>
+counter.getState(id: string)                     // => Effect<CounterState | null, TaskClientError>
+counter.alarm(id: string)                        // => Effect<void, TaskClientError>
 ```
 
-Both the task name and the event payload are fully type-safe — no string guessing, no casts.
+Both the task name and the event payload are fully type-safe — no string guessing, no casts. The state return type is inferred from your task's state schema.
 
 ---
 
@@ -236,9 +241,9 @@ const scheduler = Task.define({ /* ... */ })
 export const { TasksDO, tasks } = createTasks({ counter, emailer, scheduler })
 
 // Each returns a handle with the correct event type
-const c = tasks(env.TASKS_DO, "counter")    // TaskHandle<CounterEvent>
-const e = tasks(env.TASKS_DO, "emailer")    // TaskHandle<EmailEvent>
-const s = tasks(env.TASKS_DO, "scheduler")  // TaskHandle<SchedulerEvent>
+const c = tasks(env.TASKS_DO, "counter")    // TaskHandle<CounterState, CounterEvent>
+const e = tasks(env.TASKS_DO, "emailer")    // TaskHandle<EmailState, EmailEvent>
+const s = tasks(env.TASKS_DO, "scheduler")  // TaskHandle<SchedulerState, SchedulerEvent>
 ```
 
 ---
@@ -371,10 +376,11 @@ makeCloudflareStorage(doStorage)  // => Layer<Storage>
 makeCloudflareAlarm(doStorage)    // => Layer<Alarm>
 
 // Types
-TaskHandle<E>               // Bound client: { send(id, event), alarm(id) }
-TasksAccessor<T>            // (doNamespace, name) => TaskHandle<EventOf<T, K>>
+TaskHandle<S, E>            // Bound client: { send(id, event), getState(id), alarm(id) }
+TasksAccessor<T>            // (doNamespace, name) => TaskHandle<StateOf<T, K>, EventOf<T, K>>
 DurableObjectNamespaceLike  // Structural type for CF DO namespace
 EventOf<T, K>               // Extract event type from definitions record
+StateOf<T, K>               // Extract state type from definitions record
 TaskClientError             // Error from client-side DO fetch
 ```
 
@@ -393,5 +399,12 @@ When you call `counter.send("my-id", { _tag: "Start" })`:
 5. State changes via `ctx.save()` persist to Durable Object storage
 6. Alarms scheduled via `ctx.scheduleIn()` use Durable Object alarms
 7. When an alarm fires, Cloudflare calls the DO's `alarm()` method, which runs `onAlarm(ctx)`
+
+When you call `counter.getState("my-id")`:
+
+1. The client builds the same DO instance ID: `"counter:my-id"`
+2. POSTs `{ type: "state", name: "counter", id: "my-id" }` to the DO
+3. The DO reads the persisted state from storage and returns it as JSON
+4. The client returns the decoded state (or `null` if no state exists yet)
 
 Each task instance (unique combination of task name + ID) gets its own isolated Durable Object with its own storage.

@@ -15,6 +15,11 @@ export type EventOf<
   K extends keyof T,
 > = T[K] extends TaskDefinition<any, infer E, any, any> ? E : never
 
+export type StateOf<
+  T extends Record<string, TaskDefinition<any, any, any, never>>,
+  K extends keyof T,
+> = T[K] extends TaskDefinition<infer S, any, any, any> ? S : never
+
 // ---------------------------------------------------------------------------
 // Structural types — avoids depending on CF ambient types
 // ---------------------------------------------------------------------------
@@ -30,9 +35,10 @@ export interface DurableObjectNamespaceLike {
 // TaskHandle — bound client for a single task type
 // ---------------------------------------------------------------------------
 
-export interface TaskHandle<E> {
+export interface TaskHandle<S, E> {
   readonly send: (id: string, event: E) => Effect.Effect<void, TaskClientError>
   readonly alarm: (id: string) => Effect.Effect<void, TaskClientError>
+  readonly getState: (id: string) => Effect.Effect<S | null, TaskClientError>
 }
 
 // ---------------------------------------------------------------------------
@@ -45,7 +51,7 @@ export interface TasksAccessor<
   <K extends keyof T & string>(
     doNamespace: DurableObjectNamespaceLike,
     name: K,
-  ): TaskHandle<EventOf<T, K>>
+  ): TaskHandle<StateOf<T, K>, EventOf<T, K>>
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +101,7 @@ export function createTasks<
   const makeHandle = (
     doNamespace: DurableObjectNamespaceLike,
     name: string,
-  ): TaskHandle<any> => ({
+  ): TaskHandle<any, any> => ({
     send(id, event) {
       return Effect.tryPromise({
         try: async () => {
@@ -144,6 +150,34 @@ export function createTasks<
               cause instanceof Error
                 ? cause.message
                 : "Unknown error triggering alarm",
+            cause,
+          }),
+      })
+    },
+    getState(id) {
+      return Effect.tryPromise({
+        try: async () => {
+          const instanceId = `${name}:${id}`
+          const doId = doNamespace.idFromName(instanceId)
+          const stub = doNamespace.get(doId)
+          const resp = await stub.fetch("http://task/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "state", name, id }),
+          })
+          if (!resp.ok) {
+            const text = await resp.text()
+            throw new Error(`DO error: ${resp.status} ${text}`)
+          }
+          const body = (await resp.json()) as { state: unknown }
+          return body.state
+        },
+        catch: (cause) =>
+          new TaskClientError({
+            message:
+              cause instanceof Error
+                ? cause.message
+                : "Unknown error getting state",
             cause,
           }),
       })
