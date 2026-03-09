@@ -94,8 +94,10 @@ export function makeTaskEngine(
         }
 
         if (body.type === "state") {
-          const raw = await state.storage.get("t:state")
-          return new Response(JSON.stringify({ state: raw ?? null }), {
+          const result = await runWithRunner((runner) =>
+            runner.handleGetState(taskName, taskId),
+          )
+          return new Response(JSON.stringify({ state: result ?? null }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })

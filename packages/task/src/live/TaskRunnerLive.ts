@@ -42,6 +42,15 @@ export const TaskRunnerLive: Layer.Layer<
           }
           yield* task.handleAlarm(storage, alarm, id, name)
         }),
+
+      handleGetState: (name, id) =>
+        Effect.gen(function* () {
+          const task = registry.get(name)
+          if (task === undefined) {
+            return yield* Effect.fail(new TaskNotFoundError({ name }))
+          }
+          return yield* task.handleGetState(storage, alarm, id, name)
+        }),
     }
   }),
 )

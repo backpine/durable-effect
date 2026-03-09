@@ -25,6 +25,7 @@ export interface TaskDefineConfig<
   AErr,
   R,
   OErr = never,
+  GErr = never,
 > {
   readonly state: PureSchema<S>
   readonly event: PureSchema<E>
@@ -39,6 +40,10 @@ export interface TaskDefineConfig<
     ctx: TaskContext<S>,
     error: unknown,
   ) => Effect.Effect<void, OErr, R>
+  readonly onClientGetState?: (
+    ctx: TaskContext<S>,
+    state: S | null,
+  ) => Effect.Effect<S | null, GErr, R>
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +89,10 @@ export interface TaskDefinition<S, E, Err, R> {
     ctx: TaskContext<S>,
     error: unknown,
   ) => Effect.Effect<void, Err, R>
+  readonly onClientGetState?: (
+    ctx: TaskContext<S>,
+    state: S | null,
+  ) => Effect.Effect<S | null, Err, R>
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +112,9 @@ export function withServices<S, E, Err, R>(
     onAlarm: (ctx) => Effect.provide(definition.onAlarm(ctx), layer),
     onError: definition.onError
       ? (ctx, error) => Effect.provide(definition.onError!(ctx, error), layer)
+      : undefined,
+    onClientGetState: definition.onClientGetState
+      ? (ctx, state) => Effect.provide(definition.onClientGetState!(ctx, state), layer)
       : undefined,
   }
 }

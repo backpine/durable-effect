@@ -37,6 +37,12 @@ export interface RegisteredTask {
     id: string,
     name: string,
   ) => Effect.Effect<void, TaskExecutionError>
+  readonly handleGetState: (
+    storage: Storage["Service"],
+    alarm: Alarm["Service"],
+    id: string,
+    name: string,
+  ) => Effect.Effect<unknown, TaskExecutionError>
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +227,31 @@ function buildRegisteredTask<S, E, Err>(
       )
     })
 
-  return { handleEvent, handleAlarm }
+  const handleGetState = (
+    storage: Storage["Service"],
+    alarm: Alarm["Service"],
+    id: string,
+    name: string,
+  ): Effect.Effect<unknown, TaskExecutionError> =>
+    Effect.gen(function* () {
+      const ctx = buildTaskContext(storage, alarm, id, name, decodeState, encodeState)
+      const raw = yield* ctx.recall().pipe(
+        Effect.mapError((e) => new TaskExecutionError({ cause: e })),
+      )
+
+      if (!definition.onClientGetState) return raw
+
+      const result = yield* definition.onClientGetState(ctx, raw).pipe(
+        Effect.mapError((e) => new TaskExecutionError({ cause: e })),
+      )
+
+      if (result === null) return null
+      return yield* encodeState(result).pipe(
+        Effect.mapError((e) => new TaskExecutionError({ cause: e })),
+      )
+    })
+
+  return { handleEvent, handleAlarm, handleGetState }
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +284,9 @@ export function registerTaskWithLayer<S, E, Err, R>(
     onAlarm: (ctx) => Effect.provide(definition.onAlarm(ctx), layer),
     onError: definition.onError
       ? (ctx, error) => Effect.provide(definition.onError!(ctx, error), layer)
+      : undefined,
+    onClientGetState: definition.onClientGetState
+      ? (ctx, state) => Effect.provide(definition.onClientGetState!(ctx, state), layer)
       : undefined,
   }
   return buildRegisteredTask(resolved)

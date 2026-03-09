@@ -57,9 +57,9 @@ importers:
 
   examples/effect-worker-api:
     dependencies:
-      '@backpine/task-v2':
+      '@durable-effect/task':
         specifier: workspace:*
-        version: link:../../packages/task-v2
+        version: link:../../packages/task
       effect:
         specifier: 4.0.0-beta.21
         version: 4.0.0-beta.21
@@ -144,15 +144,6 @@ importers:
         version: 2.1.9(@types/node@22.19.3)
 
   packages/task:
-    devDependencies:
-      effect:
-        specifier: 4.0.0-beta.21
-        version: 4.0.0-beta.21
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.19.3)
-
-  packages/task-v2:
     dependencies:
       '@cloudflare/workers-types':
         specifier: '>=4.0.0'

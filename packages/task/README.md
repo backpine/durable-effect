@@ -203,6 +203,49 @@ const myTask = Task.define({
 
 If no `onError` is provided, handler errors propagate as `TaskExecutionError`.
 
+### Client State Hook
+
+Tasks can define an optional `onClientGetState` handler that intercepts external `getState()` calls. This lets you transform, enrich, or redact state before it reaches the client. The hook does **not** affect `ctx.recall()` inside your handlers — it only runs when an external client calls `getState()`.
+
+```typescript
+const MyState = Schema.Struct({
+  count: Schema.Number,
+  internalToken: Schema.String,
+})
+
+const myTask = Task.define({
+  state: MyState,
+  event: MyEvent,
+
+  onEvent: (ctx, _event) =>
+    Effect.gen(function* () {
+      yield* ctx.save({ count: 0, internalToken: "secret-123" })
+    }),
+
+  onAlarm: (ctx) =>
+    Effect.gen(function* () {
+      const current = yield* ctx.recall()
+      // recall() returns full state — hook is NOT invoked
+      console.log(current?.internalToken) // "secret-123"
+    }),
+
+  // Only runs when external client calls getState()
+  onClientGetState: (ctx, state) =>
+    Effect.gen(function* () {
+      if (state === null) return null
+      return { ...state, internalToken: "[redacted]" }
+    }),
+})
+```
+
+The hook receives the full `TaskContext<S>` and the current state (`S | null`), and must return `S | null`. Common use cases:
+
+- **Redact sensitive fields** before returning to the client
+- **Compute derived fields** (e.g. `progress` from internal counters)
+- **Merge external data** by yielding other services (when used with `withServices`)
+
+If no `onClientGetState` is provided, `getState()` returns the raw persisted state — same as `ctx.recall()`.
+
 ### Tasks with Service Dependencies
 
 If your handlers need Effect services, use `withServices()` to provide a layer and eliminate the `R` type parameter before passing to `createTasks`:
@@ -404,7 +447,9 @@ When you call `counter.getState("my-id")`:
 
 1. The client builds the same DO instance ID: `"counter:my-id"`
 2. POSTs `{ type: "state", name: "counter", id: "my-id" }` to the DO
-3. The DO reads the persisted state from storage and returns it as JSON
-4. The client returns the decoded state (or `null` if no state exists yet)
+3. The DO reads the persisted state via `ctx.recall()`
+4. If an `onClientGetState` hook is defined, it runs with the state and can transform it
+5. The (possibly transformed) state is encoded and returned as JSON
+6. The client returns the decoded state (or `null` if no state exists yet)
 
 Each task instance (unique combination of task name + ID) gets its own isolated Durable Object with its own storage.

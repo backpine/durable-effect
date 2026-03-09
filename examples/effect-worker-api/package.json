@@ -10,7 +10,7 @@
     "cf-typegen": "wrangler types --env-interface Env"
   },
   "dependencies": {
-    "@backpine/task-v2": "workspace:*",
+    "@durable-effect/task": "workspace:*",
     "effect": "4.0.0-beta.21"
   },
   "devDependencies": {

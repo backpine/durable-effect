@@ -5,9 +5,9 @@ import type { TaskDefineConfig, TaskDefinition } from "./TaskDefinition.js"
 // ---------------------------------------------------------------------------
 
 export const Task = {
-  define<S, E, EErr, AErr, R, OErr = never>(
-    config: TaskDefineConfig<S, E, EErr, AErr, R, OErr>,
-  ): TaskDefinition<S, E, EErr | AErr | OErr, R> {
+  define<S, E, EErr, AErr, R, OErr = never, GErr = never>(
+    config: TaskDefineConfig<S, E, EErr, AErr, R, OErr, GErr>,
+  ): TaskDefinition<S, E, EErr | AErr | OErr | GErr, R> {
     return {
       _tag: "TaskDefinition",
       state: config.state,
@@ -15,6 +15,7 @@ export const Task = {
       onEvent: config.onEvent,
       onAlarm: config.onAlarm,
       onError: config.onError,
+      onClientGetState: config.onClientGetState,
     }
   },
 }

@@ -25,4 +25,11 @@ export class TaskRunner extends ServiceMap.Service<TaskRunner, {
     void,
     TaskNotFoundError | TaskExecutionError
   >
+  readonly handleGetState: (
+    name: string,
+    id: string,
+  ) => Effect.Effect<
+    unknown,
+    TaskNotFoundError | TaskExecutionError
+  >
 }>()("@task/Runner") {}
