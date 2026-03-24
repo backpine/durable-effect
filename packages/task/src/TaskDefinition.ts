@@ -38,7 +38,7 @@ export interface TaskDefineConfig<
   ) => Effect.Effect<void, AErr, R>
   readonly onError?: (
     ctx: TaskContext<S>,
-    error: unknown,
+    error: EErr | AErr,
   ) => Effect.Effect<void, OErr, R>
   readonly onClientGetState?: (
     ctx: TaskContext<S>,
@@ -66,7 +66,7 @@ export interface TaskDefineConfigVoid<
   ) => Effect.Effect<void, AErr, R>
   readonly onError?: (
     ctx: TaskContext<S>,
-    error: unknown,
+    error: EErr | AErr,
   ) => Effect.Effect<void, OErr, R>
 }
 
@@ -74,36 +74,45 @@ export interface TaskDefineConfigVoid<
 // TaskDefinition — the pure definition value
 // ---------------------------------------------------------------------------
 
-export interface TaskDefinition<S, E, Err, R> {
+export interface TaskDefinition<S, E, EErr, AErr, R, OErr = never, GErr = never> {
   readonly _tag: "TaskDefinition"
   readonly state: PureSchema<S>
   readonly event: PureSchema<E>
   readonly onEvent: (
     ctx: TaskContext<S>,
     event: E,
-  ) => Effect.Effect<void, Err, R>
+  ) => Effect.Effect<void, EErr, R>
   readonly onAlarm: (
     ctx: TaskContext<S>,
-  ) => Effect.Effect<void, Err, R>
+  ) => Effect.Effect<void, AErr, R>
   readonly onError?: (
     ctx: TaskContext<S>,
-    error: unknown,
-  ) => Effect.Effect<void, Err, R>
+    error: EErr | AErr,
+  ) => Effect.Effect<void, OErr, R>
   readonly onClientGetState?: (
     ctx: TaskContext<S>,
     state: S | null,
-  ) => Effect.Effect<S | null, Err, R>
+  ) => Effect.Effect<S | null, GErr, R>
 }
+
+// ---------------------------------------------------------------------------
+// TaskErrors — extract the full error union from a TaskDefinition
+// ---------------------------------------------------------------------------
+
+export type TaskErrors<D> =
+  D extends TaskDefinition<any, any, infer EErr, infer AErr, any, infer OErr, infer GErr>
+    ? EErr | AErr | OErr | GErr
+    : never
 
 // ---------------------------------------------------------------------------
 // withServices — wraps handlers with Effect.provide to eliminate R,
 // returning TaskDefinition<S, E, Err, never> (preserving S and E).
 // ---------------------------------------------------------------------------
 
-export function withServices<S, E, Err, R>(
-  definition: TaskDefinition<S, E, Err, R>,
+export function withServices<S, E, EErr, AErr, R, OErr, GErr>(
+  definition: TaskDefinition<S, E, EErr, AErr, R, OErr, GErr>,
   layer: Layer.Layer<R>,
-): TaskDefinition<S, E, Err, never> {
+): TaskDefinition<S, E, EErr, AErr, never, OErr, GErr> {
   return {
     _tag: "TaskDefinition",
     state: definition.state,

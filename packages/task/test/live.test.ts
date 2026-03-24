@@ -114,6 +114,44 @@ describe("TaskRunnerLive", () => {
     expect(storageHandle.getData().get("t:state")).toEqual({ count: 999 });
   });
 
+  it("clears alarm bookmark after alarm fires so nextAlarm returns null", async () => {
+    const counterTask = Task.define({
+      state: CounterState,
+      event: IncrementEvent,
+      onEvent: (ctx) =>
+        Effect.gen(function* () {
+          yield* ctx.scheduleIn("5 seconds");
+        }),
+      onAlarm: (ctx) =>
+        Effect.gen(function* () {
+          // After firing, nextAlarm should return null (no pending alarm)
+          const next = yield* ctx.nextAlarm();
+          yield* ctx.save({ count: next === null ? 0 : -1 });
+        }),
+    });
+
+    const { fullLayer, storageHandle } = makeTestStack({
+      counter: registerTask(counterTask),
+    });
+
+    const program = Effect.gen(function* () {
+      const runner = yield* TaskRunner;
+      // Schedule an alarm
+      yield* runner.handleEvent("counter", "c-1", {
+        _tag: "Increment",
+        amount: 1,
+      });
+      // Fire the alarm
+      yield* runner.handleAlarm("counter", "c-1");
+    });
+
+    await Effect.runPromise(Effect.provide(program, fullLayer));
+
+    // count=0 means nextAlarm returned null inside onAlarm (correct)
+    // count=-1 would mean stale alarm time was returned (bug)
+    expect(storageHandle.getData().get("t:state")).toEqual({ count: 0 });
+  });
+
   it("fails with TaskNotFoundError for unknown task", async () => {
     const { fullLayer } = makeTestStack({});
 
@@ -373,5 +411,94 @@ describe("createTasks getState", () => {
 
     const state = await Effect.runPromise(handle.getState("c-2"));
     expect(state).toEqual({ count: 10 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createTasks / scheduleIn + alarm integration test
+// ---------------------------------------------------------------------------
+
+describe("createTasks scheduleIn + alarm", () => {
+  const ScheduleState = Schema.Struct({
+    phase: Schema.String,
+  });
+
+  const TriggerEvent = Schema.Struct({
+    _tag: Schema.Literal("Trigger"),
+  });
+
+  const scheduleTask = Task.define({
+    state: ScheduleState,
+    event: TriggerEvent,
+    onEvent: (ctx) =>
+      Effect.gen(function* () {
+        yield* ctx.save({ phase: "scheduled" });
+        yield* ctx.scheduleIn("2 seconds");
+      }),
+    onAlarm: (ctx) =>
+      Effect.gen(function* () {
+        yield* ctx.save({ phase: "alarm-fired" });
+      }),
+  });
+
+  const { TasksDO, tasks } = createTasks({ schedule: scheduleTask });
+
+  function makeMockDOState() {
+    const data = new Map<string, unknown>();
+    let alarmTime: number | null = null;
+    return {
+      id: { toString: () => "mock-do-id" },
+      storage: {
+        get: (key: string) => Promise.resolve(data.get(key) ?? null),
+        put: (key: string, value: unknown) => {
+          data.set(key, value);
+          return Promise.resolve();
+        },
+        delete: (key: string) => {
+          data.delete(key);
+          return Promise.resolve(true);
+        },
+        deleteAll: () => {
+          data.clear();
+          return Promise.resolve();
+        },
+        getAlarm: () => Promise.resolve(alarmTime),
+        setAlarm: (ts: number) => {
+          alarmTime = ts;
+          return Promise.resolve();
+        },
+        deleteAlarm: () => {
+          alarmTime = null;
+          return Promise.resolve();
+        },
+      },
+      data,
+    };
+  }
+
+  it("scheduleIn from onEvent followed by alarm does not throw _tag error", async () => {
+    const mockState = makeMockDOState();
+    const doInstance = new TasksDO(mockState);
+
+    // Send event that calls scheduleIn
+    const sendResp = await doInstance.fetch(
+      new Request("http://task/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "event",
+          name: "schedule",
+          id: "s-1",
+          event: { _tag: "Trigger" },
+        }),
+      }),
+    );
+    expect(sendResp.status).toBe(200);
+    expect(mockState.data.get("t:state")).toEqual({ phase: "scheduled" });
+
+    // Simulate the alarm firing (as CF would call it)
+    await doInstance.alarm();
+
+    expect(mockState.data.get("t:state")).toEqual({ phase: "alarm-fired" });
   });
 });

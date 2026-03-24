@@ -95,7 +95,7 @@ function buildTaskContext<S>(
 
   const scheduleIn = (delay: Duration.Input): Effect.Effect<void, TaskError> =>
     Effect.gen(function* () {
-      const ms = Duration.toMillis(delay)
+      const ms = Duration.toMillis(Duration.fromInputUnsafe(delay))
       const ts = Date.now() + ms
       yield* alarm.set(ts).pipe(Effect.mapError(mapAlarmError))
       yield* storage.set(ALARM_KEY, ts).pipe(Effect.mapError(mapStorageError))
@@ -141,17 +141,52 @@ function cleanup(
 }
 
 // ---------------------------------------------------------------------------
+// Internal: type guard for PurgeSignal
+// ---------------------------------------------------------------------------
+
+function isPurgeSignal(error: unknown): error is PurgeSignal {
+  return error instanceof PurgeSignal
+}
+
+// ---------------------------------------------------------------------------
+// Internal: handle errors from a handler effect, routing PurgeSignal to
+// cleanup and other errors to onError (if provided).
+// ---------------------------------------------------------------------------
+
+function handleHandlerError<S, HErr, OErr>(
+  ctx: TaskContext<S>,
+  error: HErr,
+  onError: ((ctx: TaskContext<S>, error: HErr) => Effect.Effect<void, OErr, never>) | undefined,
+  storage: Storage["Service"],
+  alarm: Alarm["Service"],
+): Effect.Effect<void, TaskExecutionError> {
+  if (isPurgeSignal(error)) {
+    return cleanup(storage, alarm)
+  }
+
+  if (!onError) {
+    return Effect.fail(new TaskExecutionError({ cause: error }))
+  }
+
+  return onError(ctx, error).pipe(
+    Effect.catch((oErr) =>
+      isPurgeSignal(oErr)
+        ? cleanup(storage, alarm)
+        : Effect.fail(new TaskExecutionError({ cause: oErr })),
+    ),
+    Effect.mapError((e) => new TaskExecutionError({ cause: e })),
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Internal: build RegisteredTask from a fully-resolved definition (R = never).
 //
 // All handler effects in the definition have R = never, so no layer provision
-// is needed. S, E, Err are captured in the closures via the generic params.
-//
-// The error widening trick (mapError to Err | PurgeSignal) lets catchTag
-// find the PurgeSignal tag even when Err is a generic type parameter.
+// is needed. S, E, EErr, AErr are captured in closures via generic params.
 // ---------------------------------------------------------------------------
 
-function buildRegisteredTask<S, E, Err>(
-  definition: TaskDefinition<S, E, Err, never>,
+function buildRegisteredTask<S, E, EErr, AErr, OErr, GErr>(
+  definition: TaskDefinition<S, E, EErr, AErr, never, OErr, GErr>,
 ): RegisteredTask {
   const decodeEvent = Schema.decodeUnknownEffect(definition.event)
   const decodeState = Schema.decodeUnknownEffect(definition.state)
@@ -171,26 +206,9 @@ function buildRegisteredTask<S, E, Err>(
 
       const ctx = buildTaskContext(storage, alarm, id, name, decodeState, encodeState)
 
-      // Widen error to include PurgeSignal so catchTag can resolve the tag
-      const withPurge = definition.onEvent(ctx, event).pipe(
-        Effect.mapError((e): Err | PurgeSignal => e),
-        Effect.catchTag("PurgeSignal", () => cleanup(storage, alarm)),
-      )
-
-      if (!definition.onError) {
-        yield* withPurge.pipe(
-          Effect.mapError((e) => new TaskExecutionError({ cause: e })),
-        )
-        return
-      }
-
-      yield* withPurge.pipe(
+      yield* definition.onEvent(ctx, event).pipe(
         Effect.catch((error) =>
-          definition.onError!(ctx, error).pipe(
-            Effect.mapError((e): Err | PurgeSignal => e),
-            Effect.catchTag("PurgeSignal", () => cleanup(storage, alarm)),
-            Effect.mapError((e) => new TaskExecutionError({ cause: e })),
-          )
+          handleHandlerError(ctx, error, definition.onError, storage, alarm),
         ),
       )
     })
@@ -202,27 +220,16 @@ function buildRegisteredTask<S, E, Err>(
     name: string,
   ): Effect.Effect<void, TaskExecutionError> =>
     Effect.gen(function* () {
-      const ctx = buildTaskContext(storage, alarm, id, name, decodeState, encodeState)
-
-      const withPurge = definition.onAlarm(ctx).pipe(
-        Effect.mapError((e): Err | PurgeSignal => e),
-        Effect.catchTag("PurgeSignal", () => cleanup(storage, alarm)),
+      // Clear the alarm bookmark — the alarm has fired, so it's no longer pending
+      yield* storage.delete(ALARM_KEY).pipe(
+        Effect.mapError((e) => new TaskExecutionError({ cause: e })),
       )
 
-      if (!definition.onError) {
-        yield* withPurge.pipe(
-          Effect.mapError((e) => new TaskExecutionError({ cause: e })),
-        )
-        return
-      }
+      const ctx = buildTaskContext(storage, alarm, id, name, decodeState, encodeState)
 
-      yield* withPurge.pipe(
+      yield* definition.onAlarm(ctx).pipe(
         Effect.catch((error) =>
-          definition.onError!(ctx, error).pipe(
-            Effect.mapError((e): Err | PurgeSignal => e),
-            Effect.catchTag("PurgeSignal", () => cleanup(storage, alarm)),
-            Effect.mapError((e) => new TaskExecutionError({ cause: e })),
-          )
+          handleHandlerError(ctx, error, definition.onError, storage, alarm),
         ),
       )
     })
@@ -258,8 +265,8 @@ function buildRegisteredTask<S, E, Err>(
 // registerTask — for definitions with no service requirements (R = never)
 // ---------------------------------------------------------------------------
 
-export function registerTask<S, E, Err>(
-  definition: TaskDefinition<S, E, Err, never>,
+export function registerTask<S, E, EErr, AErr, OErr, GErr>(
+  definition: TaskDefinition<S, E, EErr, AErr, never, OErr, GErr>,
 ): RegisteredTask {
   return buildRegisteredTask(definition)
 }
@@ -272,11 +279,11 @@ export function registerTask<S, E, Err>(
 // shared buildRegisteredTask.
 // ---------------------------------------------------------------------------
 
-export function registerTaskWithLayer<S, E, Err, R>(
-  definition: TaskDefinition<S, E, Err, R>,
+export function registerTaskWithLayer<S, E, EErr, AErr, R, OErr, GErr>(
+  definition: TaskDefinition<S, E, EErr, AErr, R, OErr, GErr>,
   layer: Layer.Layer<R>,
 ): RegisteredTask {
-  const resolved: TaskDefinition<S, E, Err, never> = {
+  const resolved: TaskDefinition<S, E, EErr, AErr, never, OErr, GErr> = {
     _tag: "TaskDefinition",
     state: definition.state,
     event: definition.event,

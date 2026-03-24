@@ -79,7 +79,7 @@ describe("Task.define()", () => {
   })
 
   it("supports onError handler", () => {
-    const onError = (_ctx: TaskContext<OrderState>, _err: unknown) =>
+    const onError = (_ctx: TaskContext<OrderState>, _err: never) =>
       Effect.void
 
     const def = Task.define({

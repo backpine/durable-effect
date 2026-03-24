@@ -7,7 +7,7 @@ import type { TaskDefineConfig, TaskDefinition } from "./TaskDefinition.js"
 export const Task = {
   define<S, E, EErr, AErr, R, OErr = never, GErr = never>(
     config: TaskDefineConfig<S, E, EErr, AErr, R, OErr, GErr>,
-  ): TaskDefinition<S, E, EErr | AErr | OErr | GErr, R> {
+  ): TaskDefinition<S, E, EErr, AErr, R, OErr, GErr> {
     return {
       _tag: "TaskDefinition",
       state: config.state,

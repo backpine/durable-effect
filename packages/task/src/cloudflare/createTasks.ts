@@ -11,14 +11,14 @@ import { TaskClientError } from "./errors.js"
 // ---------------------------------------------------------------------------
 
 export type EventOf<
-  T extends Record<string, TaskDefinition<any, any, any, never>>,
+  T extends Record<string, TaskDefinition<any, any, any, any, never>>,
   K extends keyof T,
-> = T[K] extends TaskDefinition<any, infer E, any, any> ? E : never
+> = T[K] extends TaskDefinition<any, infer E, any, any, any, any, any> ? E : never
 
 export type StateOf<
-  T extends Record<string, TaskDefinition<any, any, any, never>>,
+  T extends Record<string, TaskDefinition<any, any, any, any, never>>,
   K extends keyof T,
-> = T[K] extends TaskDefinition<infer S, any, any, any> ? S : never
+> = T[K] extends TaskDefinition<infer S, any, any, any, any, any, any> ? S : never
 
 // ---------------------------------------------------------------------------
 // Structural types — avoids depending on CF ambient types
@@ -46,7 +46,7 @@ export interface TaskHandle<S, E> {
 // ---------------------------------------------------------------------------
 
 export interface TasksAccessor<
-  T extends Record<string, TaskDefinition<any, any, any, never>>,
+  T extends Record<string, TaskDefinition<any, any, any, any, never>>,
 > {
   <K extends keyof T & string>(
     doNamespace: DurableObjectNamespaceLike,
@@ -59,7 +59,7 @@ export interface TasksAccessor<
 // ---------------------------------------------------------------------------
 
 export function createTasks<
-  const T extends Record<string, TaskDefinition<any, any, any, never>>,
+  const T extends Record<string, TaskDefinition<any, any, any, any, never>>,
 >(
   definitions: T,
 ): {

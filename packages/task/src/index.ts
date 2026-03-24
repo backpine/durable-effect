@@ -14,7 +14,7 @@ export { Alarm, AlarmError } from "./services/Alarm.js"
 // User-facing API
 export { Task } from "./Task.js"
 export type { TaskContext } from "./TaskContext.js"
-export type { PureSchema, TaskDefineConfig, TaskDefinition } from "./TaskDefinition.js"
+export type { PureSchema, TaskDefineConfig, TaskDefinition, TaskErrors } from "./TaskDefinition.js"
 export { withServices } from "./TaskDefinition.js"
 
 // Framework services
