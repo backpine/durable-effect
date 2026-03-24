@@ -65,6 +65,72 @@ export const CounterGroup = HttpApiGroup.make("counter")
   )
   .prefix("/counter")
 
+// Onboarding group — demonstrates task-group with sibling dispatch
+
+export const OnboardingStartResponseSchema = S.Struct({
+  status: S.Literal("ok"),
+  userId: S.String,
+})
+
+export const OnboardingStateResponseSchema = S.Struct({
+  onboarding: S.Unknown,
+  welcomeEmail: S.Unknown,
+})
+
+export const OnboardingGroup = HttpApiGroup.make("onboarding")
+  .add(
+    HttpApiEndpoint.post("start", "/start", {
+      payload: S.Struct({ userId: S.String, email: S.String }),
+      success: OnboardingStartResponseSchema,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("status", "/status/:userId", {
+      params: S.Struct({ userId: S.String }),
+      success: OnboardingStateResponseSchema,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("complete", "/complete/:userId", {
+      params: S.Struct({ userId: S.String }),
+      success: OnboardingStateResponseSchema,
+    }),
+  )
+  .prefix("/onboarding")
+
+// Billing group — demonstrates CF DO adapter with sibling dispatch + getState
+
+export const BillingCreateResponseSchema = S.Struct({
+  status: S.Literal("ok"),
+  invoiceId: S.String,
+})
+
+export const BillingStateResponseSchema = S.Struct({
+  invoice: S.Unknown,
+  receipt: S.Unknown,
+})
+
+export const BillingGroup = HttpApiGroup.make("billing")
+  .add(
+    HttpApiEndpoint.post("create", "/create", {
+      payload: S.Struct({ userId: S.String, amount: S.Number }),
+      success: BillingCreateResponseSchema,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("status", "/status/:invoiceId", {
+      params: S.Struct({ invoiceId: S.String }),
+      success: BillingStateResponseSchema,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("finalize", "/finalize/:invoiceId", {
+      params: S.Struct({ invoiceId: S.String }),
+      success: BillingStateResponseSchema,
+    }),
+  )
+  .prefix("/billing")
+
 // ---------------------------------------------------------------------------
 // API definition
 // ---------------------------------------------------------------------------
@@ -72,5 +138,7 @@ export const CounterGroup = HttpApiGroup.make("counter")
 export class WorkerApi extends HttpApi.make("WorkerApi")
   .add(HealthGroup)
   .add(CounterGroup)
+  .add(OnboardingGroup)
+  .add(BillingGroup)
   .middleware(CloudflareBindingsMiddleware)
   .prefix("/api") {}

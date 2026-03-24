@@ -67,5 +67,5 @@ const counter = Task.define({
 });
 
 export const { TasksDO, tasks } = createTasks({
-  counter: counter,
+  counter: withServices(counter, AnalyticsLive),
 });

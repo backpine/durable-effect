@@ -60,9 +60,12 @@ importers:
       '@durable-effect/task':
         specifier: workspace:*
         version: link:../../packages/task
+      '@durable-effect/task-group':
+        specifier: workspace:*
+        version: link:../../packages/task-group
       effect:
-        specifier: 4.0.0-beta.21
-        version: 4.0.0-beta.21
+        specifier: 4.0.0-beta.38
+        version: 4.0.0-beta.38
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20241127.0
@@ -148,6 +151,15 @@ importers:
       '@cloudflare/workers-types':
         specifier: '>=4.0.0'
         version: 4.20251127.0
+    devDependencies:
+      effect:
+        specifier: 4.0.0-beta.38
+        version: 4.0.0-beta.38
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.3)
+
+  packages/task-group:
     devDependencies:
       effect:
         specifier: 4.0.0-beta.38
@@ -1235,9 +1247,6 @@ packages:
   effect@3.19.8:
     resolution: {integrity: sha512-OmLw8EfH02vdmyU2fO4uY9He/wepwKI5E/JNpE2pseaWWUbaYOK9UlxIiKP20ZEqQr+S/jSqRDGmpiqD/2DeCQ==}
 
-  effect@4.0.0-beta.21:
-    resolution: {integrity: sha512-M2pujOGwVpu3q+10S7C99Ql19BreKgxKXNLZy8NpJ7ymT1vs7NzG9NWI6dFtcF5do0Dzas1Kpa8NwSH+sqy/Cw==}
-
   effect@4.0.0-beta.38:
     resolution: {integrity: sha512-4Sr5dJqfexSuH0CiXBisLavcTMmzcN0al62aTOHujBGmS6s2VA4Yg25bvvuQbCWTPXv4+zEC5zDupIGY420m1g==}
 
@@ -2231,19 +2240,6 @@ snapshots:
     dependencies:
       '@standard-schema/spec': 1.0.0
       fast-check: 3.23.2
-
-  effect@4.0.0-beta.21:
-    dependencies:
-      '@standard-schema/spec': 1.1.0
-      fast-check: 4.5.3
-      find-my-way-ts: 0.1.6
-      ini: 6.0.0
-      kubernetes-types: 1.30.0
-      msgpackr: 1.11.8
-      multipasta: 0.2.7
-      toml: 3.0.0
-      uuid: 13.0.0
-      yaml: 2.8.2
 
   effect@4.0.0-beta.38:
     dependencies:
