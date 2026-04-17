@@ -46,31 +46,35 @@ export interface HandlerContext {
 
 // ---------------------------------------------------------------------------
 // RegisteredTask — pre-built handler closures with types captured.
+// R defaults to never (all services resolved). Platform adapters like
+// Cloudflare may set R to a platform context service (e.g. CloudflareEnv)
+// that the runtime provides automatically.
 // ---------------------------------------------------------------------------
 
-export interface RegisteredTask {
+export interface RegisteredTask<R = never> {
   readonly handleEvent: (
     ctx: HandlerContext,
     event: unknown,
-  ) => Effect.Effect<void, TaskValidationError | TaskExecutionError>
+  ) => Effect.Effect<void, TaskValidationError | TaskExecutionError, R>
   readonly handleAlarm: (
     ctx: HandlerContext,
-  ) => Effect.Effect<void, TaskExecutionError>
+  ) => Effect.Effect<void, TaskExecutionError, R>
   readonly handleGetState: (
     ctx: HandlerContext,
-  ) => Effect.Effect<unknown, TaskExecutionError>
+  ) => Effect.Effect<unknown, TaskExecutionError, R>
 }
 
 // ---------------------------------------------------------------------------
-// ResolvedHandlerConfig — handler functions with services already provided
-// (R = never). This is what buildRegisteredTask consumes.
+// ResolvedHandlerConfig — handler functions after normalization.
+// R defaults to never (all services resolved). When using platform-specific
+// helpers like cloudflareServices(), R may be a platform context service.
 // ---------------------------------------------------------------------------
 
-export interface ResolvedHandlerConfig<S, E, EErr, AErr, Tags extends AnyTaskTag, OEErr = never, OAErr = never> {
-  readonly onEvent: (ctx: TaskCtx<S, Tags>, event: E) => Effect.Effect<void, EErr, never>
-  readonly onAlarm: (ctx: TaskCtx<S, Tags>) => Effect.Effect<void, AErr, never>
-  readonly onEventError?: ((ctx: TaskCtx<S, Tags>, error: EErr) => Effect.Effect<void, OEErr, never>) | undefined
-  readonly onAlarmError?: ((ctx: TaskCtx<S, Tags>, error: AErr) => Effect.Effect<void, OAErr, never>) | undefined
+export interface ResolvedHandlerConfig<S, E, EErr, AErr, Tags extends AnyTaskTag, OEErr = never, OAErr = never, R = never> {
+  readonly onEvent: (ctx: TaskCtx<S, Tags>, event: E) => Effect.Effect<void, EErr, R>
+  readonly onAlarm: (ctx: TaskCtx<S, Tags>) => Effect.Effect<void, AErr, R>
+  readonly onEventError?: ((ctx: TaskCtx<S, Tags>, error: EErr) => Effect.Effect<void, OEErr, R>) | undefined
+  readonly onAlarmError?: ((ctx: TaskCtx<S, Tags>, error: AErr) => Effect.Effect<void, OAErr, R>) | undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -190,13 +194,13 @@ function isPurgeSignal(error: unknown): error is PurgeSignal {
 // and delegating to the typed error handler if provided.
 // ---------------------------------------------------------------------------
 
-function handleError<S, HErr, OErr, Tags extends AnyTaskTag>(
+function handleError<S, HErr, OErr, Tags extends AnyTaskTag, R>(
   ctx: TaskCtx<S, Tags>,
   error: HErr,
-  errorHandler: ((ctx: TaskCtx<S, Tags>, error: HErr) => Effect.Effect<void, OErr, never>) | undefined,
+  errorHandler: ((ctx: TaskCtx<S, Tags>, error: HErr) => Effect.Effect<void, OErr, R>) | undefined,
   storage: Storage["Service"],
   alarm: Alarm["Service"],
-): Effect.Effect<void, TaskExecutionError> {
+): Effect.Effect<void, TaskExecutionError, R> {
   if (isPurgeSignal(error)) {
     return cleanup(storage, alarm)
   }
@@ -220,11 +224,11 @@ function handleError<S, HErr, OErr, Tags extends AnyTaskTag>(
 // RegisteredTask for the runtime to dispatch to.
 // ---------------------------------------------------------------------------
 
-export function buildRegisteredTask<S, E, EErr, AErr, Tags extends AnyTaskTag, OEErr, OAErr>(
+export function buildRegisteredTask<S, E, EErr, AErr, Tags extends AnyTaskTag, OEErr, OAErr, R = never>(
   tag: TaskTag<string, S, E>,
-  config: ResolvedHandlerConfig<S, E, EErr, AErr, Tags, OEErr, OAErr>,
+  config: ResolvedHandlerConfig<S, E, EErr, AErr, Tags, OEErr, OAErr, R>,
   tagsByName: ReadonlyMap<string, AnyTaskTag>,
-): RegisteredTask {
+): RegisteredTask<R> {
   const decodeEvent = Schema.decodeUnknownEffect(tag.event)
   const decodeState = Schema.decodeUnknownEffect(tag.state)
   const encodeState = Schema.encodeUnknownEffect(tag.state)
@@ -232,7 +236,7 @@ export function buildRegisteredTask<S, E, EErr, AErr, Tags extends AnyTaskTag, O
   const handleEvent = (
     hctx: HandlerContext,
     rawEvent: unknown,
-  ): Effect.Effect<void, TaskValidationError | TaskExecutionError> =>
+  ): Effect.Effect<void, TaskValidationError | TaskExecutionError, R> =>
     Effect.gen(function* () {
       const event = yield* decodeEvent(rawEvent).pipe(
         Effect.mapError((e) => new TaskValidationError({ message: String(e.message), cause: e })),
@@ -249,7 +253,7 @@ export function buildRegisteredTask<S, E, EErr, AErr, Tags extends AnyTaskTag, O
 
   const handleAlarm = (
     hctx: HandlerContext,
-  ): Effect.Effect<void, TaskExecutionError> =>
+  ): Effect.Effect<void, TaskExecutionError, R> =>
     Effect.gen(function* () {
       yield* hctx.storage.delete(ALARM_KEY).pipe(
         Effect.mapError((e) => new TaskExecutionError({ cause: e })),
@@ -266,7 +270,7 @@ export function buildRegisteredTask<S, E, EErr, AErr, Tags extends AnyTaskTag, O
 
   const handleGetState = (
     hctx: HandlerContext,
-  ): Effect.Effect<unknown, TaskExecutionError> =>
+  ): Effect.Effect<unknown, TaskExecutionError, R> =>
     Effect.gen(function* () {
       const ctx = buildTaskCtx<S, Tags>(hctx, decodeState, encodeState, tagsByName)
       const raw = yield* ctx.recall().pipe(

@@ -59,13 +59,10 @@ importers:
     dependencies:
       '@durable-effect/task':
         specifier: workspace:*
-        version: link:../../packages/task
-      '@durable-effect/task-group':
-        specifier: workspace:*
         version: link:../../packages/task-group
       effect:
-        specifier: 4.0.0-beta.38
-        version: 4.0.0-beta.38
+        specifier: 4.0.0-beta.46
+        version: 4.0.0-beta.46
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20241127.0
@@ -146,24 +143,11 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.3)
 
-  packages/task:
-    dependencies:
-      '@cloudflare/workers-types':
-        specifier: '>=4.0.0'
-        version: 4.20251127.0
-    devDependencies:
-      effect:
-        specifier: 4.0.0-beta.38
-        version: 4.0.0-beta.38
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.19.3)
-
   packages/task-group:
     devDependencies:
       effect:
-        specifier: 4.0.0-beta.38
-        version: 4.0.0-beta.38
+        specifier: 4.0.0-beta.46
+        version: 4.0.0-beta.46
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.3)
@@ -1247,8 +1231,8 @@ packages:
   effect@3.19.8:
     resolution: {integrity: sha512-OmLw8EfH02vdmyU2fO4uY9He/wepwKI5E/JNpE2pseaWWUbaYOK9UlxIiKP20ZEqQr+S/jSqRDGmpiqD/2DeCQ==}
 
-  effect@4.0.0-beta.38:
-    resolution: {integrity: sha512-4Sr5dJqfexSuH0CiXBisLavcTMmzcN0al62aTOHujBGmS6s2VA4Yg25bvvuQbCWTPXv4+zEC5zDupIGY420m1g==}
+  effect@4.0.0-beta.46:
+    resolution: {integrity: sha512-3f6gXvvUMtEueCRY0tU76Vq2Pej1SAwwE+s0Owd5nD53yS5n4RZhUA1rlCGFuSbQFA225pGy8vO72+lpvu7u5A==}
 
   error-stack-parser-es@1.0.5:
     resolution: {integrity: sha512-5qucVt2XcuGMcEGgWI7i+yZpmpByQ8J1lHhcL7PwqCwu9FPP3VUXzT4ltHe5i2z9dePwEHcDVOAfSnHsOlCXRA==}
@@ -2241,7 +2225,7 @@ snapshots:
       '@standard-schema/spec': 1.0.0
       fast-check: 3.23.2
 
-  effect@4.0.0-beta.38:
+  effect@4.0.0-beta.46:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 4.5.3

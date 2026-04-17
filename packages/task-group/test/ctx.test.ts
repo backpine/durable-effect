@@ -34,9 +34,9 @@ describe("TaskCtx methods", () => {
     })
     const runtime = makeInMemoryRuntime(registry.build({ timer: handler }))
 
-    await Effect.runPromise(runtime.sendEvent("timer", "t1", { _tag: "Init", count: 5 }))
+    await Effect.runPromise(runtime.task("timer").send("t1", { _tag: "Init", count: 5 }))
 
-    expect(await Effect.runPromise(runtime.getState("timer", "t1"))).toEqual({ count: 10 })
+    expect(await Effect.runPromise(runtime.task("timer").getState("t1"))).toEqual({ count: 10 })
   })
 
   it("ctx.update() is a no-op when state is null", async () => {
@@ -50,10 +50,10 @@ describe("TaskCtx methods", () => {
     })
     const runtime = makeInMemoryRuntime(registry.build({ timer: handler }))
 
-    await Effect.runPromise(runtime.sendEvent("timer", "t1", { _tag: "Init", count: 0 }))
+    await Effect.runPromise(runtime.task("timer").send("t1", { _tag: "Init", count: 0 }))
 
     // State should still be null — update was a no-op
-    expect(await Effect.runPromise(runtime.getState("timer", "t1"))).toBeNull()
+    expect(await Effect.runPromise(runtime.task("timer").getState("t1"))).toBeNull()
   })
 
   it("ctx.scheduleAt() sets an absolute alarm time", async () => {
@@ -71,7 +71,7 @@ describe("TaskCtx methods", () => {
     })
     const runtime = makeInMemoryRuntime(registry.build({ timer: handler }))
 
-    await Effect.runPromise(runtime.sendEvent("timer", "t1", { _tag: "Init", count: 0 }))
+    await Effect.runPromise(runtime.task("timer").send("t1", { _tag: "Init", count: 0 }))
 
     const alarms = runtime.getScheduledAlarms()
     expect(alarms).toHaveLength(1)
@@ -79,7 +79,7 @@ describe("TaskCtx methods", () => {
 
     // Tick past the alarm
     await Effect.runPromise(runtime.tick(targetTime + 1))
-    expect(await Effect.runPromise(runtime.getState("timer", "t1"))).toEqual({ count: 1 })
+    expect(await Effect.runPromise(runtime.task("timer").getState("t1"))).toEqual({ count: 1 })
   })
 
   it("ctx.cancelSchedule() removes a pending alarm", async () => {
@@ -98,14 +98,14 @@ describe("TaskCtx methods", () => {
     })
     const runtime = makeInMemoryRuntime(registry.build({ timer: handler }))
 
-    await Effect.runPromise(runtime.sendEvent("timer", "t1", { _tag: "Init", count: 1 }))
+    await Effect.runPromise(runtime.task("timer").send("t1", { _tag: "Init", count: 1 }))
 
     // No alarms scheduled
     expect(runtime.getScheduledAlarms()).toHaveLength(0)
 
     // Tick far into the future — nothing fires
     await Effect.runPromise(runtime.tick(Date.now() + 999_999))
-    expect(await Effect.runPromise(runtime.getState("timer", "t1"))).toEqual({ count: 1 })
+    expect(await Effect.runPromise(runtime.task("timer").getState("t1"))).toEqual({ count: 1 })
   })
 
   it("ctx.nextAlarm() returns the scheduled time", async () => {
@@ -122,7 +122,7 @@ describe("TaskCtx methods", () => {
     const runtime = makeInMemoryRuntime(registry.build({ timer: handler }))
 
     const before = Date.now()
-    await Effect.runPromise(runtime.sendEvent("timer", "t1", { _tag: "Init", count: 0 }))
+    await Effect.runPromise(runtime.task("timer").send("t1", { _tag: "Init", count: 0 }))
 
     expect(capturedNext).not.toBeNull()
     // Should be approximately 5 seconds from now
@@ -152,17 +152,17 @@ describe("TaskCtx methods", () => {
     const runtime = makeInMemoryRuntime(registry.build({ timer: handler }))
     const now = Date.now()
 
-    await Effect.runPromise(runtime.sendEvent("timer", "t1", { _tag: "Init", count: 0 }))
+    await Effect.runPromise(runtime.task("timer").send("t1", { _tag: "Init", count: 0 }))
 
     // Tick 3 times — alarm fires, increments, reschedules
     await Effect.runPromise(runtime.tick(now + 2000))
-    expect(await Effect.runPromise(runtime.getState("timer", "t1"))).toEqual({ count: 1 })
+    expect(await Effect.runPromise(runtime.task("timer").getState("t1"))).toEqual({ count: 1 })
 
     await Effect.runPromise(runtime.tick(now + 4000))
-    expect(await Effect.runPromise(runtime.getState("timer", "t1"))).toEqual({ count: 2 })
+    expect(await Effect.runPromise(runtime.task("timer").getState("t1"))).toEqual({ count: 2 })
 
     await Effect.runPromise(runtime.tick(now + 6000))
-    expect(await Effect.runPromise(runtime.getState("timer", "t1"))).toEqual({ count: 3 })
+    expect(await Effect.runPromise(runtime.task("timer").getState("t1"))).toEqual({ count: 3 })
 
     // No more alarms — it stopped at 3
     expect(runtime.getScheduledAlarms()).toHaveLength(0)

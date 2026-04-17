@@ -52,7 +52,7 @@ describe("Error propagation", () => {
     const runtime = makeInMemoryRuntime(registry.build({ test: handler }))
 
     const exit = await Effect.runPromiseExit(
-      runtime.sendEvent("test", "t1", { _tag: "Do", shouldFail: true }),
+      runtime.task("test").send("t1", { _tag: "Do", shouldFail: true }),
     )
 
     expect(exit._tag).toBe("Failure")
@@ -70,10 +70,10 @@ describe("Error propagation", () => {
     })
     const runtime = makeInMemoryRuntime(registry.build({ test: handler }))
 
-    await Effect.runPromise(runtime.sendEvent("test", "t1", { _tag: "Do" }))
+    await Effect.runPromise(runtime.task("test").send("t1", { _tag: "Do" }))
 
     expect(errorHandlerCalled).toBe(false)
-    expect(await Effect.runPromise(runtime.getState("test", "t1"))).toEqual({ value: "fine" })
+    expect(await Effect.runPromise(runtime.task("test").getState("t1"))).toEqual({ value: "fine" })
   })
 
   it("error handler can purge to clean up after failure", async () => {
@@ -96,11 +96,11 @@ describe("Error propagation", () => {
     const runtime = makeInMemoryRuntime(registry.build({ test: handler }))
 
     await Effect.runPromise(
-      runtime.sendEvent("test", "t1", { _tag: "Do", shouldPurgeInError: true }),
+      runtime.task("test").send("t1", { _tag: "Do", shouldPurgeInError: true }),
     )
 
     // Purge in error handler should have cleared state
-    expect(await Effect.runPromise(runtime.getState("test", "t1"))).toBeNull()
+    expect(await Effect.runPromise(runtime.task("test").getState("t1"))).toBeNull()
   })
 
   it("error handler that throws wraps in TaskExecutionError", async () => {
@@ -121,7 +121,7 @@ describe("Error propagation", () => {
     const runtime = makeInMemoryRuntime(registry.build({ test: handler }))
 
     const exit = await Effect.runPromiseExit(
-      runtime.sendEvent("test", "t1", { _tag: "Do" }),
+      runtime.task("test").send("t1", { _tag: "Do" }),
     )
 
     expect(exit._tag).toBe("Failure")
@@ -137,12 +137,12 @@ describe("Error propagation", () => {
     })
     const runtime = makeInMemoryRuntime(registry.build({ test: handler }))
 
-    await Effect.runPromise(runtime.sendEvent("test", "t1", { _tag: "Do" }))
-    const exit = await Effect.runPromiseExit(runtime.fireAlarm("test", "t1"))
+    await Effect.runPromise(runtime.task("test").send("t1", { _tag: "Do" }))
+    const exit = await Effect.runPromiseExit(runtime.task("test").fireAlarm("t1"))
 
     expect(exit._tag).toBe("Failure")
     // State should still exist (no purge happened)
-    expect(await Effect.runPromise(runtime.getState("test", "t1"))).toEqual({ value: "setup" })
+    expect(await Effect.runPromise(runtime.task("test").getState("t1"))).toEqual({ value: "setup" })
   })
 
   it("alarm error handler catches and recovers", async () => {
@@ -163,10 +163,10 @@ describe("Error propagation", () => {
     })
     const runtime = makeInMemoryRuntime(registry.build({ test: handler }))
 
-    await Effect.runPromise(runtime.sendEvent("test", "t1", { _tag: "Do" }))
-    await Effect.runPromise(runtime.fireAlarm("test", "t1"))
+    await Effect.runPromise(runtime.task("test").send("t1", { _tag: "Do" }))
+    await Effect.runPromise(runtime.task("test").fireAlarm("t1"))
 
-    expect(await Effect.runPromise(runtime.getState("test", "t1"))).toEqual({
+    expect(await Effect.runPromise(runtime.task("test").getState("t1"))).toEqual({
       value: "recovered: alarm fail",
     })
   })

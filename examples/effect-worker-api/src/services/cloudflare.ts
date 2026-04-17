@@ -1,11 +1,11 @@
-import { Effect, ServiceMap } from "effect"
+import { Effect, Context } from "effect"
 
-export const currentEnv = ServiceMap.Reference<Env | null>(
+export const currentEnv = Context.Reference<Env | null>(
   "@app/currentEnv",
   { defaultValue: () => null },
 )
 
-export const currentCtx = ServiceMap.Reference<ExecutionContext | null>(
+export const currentCtx = Context.Reference<ExecutionContext | null>(
   "@app/currentCtx",
   { defaultValue: () => null },
 )

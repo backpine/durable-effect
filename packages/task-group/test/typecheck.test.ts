@@ -4,12 +4,12 @@
  */
 import { describe, it } from "vitest"
 describe("Type safety", () => { it("compiles", () => {}) })
-import { Effect, Schema, ServiceMap } from "effect"
+import { Effect, Schema, Context } from "effect"
 import { Task, TaskRegistry, withServices } from "../src/index.js"
 
 // ── Setup ────────────────────────────────────────────────
 
-class MyService extends ServiceMap.Service<MyService, {
+class MyService extends Context.Service<MyService, {
   readonly doWork: () => Effect.Effect<string>
 }>()("@test/MyService") {}
 
@@ -64,11 +64,12 @@ registry.handler("foo", {
   onAlarm: (ctx) => Effect.void,
 })
 
-// ── 4. Handler that uses service WITHOUT withServices — should error ──
-// The error appears on the onEvent return type: R = MyService ≠ never
+// ── 4. Handler that uses service WITHOUT withServices — now allowed ──
+// R flows through the handler and must be resolved at the runtime level
+// (makeInMemoryRuntime or makeTaskGroupDO). This enables deferred services
+// via cloudflareServices<Env>().
 
 registry.handler("foo", {
-  // @ts-expect-error — Effect<void, TaskError, MyService> not assignable to Effect<void, ..., never>
   onEvent: (ctx, event) =>
     Effect.gen(function* () {
       const svc = yield* MyService

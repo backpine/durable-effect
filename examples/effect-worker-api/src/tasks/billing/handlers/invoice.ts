@@ -1,11 +1,27 @@
-import { Effect } from "effect";
+import { Effect, Layer, Context } from "effect";
 import { registry } from "../registry.js";
+import { withCloudflareServices } from "../../../services/task-services.js";
+
+// ── Service that reads from Cloudflare env ───────────────
+
+class BillingConfig extends Context.Service<BillingConfig, {
+  readonly currency: string
+}>()("@app/BillingConfig") {}
+
+const makeBillingConfigLayer = (env: Env) =>
+  Layer.succeed(BillingConfig)({
+    currency: env.BILLING_CURRENCY ?? "USD",
+  });
+
+// ── Handler ──────────────────────────────────────────────
 
 const o = registry.for("invoice");
 
 const onEvent = o.onEvent((ctx, event) =>
   Effect.gen(function* () {
-    yield* Effect.log(`[invoice] Creating invoice for user ${event.userId}, amount: $${event.amount}`);
+    const config = yield* BillingConfig;
+
+    yield* Effect.log(`[invoice] Creating invoice for user ${event.userId}, amount: ${config.currency} ${event.amount}`);
 
     yield* ctx.save({
       userId: event.userId,
@@ -14,7 +30,6 @@ const onEvent = o.onEvent((ctx, event) =>
       receiptSent: false,
     });
 
-    // Dispatch to sibling — send a receipt
     yield* Effect.log(`[invoice] Dispatching receipt for user ${event.userId}`);
     yield* ctx.task("receipt").send(ctx.id, {
       _tag: "Send",
@@ -22,7 +37,6 @@ const onEvent = o.onEvent((ctx, event) =>
       userId: event.userId,
     });
 
-    // Schedule a follow-up to mark as finalized
     yield* ctx.scheduleIn("5 seconds");
     yield* Effect.log(`[invoice] Scheduled finalization in 5s`);
   }),
@@ -35,7 +49,6 @@ const onAlarm = o.onAlarm((ctx) =>
 
     yield* Effect.log(`[invoice] Finalizing invoice for user ${state.userId}`);
 
-    // Check if receipt was sent by reading sibling state
     const receiptState = yield* ctx.task("receipt").getState(ctx.id);
     const receiptSent = receiptState !== null;
 
@@ -49,7 +62,12 @@ const onAlarm = o.onAlarm((ctx) =>
   }),
 );
 
-export const invoiceHandler = registry.handler("invoice", {
-  onEvent: { handler: onEvent, onError: (ctx, error) => Effect.log(`[invoice] Error: ${error}`) },
-  onAlarm: { handler: onAlarm, onError: (ctx, error) => Effect.log(`[invoice] Alarm error: ${error}`) },
-});
+export const invoiceHandler = registry.handler("invoice",
+  withCloudflareServices(
+    {
+      onEvent: { handler: onEvent, onError: (ctx, error) => Effect.log(`[invoice] Error: ${error}`) },
+      onAlarm: { handler: onAlarm, onError: (ctx, error) => Effect.log(`[invoice] Alarm error: ${error}`) },
+    },
+    (env) => makeBillingConfigLayer(env),
+  ),
+);

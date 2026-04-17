@@ -1,4 +1,4 @@
-import { Schema as S, ServiceMap } from "effect"
+import { Schema as S, Context } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware } from "effect/unstable/httpapi"
 
 // ---------------------------------------------------------------------------
@@ -10,7 +10,7 @@ export interface WorkerExecutionContext {
   passThroughOnException(): void
 }
 
-export class CloudflareBindings extends ServiceMap.Service<
+export class CloudflareBindings extends Context.Service<
   CloudflareBindings,
   { readonly env: unknown; readonly ctx: WorkerExecutionContext }
 >()("@app/CloudflareBindings") {}
@@ -137,7 +137,6 @@ export const BillingGroup = HttpApiGroup.make("billing")
 
 export class WorkerApi extends HttpApi.make("WorkerApi")
   .add(HealthGroup)
-  .add(CounterGroup)
   .add(OnboardingGroup)
   .add(BillingGroup)
   .middleware(CloudflareBindingsMiddleware)

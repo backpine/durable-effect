@@ -1,30 +1,28 @@
 import type { Effect } from "effect"
+import type { AnyTaskTag, StateFor, EventFor } from "./TaskTag.js"
 import type {
-  TaskNotFoundError,
   TaskValidationError,
   TaskExecutionError,
 } from "./errors.js"
 
 // ---------------------------------------------------------------------------
-// TaskRuntime — shared interface implemented by all adapters.
-// InMemoryRuntime extends this with test-only methods.
-// DurableObjectRuntime implements this directly.
+// ExternalTaskHandle — typed handle for a specific task, returned by
+// runtime.task(name). Mirrors SiblingHandle from ctx.task() but adds
+// fireAlarm for external callers.
 // ---------------------------------------------------------------------------
 
-export interface TaskRuntime {
-  readonly sendEvent: (
-    name: string,
-    id: string,
-    event: unknown,
-  ) => Effect.Effect<void, TaskNotFoundError | TaskValidationError | TaskExecutionError>
+export interface ExternalTaskHandle<S, E> {
+  readonly send: (id: string, event: E) => Effect.Effect<void, TaskValidationError | TaskExecutionError>
+  readonly getState: (id: string) => Effect.Effect<S | null, TaskExecutionError>
+  readonly fireAlarm: (id: string) => Effect.Effect<void, TaskExecutionError>
+}
 
-  readonly getState: (
-    name: string,
-    id: string,
-  ) => Effect.Effect<unknown, TaskNotFoundError | TaskExecutionError>
+// ---------------------------------------------------------------------------
+// TypedTaskRuntime — typed runtime interface. .task(name) constrains the
+// name to valid task names and returns a handle typed with that task's
+// state and event schemas.
+// ---------------------------------------------------------------------------
 
-  readonly fireAlarm: (
-    name: string,
-    id: string,
-  ) => Effect.Effect<void, TaskNotFoundError | TaskExecutionError>
+export interface TypedTaskRuntime<Tags extends AnyTaskTag> {
+  readonly task: <K extends Tags["name"]>(name: K) => ExternalTaskHandle<StateFor<Tags, K>, EventFor<Tags, K>>
 }

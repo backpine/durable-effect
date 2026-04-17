@@ -88,8 +88,8 @@ describe("Error channels", () => {
   it("onEvent.onError catches event errors with correct type", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Do", fail: true }))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Do", fail: true }))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "error", recovered: "event: bad input" })
   })
@@ -97,8 +97,8 @@ describe("Error channels", () => {
   it("successful event skips error handler", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Do" }))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Do" }))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "ok" })
   })
@@ -107,10 +107,10 @@ describe("Error channels", () => {
     const runtime = makeInMemoryRuntime(config)
 
     // Set up state that will trigger alarm failure
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Do", failAlarm: true }))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Do", failAlarm: true }))
     // Fire alarm — handler sees value "will-fail-alarm" and throws AlarmFailed
-    await Effect.runPromise(runtime.fireAlarm("worker", "w1"))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").fireAlarm("w1"))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "alarm-error", recovered: "alarm: 503" })
   })
@@ -124,8 +124,8 @@ describe("Error channels", () => {
     const simpleConfig = registry.build({ worker: simpleHandler })
     const runtime = makeInMemoryRuntime(simpleConfig)
 
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Do" }))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Do" }))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "simple" })
   })
@@ -152,8 +152,8 @@ describe("Error channels", () => {
     const mixedConfig = registry.build({ worker: mixedHandler })
     const runtime = makeInMemoryRuntime(mixedConfig)
 
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Do", fail: true }))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Do", fail: true }))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "caught", recovered: "nope" })
   })

@@ -1,4 +1,4 @@
-import { makeInMemoryRuntime } from "@durable-effect/task-group";
+import { makeInMemoryRuntime } from "@durable-effect/task";
 import { registry } from "./registry.js";
 import { onboardingHandler } from "./handlers/onboarding.js";
 import { welcomeEmailHandler } from "./handlers/welcome-email.js";

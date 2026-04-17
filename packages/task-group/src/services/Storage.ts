@@ -1,11 +1,11 @@
-import { Data, Effect, ServiceMap } from "effect"
+import { Data, Effect, Context } from "effect"
 
 export class StorageError extends Data.TaggedError("StorageError")<{
   readonly message: string
   readonly cause?: unknown
 }> {}
 
-export class Storage extends ServiceMap.Service<Storage, {
+export class Storage extends Context.Service<Storage, {
   readonly get: (key: string) => Effect.Effect<unknown | null, StorageError>
   readonly set: (key: string, value: unknown) => Effect.Effect<void, StorageError>
   readonly delete: (key: string) => Effect.Effect<void, StorageError>

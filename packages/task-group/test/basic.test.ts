@@ -71,8 +71,8 @@ describe("TaskGroup — basic", () => {
   it("handles an event and saves state", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "c1", { _tag: "Increment", amount: 5 }))
-    const state = await Effect.runPromise(runtime.getState("counter", "c1"))
+    await Effect.runPromise(runtime.task("counter").send("c1", { _tag: "Increment", amount: 5 }))
+    const state = await Effect.runPromise(runtime.task("counter").getState("c1"))
 
     expect(state).toEqual({ count: 5 })
   })
@@ -80,9 +80,9 @@ describe("TaskGroup — basic", () => {
   it("accumulates state across events", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "c1", { _tag: "Increment", amount: 3 }))
-    await Effect.runPromise(runtime.sendEvent("counter", "c1", { _tag: "Increment", amount: 7 }))
-    const state = await Effect.runPromise(runtime.getState("counter", "c1"))
+    await Effect.runPromise(runtime.task("counter").send("c1", { _tag: "Increment", amount: 3 }))
+    await Effect.runPromise(runtime.task("counter").send("c1", { _tag: "Increment", amount: 7 }))
+    const state = await Effect.runPromise(runtime.task("counter").getState("c1"))
 
     expect(state).toEqual({ count: 10 })
   })
@@ -90,20 +90,20 @@ describe("TaskGroup — basic", () => {
   it("isolates state across instances", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "a", { _tag: "Increment", amount: 1 }))
-    await Effect.runPromise(runtime.sendEvent("counter", "b", { _tag: "Increment", amount: 100 }))
+    await Effect.runPromise(runtime.task("counter").send("a", { _tag: "Increment", amount: 1 }))
+    await Effect.runPromise(runtime.task("counter").send("b", { _tag: "Increment", amount: 100 }))
 
-    expect(await Effect.runPromise(runtime.getState("counter", "a"))).toEqual({ count: 1 })
-    expect(await Effect.runPromise(runtime.getState("counter", "b"))).toEqual({ count: 100 })
+    expect(await Effect.runPromise(runtime.task("counter").getState("a"))).toEqual({ count: 1 })
+    expect(await Effect.runPromise(runtime.task("counter").getState("b"))).toEqual({ count: 100 })
   })
 
   it("dispatches to sibling task via ctx.task()", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "shared", { _tag: "Increment", amount: 42 }))
+    await Effect.runPromise(runtime.task("counter").send("shared", { _tag: "Increment", amount: 42 }))
 
     // Counter dispatched to AuditLog as a sibling
-    const auditState = await Effect.runPromise(runtime.getState("auditLog", "shared"))
+    const auditState = await Effect.runPromise(runtime.task("auditLog").getState("shared"))
     expect(auditState).toEqual({ entries: ["incremented by 42"] })
   })
 
@@ -111,39 +111,35 @@ describe("TaskGroup — basic", () => {
     const runtime = makeInMemoryRuntime(config)
 
     // Set up audit log with some entries
-    await Effect.runPromise(runtime.sendEvent("counter", "shared", { _tag: "Increment", amount: 10 }))
-    await Effect.runPromise(runtime.sendEvent("counter", "shared", { _tag: "Increment", amount: 20 }))
+    await Effect.runPromise(runtime.task("counter").send("shared", { _tag: "Increment", amount: 10 }))
+    await Effect.runPromise(runtime.task("counter").send("shared", { _tag: "Increment", amount: 20 }))
 
     // Audit log should have two entries
-    const auditState = await Effect.runPromise(runtime.getState("auditLog", "shared"))
+    const auditState = await Effect.runPromise(runtime.task("auditLog").getState("shared"))
     expect(auditState).toEqual({ entries: ["incremented by 10", "incremented by 20"] })
   })
 
   it("handles alarm with purge", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "c1", { _tag: "Increment", amount: 1 }))
-    await Effect.runPromise(runtime.fireAlarm("counter", "c1"))
+    await Effect.runPromise(runtime.task("counter").send("c1", { _tag: "Increment", amount: 1 }))
+    await Effect.runPromise(runtime.task("counter").fireAlarm("c1"))
 
-    const state = await Effect.runPromise(runtime.getState("counter", "c1"))
+    const state = await Effect.runPromise(runtime.task("counter").getState("c1"))
     expect(state).toBeNull()
   })
 
-  it("rejects invalid event payloads", async () => {
+  it("rejects invalid event payloads at compile time", () => {
     const runtime = makeInMemoryRuntime(config)
 
-    const result = await Effect.runPromiseExit(
-      runtime.sendEvent("counter", "c1", { _tag: "Bogus" }),
-    )
-    expect(result._tag).toBe("Failure")
+    // @ts-expect-error — "Bogus" is not a valid _tag for counter events
+    runtime.task("counter").send("c1", { _tag: "Bogus" })
   })
 
-  it("rejects unknown task names", async () => {
+  it("rejects unknown task names at compile time", () => {
     const runtime = makeInMemoryRuntime(config)
 
-    const result = await Effect.runPromiseExit(
-      runtime.sendEvent("nonExistent", "c1", {}),
-    )
-    expect(result._tag).toBe("Failure")
+    // @ts-expect-error — "nonExistent" is not a valid task name
+    runtime.task("nonExistent")
   })
 })

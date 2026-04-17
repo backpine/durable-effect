@@ -1,7 +1,9 @@
-import { Effect } from "effect"
-import type { TaskRegistryConfig } from "../TaskRegistry.js"
+import { DurableObject } from "cloudflare:workers"
+import { Effect, Layer, Schema } from "effect"
+import type { BuiltRegistry, TaskRegistryConfig } from "../TaskRegistry.js"
 import type { DispatchFn, HandlerContext } from "../RegisteredTask.js"
-import type { TaskRuntime } from "../TaskRuntime.js"
+import type { AnyTaskTag, StateFor, EventFor } from "../TaskTag.js"
+import type { TypedTaskRuntime, ExternalTaskHandle } from "../TaskRuntime.js"
 import {
   TaskError,
   TaskNotFoundError,
@@ -11,28 +13,26 @@ import {
 import type { TaskValidationError } from "../errors.js"
 import { makeCloudflareStorage } from "./storage.js"
 import { makeCloudflareAlarm } from "./alarm.js"
+import { CloudflareEnv } from "./CloudflareEnv.js"
 import type {
   DurableObjectStateLike,
+  DurableObjectStorageLike,
   DurableObjectNamespaceLike,
   AlarmInvocationInfoLike,
 } from "./types.js"
 
 // ---------------------------------------------------------------------------
-// Routing keys — stored in DO storage so alarm() knows which task to fire
+// Routing keys
 // ---------------------------------------------------------------------------
 
 const ROUTING_NAME_KEY = "__tg:name"
 const ROUTING_ID_KEY = "__tg:id"
 
 // ---------------------------------------------------------------------------
-// makeTaskGroupDO — factory that returns a DO class + client creator.
-//
-// The DO class and client share a closure for the namespace reference.
-// .client(namespace) stores it; the DO reads it for sibling dispatch.
+// makeTaskGroupDO
 // ---------------------------------------------------------------------------
 
-export function makeTaskGroupDO(registryConfig: TaskRegistryConfig): {
-  /** The Durable Object class. Export this for wrangler. */
+interface TaskGroupDO<Tags extends AnyTaskTag> {
   readonly DO: {
     new (ctx: DurableObjectStateLike, env: unknown): {
       handleEvent(name: string, id: string, event: unknown): Promise<void>
@@ -41,11 +41,16 @@ export function makeTaskGroupDO(registryConfig: TaskRegistryConfig): {
       alarm(alarmInfo?: AlarmInvocationInfoLike): Promise<void>
     }
   }
+  readonly client: (namespace: DurableObjectNamespaceLike) => TypedTaskRuntime<Tags>
+}
 
-  /** Create a runtime bound to a DO namespace. */
-  readonly client: (namespace: DurableObjectNamespaceLike) => TaskRuntime
-} {
-  // Shared between DO and client — set by client(), read by DO constructor
+// Overloads: R = never (all services pre-resolved) or R = CloudflareEnv (deferred)
+export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags, never>): TaskGroupDO<Tags>
+export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags, CloudflareEnv>): TaskGroupDO<Tags>
+// Implementation: R is concretely CloudflareEnv (never is a subtype, so both overloads are covered)
+export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags, CloudflareEnv>): TaskGroupDO<Tags> {
+  const registryConfig = built.registryConfig
+  const tagMap = built.tags
   let sharedNamespace: DurableObjectNamespaceLike | null = null
 
   // ── Dispatch function builder ──────────────────────────
@@ -79,27 +84,32 @@ export function makeTaskGroupDO(registryConfig: TaskRegistryConfig): {
 
   // ── The DO class ───────────────────────────────────────
 
-  class TaskGroupDOImpl {
+  class TaskGroupDOImpl extends DurableObject {
+    private doStorage: DurableObjectStorageLike
     private storageService: ReturnType<typeof makeCloudflareStorage>
     private alarmService: ReturnType<typeof makeCloudflareAlarm>
     private dispatchFn: DispatchFn
     private currentSystemFailure: SystemFailure | null = null
-    private ctx: DurableObjectStateLike
 
-    constructor(ctx: DurableObjectStateLike, _env: unknown) {
-      this.ctx = ctx
-      this.storageService = makeCloudflareStorage(ctx.storage)
-      this.alarmService = makeCloudflareAlarm(ctx.storage)
+    // Layer that provides CloudflareEnv from the DO's env parameter.
+    // Effect.provide(effect, envLayer) uses Exclude<R, CloudflareEnvId> to
+    // naturally eliminate R when R = CloudflareEnvId, and is a no-op when
+    // R = never. No type assertions needed.
+    private envLayer: Layer.Layer<CloudflareEnv>
 
-      // Use shared namespace for sibling dispatch (set by client())
+    constructor(ctx: DurableObjectStateLike, env: unknown) {
+      super(ctx, env)
+      this.doStorage = ctx.storage
+      this.storageService = makeCloudflareStorage(this.doStorage)
+      this.alarmService = makeCloudflareAlarm(this.doStorage)
+      this.envLayer = Layer.succeed(CloudflareEnv)(env)
+
       if (sharedNamespace) {
         this.dispatchFn = makeDispatchForNamespace(sharedNamespace)
       } else {
-        // No namespace available — sibling dispatch will fail with a clear error
         this.dispatchFn = {
           send: () => Effect.fail(new TaskError({
-            message: "Sibling dispatch not available: client() has not been called. "
-              + "Call taskGroup.client(env.YOUR_BINDING) before the DO is instantiated.",
+            message: "Sibling dispatch not available: client() has not been called.",
           })),
           getState: () => Effect.fail(new TaskError({
             message: "Sibling getState not available: client() has not been called.",
@@ -123,12 +133,13 @@ export function makeTaskGroupDO(registryConfig: TaskRegistryConfig): {
       const task = registryConfig[name]
       if (!task) throw new Error(`Task "${name}" not found in registry`)
 
-      // Store routing keys so alarm() can find the right task
-      await this.ctx.storage.put(ROUTING_NAME_KEY, name)
-      await this.ctx.storage.put(ROUTING_ID_KEY, id)
+      await this.doStorage.put(ROUTING_NAME_KEY, name)
+      await this.doStorage.put(ROUTING_ID_KEY, id)
 
       const hctx = this.makeHandlerContext(name, id)
-      await Effect.runPromise(task.handleEvent(hctx, event))
+      await Effect.runPromise(
+        Effect.provide(task.handleEvent(hctx, event), this.envLayer),
+      )
 
       this.currentSystemFailure = null
     }
@@ -138,7 +149,9 @@ export function makeTaskGroupDO(registryConfig: TaskRegistryConfig): {
       if (!task) throw new Error(`Task "${name}" not found in registry`)
 
       const hctx = this.makeHandlerContext(name, id)
-      await Effect.runPromise(task.handleAlarm(hctx))
+      await Effect.runPromise(
+        Effect.provide(task.handleAlarm(hctx), this.envLayer),
+      )
 
       this.currentSystemFailure = null
     }
@@ -148,26 +161,22 @@ export function makeTaskGroupDO(registryConfig: TaskRegistryConfig): {
       if (!task) throw new Error(`Task "${name}" not found in registry`)
 
       const hctx = this.makeHandlerContext(name, id)
-      return await Effect.runPromise(task.handleGetState(hctx))
+      return await Effect.runPromise(
+        Effect.provide(task.handleGetState(hctx), this.envLayer),
+      )
     }
 
-    // CF lifecycle — called when a scheduled alarm fires
     async alarm(alarmInfo?: AlarmInvocationInfoLike): Promise<void> {
-      // Detect system failure: CF retries alarms after crashes
       if (alarmInfo && alarmInfo.isRetry) {
         this.currentSystemFailure = new SystemFailure({
           message: `Alarm retry #${alarmInfo.retryCount} — previous attempt failed`,
         })
       }
 
-      // Read routing keys to know which task to fire
-      const taskName = await this.ctx.storage.get(ROUTING_NAME_KEY)
-      const taskId = await this.ctx.storage.get(ROUTING_ID_KEY)
+      const taskName = await this.doStorage.get(ROUTING_NAME_KEY)
+      const taskId = await this.doStorage.get(ROUTING_ID_KEY)
 
-      if (typeof taskName !== "string" || typeof taskId !== "string") {
-        // No routing info — can't fire alarm
-        return
-      }
+      if (typeof taskName !== "string" || typeof taskId !== "string") return
 
       await this.handleAlarm(taskName, taskId)
     }
@@ -175,45 +184,45 @@ export function makeTaskGroupDO(registryConfig: TaskRegistryConfig): {
 
   // ── The client ─────────────────────────────────────────
 
-  function client(namespace: DurableObjectNamespaceLike): TaskRuntime {
-    // Store namespace for the DO class to use for sibling dispatch
+  function client(namespace: DurableObjectNamespaceLike): TypedTaskRuntime<Tags> {
     sharedNamespace = namespace
 
-    function getStub(name: string, id: string) {
-      const doId = namespace.idFromName(`${name}:${id}`)
-      return namespace.get(doId)
-    }
-
     return {
-      sendEvent(
-        name: string,
-        id: string,
-        event: unknown,
-      ): Effect.Effect<void, TaskNotFoundError | TaskValidationError | TaskExecutionError> {
-        return Effect.tryPromise({
-          try: () => getStub(name, id).handleEvent(name, id, event),
-          catch: (cause) => new TaskExecutionError({ cause }),
-        })
-      },
+      task<K extends Tags["name"]>(name: K): ExternalTaskHandle<StateFor<Tags, K>, EventFor<Tags, K>> {
+        const tag = tagMap.get(name)
 
-      getState(
-        name: string,
-        id: string,
-      ): Effect.Effect<unknown, TaskNotFoundError | TaskExecutionError> {
-        return Effect.tryPromise({
-          try: () => getStub(name, id).handleGetState(name, id),
-          catch: (cause) => new TaskExecutionError({ cause }),
-        })
-      },
+        function getStub(id: string) {
+          const doId = namespace.idFromName(`${name}:${id}`)
+          return namespace.get(doId)
+        }
 
-      fireAlarm(
-        name: string,
-        id: string,
-      ): Effect.Effect<void, TaskNotFoundError | TaskExecutionError> {
-        return Effect.tryPromise({
-          try: () => getStub(name, id).handleAlarm(name, id),
-          catch: (cause) => new TaskExecutionError({ cause }),
-        })
+        return {
+          send(id: string, event: EventFor<Tags, K>): Effect.Effect<void, TaskValidationError | TaskExecutionError> {
+            return Effect.tryPromise({
+              try: () => getStub(id).handleEvent(name, id, event),
+              catch: (cause) => new TaskExecutionError({ cause }),
+            })
+          },
+          getState(id: string): Effect.Effect<StateFor<Tags, K> | null, TaskExecutionError> {
+            return Effect.gen(function* () {
+              const raw = yield* Effect.tryPromise({
+                try: () => getStub(id).handleGetState(name, id),
+                catch: (cause) => new TaskExecutionError({ cause }),
+              })
+              if (raw === null) return null
+              if (!tag) return yield* Effect.fail(new TaskExecutionError({ cause: new Error(`Tag "${name}" not found`) }))
+              return yield* Schema.decodeUnknownEffect(tag.state)(raw).pipe(
+                Effect.mapError((e) => new TaskExecutionError({ cause: e })),
+              )
+            })
+          },
+          fireAlarm(id: string): Effect.Effect<void, TaskExecutionError> {
+            return Effect.tryPromise({
+              try: () => getStub(id).handleAlarm(name, id),
+              catch: (cause) => new TaskExecutionError({ cause }),
+            })
+          },
+        }
       },
     }
   }

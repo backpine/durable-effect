@@ -9,17 +9,27 @@ import { buildRegisteredTask } from "./RegisteredTask.js"
 // as a type-level literal so build() can validate completeness.
 // ---------------------------------------------------------------------------
 
-export interface TaskHandler<K extends string> {
+export interface TaskHandler<K extends string, R = never> {
   readonly _name: K
-  readonly registered: RegisteredTask
+  readonly registered: RegisteredTask<R>
 }
 
 // ---------------------------------------------------------------------------
 // TaskRegistryConfig — type-erased map of name → RegisteredTask
-// This is what the runner consumes.
 // ---------------------------------------------------------------------------
 
-export type TaskRegistryConfig = Record<string, RegisteredTask>
+export type TaskRegistryConfig<R = never> = Record<string, RegisteredTask<R>>
+
+// ---------------------------------------------------------------------------
+// BuiltRegistry — result of registry.build(). Carries the Tags type via
+// the tag map (used at runtime for schema access AND at the type level
+// so factory functions can infer Tags and produce typed runtimes).
+// ---------------------------------------------------------------------------
+
+export interface BuiltRegistry<Tags extends AnyTaskTag, R = never> {
+  readonly registryConfig: TaskRegistryConfig<R>
+  readonly tags: ReadonlyMap<string, Tags>
+}
 
 // ---------------------------------------------------------------------------
 // Handler definitions — each channel (event/alarm) can be either a plain
@@ -83,9 +93,9 @@ function isHandlerObject<T>(def: T | { handler: T }): def is { handler: T; onErr
 // gives us the correct types.
 // ---------------------------------------------------------------------------
 
-function normalizeConfig<S, E, EErr, AErr, Tags extends AnyTaskTag, OEErr, OAErr>(
-  config: HandlerConfig<S, E, EErr, AErr, Tags, never, OEErr, OAErr>,
-): ResolvedHandlerConfig<S, E, EErr, AErr, Tags, OEErr, OAErr> {
+function normalizeConfig<S, E, EErr, AErr, Tags extends AnyTaskTag, R, OEErr, OAErr>(
+  config: HandlerConfig<S, E, EErr, AErr, Tags, R, OEErr, OAErr>,
+): ResolvedHandlerConfig<S, E, EErr, AErr, Tags, OEErr, OAErr, R> {
   const eventDef = config.onEvent
   const alarmDef = config.onAlarm
 
@@ -102,10 +112,10 @@ function normalizeConfig<S, E, EErr, AErr, Tags extends AnyTaskTag, OEErr, OAErr
 // Handles both plain function and object forms.
 // ---------------------------------------------------------------------------
 
-function wrapEventDef<S, E, EErr, Tags extends AnyTaskTag, R, OEErr>(
+export function wrapEventDef<S, E, EErr, Tags extends AnyTaskTag, R, RIn, OEErr>(
   def: EventDef<S, E, EErr, Tags, R, OEErr>,
-  layer: Layer.Layer<R>,
-): EventDef<S, E, EErr, Tags, never, OEErr> {
+  layer: Layer.Layer<R, never, RIn>,
+): EventDef<S, E, EErr, Tags, RIn, OEErr> {
   if (isHandlerObject(def)) {
     return {
       handler: (ctx, event) => Effect.provide(def.handler(ctx, event), layer),
@@ -115,10 +125,10 @@ function wrapEventDef<S, E, EErr, Tags extends AnyTaskTag, R, OEErr>(
   return (ctx, event) => Effect.provide(def(ctx, event), layer)
 }
 
-function wrapAlarmDef<S, AErr, Tags extends AnyTaskTag, R, OAErr>(
+export function wrapAlarmDef<S, AErr, Tags extends AnyTaskTag, R, RIn, OAErr>(
   def: AlarmDef<S, AErr, Tags, R, OAErr>,
-  layer: Layer.Layer<R>,
-): AlarmDef<S, AErr, Tags, never, OAErr> {
+  layer: Layer.Layer<R, never, RIn>,
+): AlarmDef<S, AErr, Tags, RIn, OAErr> {
   if (isHandlerObject(def)) {
     return {
       handler: (ctx) => Effect.provide(def.handler(ctx), layer),
@@ -170,14 +180,14 @@ export interface TaskRegistry<Tags extends AnyTaskTag> {
    */
   for<K extends Tags["name"]>(name: K): TaskHelpers<StateFor<Tags, K>, EventFor<Tags, K>, Tags>
 
-  handler<K extends Tags["name"], EErr, AErr, OEErr = never, OAErr = never>(
+  handler<K extends Tags["name"], EErr, AErr, R = never, OEErr = never, OAErr = never>(
     name: K,
-    config: HandlerConfig<StateFor<Tags, K>, EventFor<Tags, K>, EErr, AErr, Tags, never, OEErr, OAErr>,
-  ): TaskHandler<K>
+    config: HandlerConfig<StateFor<Tags, K>, EventFor<Tags, K>, EErr, AErr, Tags, R, OEErr, OAErr>,
+  ): TaskHandler<K, R>
 
-  build(
-    handlers: { readonly [K in Tags["name"]]: TaskHandler<K> },
-  ): TaskRegistryConfig
+  build<R = never>(
+    handlers: { readonly [K in Tags["name"]]: TaskHandler<K, R> },
+  ): BuiltRegistry<Tags, R>
 }
 
 export const TaskRegistry = {
@@ -201,10 +211,10 @@ export const TaskRegistry = {
         }
       },
 
-      handler<K extends Tags["name"], EErr, AErr, OEErr = never, OAErr = never>(
+      handler<K extends Tags["name"], EErr, AErr, R = never, OEErr = never, OAErr = never>(
         name: K,
-        config: HandlerConfig<StateFor<Tags, K>, EventFor<Tags, K>, EErr, AErr, Tags, never, OEErr, OAErr>,
-      ): TaskHandler<K> {
+        config: HandlerConfig<StateFor<Tags, K>, EventFor<Tags, K>, EErr, AErr, Tags, R, OEErr, OAErr>,
+      ): TaskHandler<K, R> {
         const tag = tagMap.get(name)
         if (!tag) throw new Error(`Task "${name}" not found in registry`)
         const resolved = normalizeConfig(config)
@@ -212,15 +222,15 @@ export const TaskRegistry = {
         return { _name: name, registered }
       },
 
-      build(
-        handlers: { readonly [K in Tags["name"]]: TaskHandler<K> },
-      ): TaskRegistryConfig {
-        const config: TaskRegistryConfig = {}
+      build<R = never>(
+        handlers: { readonly [K in Tags["name"]]: TaskHandler<K, R> },
+      ): BuiltRegistry<Tags, R> {
+        const config: TaskRegistryConfig<R> = {}
         for (const name of tagMap.keys()) {
-          const handler: TaskHandler<string> = handlers[name as Tags["name"]]
+          const handler: TaskHandler<string, R> = handlers[name as Tags["name"]]
           config[name] = handler.registered
         }
-        return config
+        return { registryConfig: config, tags: tagMap }
       },
     }
   },

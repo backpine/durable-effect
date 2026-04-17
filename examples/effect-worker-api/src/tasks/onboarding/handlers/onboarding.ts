@@ -1,10 +1,10 @@
-import { Effect, Layer, ServiceMap } from "effect";
-import { withServices } from "@durable-effect/task-group";
+import { Effect, Layer, Context } from "effect";
+import { withServices } from "@durable-effect/task";
 import { registry } from "../registry.js";
 
 // ── Service ──────────────────────────────────────────────
 
-class OnboardingAnalytics extends ServiceMap.Service<
+class OnboardingAnalytics extends Context.Service<
   OnboardingAnalytics,
   {
     readonly track: (event: string, userId: string) => Effect.Effect<void>;

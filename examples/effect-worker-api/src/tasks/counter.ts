@@ -1,4 +1,4 @@
-import { Effect, Layer, Schema, ServiceMap } from "effect";
+import { Effect, Layer, Schema, Context } from "effect";
 import { Task, withServices } from "@durable-effect/task";
 import { createTasks } from "@durable-effect/task/cloudflare";
 
@@ -6,7 +6,7 @@ import { createTasks } from "@durable-effect/task/cloudflare";
 // Dummy service
 // ---------------------------------------------------------------------------
 
-class Analytics extends ServiceMap.Service<
+class Analytics extends Context.Service<
   Analytics,
   {
     readonly track: (

@@ -64,8 +64,8 @@ describe("System Failure", () => {
   it("ctx.systemFailure is null under normal operation", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Process", data: "hello" }))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Process", data: "hello" }))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "hello" })
   })
@@ -75,8 +75,8 @@ describe("System Failure", () => {
 
     runtime.injectSystemFailure("worker", "w1", new SystemFailure({ message: "DO crashed" }))
 
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Process", data: "retry" }))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Process", data: "retry" }))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "retry", recoveredFrom: "DO crashed" })
   })
@@ -86,11 +86,11 @@ describe("System Failure", () => {
 
     // Inject failure and handle it
     runtime.injectSystemFailure("worker", "w1", new SystemFailure({ message: "crash" }))
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Process", data: "first" }))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Process", data: "first" }))
 
     // Second event should NOT see the failure
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Process", data: "second" }))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Process", data: "second" }))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "second" })
   })
@@ -99,14 +99,14 @@ describe("System Failure", () => {
     const runtime = makeInMemoryRuntime(config)
 
     // Normal event to set up state
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Process", data: "setup" }))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Process", data: "setup" }))
 
     // Inject failure before alarm fires
     runtime.injectSystemFailure("worker", "w1", new SystemFailure({ message: "infra reboot" }))
 
     // Fire alarm — handler sees the system failure
-    await Effect.runPromise(runtime.fireAlarm("worker", "w1"))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").fireAlarm("w1"))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "setup", recoveredFrom: "alarm: infra reboot" })
   })
@@ -121,11 +121,11 @@ describe("System Failure", () => {
     expect(runtime.hasInstance("worker", "w1")).toBe(true)
 
     // Now handle it
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Process", data: "fix" }))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Process", data: "fix" }))
 
     // Failure should be cleared
-    await Effect.runPromise(runtime.sendEvent("worker", "w1", { _tag: "Process", data: "clean" }))
-    const state = await Effect.runPromise(runtime.getState("worker", "w1"))
+    await Effect.runPromise(runtime.task("worker").send("w1", { _tag: "Process", data: "clean" }))
+    const state = await Effect.runPromise(runtime.task("worker").getState("w1"))
 
     expect(state).toEqual({ value: "clean" })
   })

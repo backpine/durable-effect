@@ -13,7 +13,8 @@ export const BillingGroupLive = HttpApiBuilder.group(
           const invoiceId = `inv-${payload.userId}-${Date.now()}`;
 
           yield* billing
-            .sendEvent("invoice", invoiceId, {
+            .task("invoice")
+            .send(invoiceId, {
               _tag: "Create",
               userId: payload.userId,
               amount: payload.amount,
@@ -26,10 +27,12 @@ export const BillingGroupLive = HttpApiBuilder.group(
       .handle("status", ({ params }) =>
         Effect.gen(function* () {
           const invoice = yield* billing
-            .getState("invoice", params.invoiceId)
+            .task("invoice")
+            .getState(params.invoiceId)
             .pipe(Effect.orDie);
           const receipt = yield* billing
-            .getState("receipt", params.invoiceId)
+            .task("receipt")
+            .getState(params.invoiceId)
             .pipe(Effect.orDie);
 
           return { invoice, receipt };
@@ -37,14 +40,18 @@ export const BillingGroupLive = HttpApiBuilder.group(
       )
       .handle("finalize", ({ params }) =>
         Effect.gen(function* () {
-          // Fire the alarm to trigger finalization
-          yield* billing.fireAlarm("invoice", params.invoiceId).pipe(Effect.orDie);
+          yield* billing
+            .task("invoice")
+            .fireAlarm(params.invoiceId)
+            .pipe(Effect.orDie);
 
           const invoice = yield* billing
-            .getState("invoice", params.invoiceId)
+            .task("invoice")
+            .getState(params.invoiceId)
             .pipe(Effect.orDie);
           const receipt = yield* billing
-            .getState("receipt", params.invoiceId)
+            .task("receipt")
+            .getState(params.invoiceId)
             .pipe(Effect.orDie);
 
           return { invoice, receipt };

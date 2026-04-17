@@ -1,4 +1,6 @@
 export { makeTaskGroupDO } from "./runtime.js"
+export { CloudflareEnv } from "./CloudflareEnv.js"
+export { cloudflareServices } from "./cloudflareServices.js"
 export type {
   DurableObjectIdLike,
   DurableObjectStorageLike,

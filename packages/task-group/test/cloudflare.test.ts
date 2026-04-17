@@ -160,8 +160,8 @@ describe("Cloudflare adapter", () => {
     const namespace = mockNamespace(taskGroup.DO)
     const runtime = taskGroup.client(namespace)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "c1", { _tag: "Inc", amount: 5 }))
-    const state = await Effect.runPromise(runtime.getState("counter", "c1"))
+    await Effect.runPromise(runtime.task("counter").send("c1", { _tag: "Inc", amount: 5 }))
+    const state = await Effect.runPromise(runtime.task("counter").getState("c1"))
 
     expect(state).toEqual({ count: 5 })
   })
@@ -171,10 +171,10 @@ describe("Cloudflare adapter", () => {
     const namespace = mockNamespace(taskGroup.DO)
     const runtime = taskGroup.client(namespace)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "shared", { _tag: "Inc", amount: 10 }))
+    await Effect.runPromise(runtime.task("counter").send("shared", { _tag: "Inc", amount: 10 }))
 
     // Counter dispatched to Logger
-    const logState = await Effect.runPromise(runtime.getState("logger", "shared"))
+    const logState = await Effect.runPromise(runtime.task("logger").getState("shared"))
     expect(logState).toEqual({ entries: ["incremented to 10"] })
   })
 
@@ -183,9 +183,9 @@ describe("Cloudflare adapter", () => {
     const namespace = mockNamespace(taskGroup.DO)
     const runtime = taskGroup.client(namespace)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "c1", { _tag: "Inc", amount: 3 }))
-    await Effect.runPromise(runtime.sendEvent("counter", "c1", { _tag: "Inc", amount: 7 }))
-    const state = await Effect.runPromise(runtime.getState("counter", "c1"))
+    await Effect.runPromise(runtime.task("counter").send("c1", { _tag: "Inc", amount: 3 }))
+    await Effect.runPromise(runtime.task("counter").send("c1", { _tag: "Inc", amount: 7 }))
+    const state = await Effect.runPromise(runtime.task("counter").getState("c1"))
 
     expect(state).toEqual({ count: 10 })
   })
@@ -195,11 +195,11 @@ describe("Cloudflare adapter", () => {
     const namespace = mockNamespace(taskGroup.DO)
     const runtime = taskGroup.client(namespace)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "a", { _tag: "Inc", amount: 1 }))
-    await Effect.runPromise(runtime.sendEvent("counter", "b", { _tag: "Inc", amount: 100 }))
+    await Effect.runPromise(runtime.task("counter").send("a", { _tag: "Inc", amount: 1 }))
+    await Effect.runPromise(runtime.task("counter").send("b", { _tag: "Inc", amount: 100 }))
 
-    expect(await Effect.runPromise(runtime.getState("counter", "a"))).toEqual({ count: 1 })
-    expect(await Effect.runPromise(runtime.getState("counter", "b"))).toEqual({ count: 100 })
+    expect(await Effect.runPromise(runtime.task("counter").getState("a"))).toEqual({ count: 1 })
+    expect(await Effect.runPromise(runtime.task("counter").getState("b"))).toEqual({ count: 100 })
   })
 
   it("fireAlarm triggers alarm handler", async () => {
@@ -207,23 +207,21 @@ describe("Cloudflare adapter", () => {
     const namespace = mockNamespace(taskGroup.DO)
     const runtime = taskGroup.client(namespace)
 
-    await Effect.runPromise(runtime.sendEvent("counter", "c1", { _tag: "Inc", amount: 1 }))
-    await Effect.runPromise(runtime.fireAlarm("counter", "c1"))
+    await Effect.runPromise(runtime.task("counter").send("c1", { _tag: "Inc", amount: 1 }))
+    await Effect.runPromise(runtime.task("counter").fireAlarm("c1"))
 
     // Alarm purges state
-    const state = await Effect.runPromise(runtime.getState("counter", "c1"))
+    const state = await Effect.runPromise(runtime.task("counter").getState("c1"))
     expect(state).toBeNull()
   })
 
-  it("rejects invalid events", async () => {
+  it("rejects invalid events at compile time", () => {
     const taskGroup = makeTaskGroupDO(registryConfig)
     const namespace = mockNamespace(taskGroup.DO)
     const runtime = taskGroup.client(namespace)
 
-    const exit = await Effect.runPromiseExit(
-      runtime.sendEvent("counter", "c1", { _tag: "Bad" }),
-    )
-    expect(exit._tag).toBe("Failure")
+    // @ts-expect-error — "Bad" is not a valid _tag for counter events
+    runtime.task("counter").send("c1", { _tag: "Bad" })
   })
 
   it("alarm() lifecycle reads routing keys", async () => {

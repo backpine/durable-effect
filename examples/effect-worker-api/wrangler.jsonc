@@ -6,25 +6,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "ENVIRONMENT": "development",
-    "LOG_LEVEL": "debug"
+    "LOG_LEVEL": "debug",
+    "BILLING_CURRENCY": "USD"
   },
   "durable_objects": {
-    "bindings": [
-      {
-        "name": "TASKS_DO",
-        "class_name": "TasksDO"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_classes": ["CounterDO"]
-    },
-    {
-      "tag": "v2",
-      "new_classes": ["TasksDO"],
-      "deleted_classes": ["CounterDO"]
-    }
-  ]
+    "bindings": []
+  }
 }

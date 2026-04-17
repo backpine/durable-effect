@@ -74,9 +74,9 @@ describe("Sibling dispatch", () => {
   it("reads sibling state via ctx.task().getState() from within a handler", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("taskA", "x", { _tag: "Go", data: "hello" }))
+    await Effect.runPromise(runtime.task("taskA").send("x", { _tag: "Go", data: "hello" }))
 
-    const aState = await Effect.runPromise(runtime.getState("taskA", "x"))
+    const aState = await Effect.runPromise(runtime.task("taskA").getState("x"))
     // taskA should have read taskB's state after dispatching to it
     expect(aState).toEqual({
       value: "hello",
@@ -87,10 +87,10 @@ describe("Sibling dispatch", () => {
   it("chains dispatch A → B → C", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("taskA", "chain", { _tag: "Go", data: "start" }))
+    await Effect.runPromise(runtime.task("taskA").send("chain", { _tag: "Go", data: "start" }))
 
     // C should have received the forwarded event from B
-    const cState = await Effect.runPromise(runtime.getState("taskC", "chain"))
+    const cState = await Effect.runPromise(runtime.task("taskC").getState("chain"))
     expect(cState).toEqual({ chain: ["via-b:start"] })
   })
 
@@ -113,9 +113,9 @@ describe("Sibling dispatch", () => {
     })
     const runtime = makeInMemoryRuntime(tagConfig)
 
-    await Effect.runPromise(runtime.sendEvent("taskA", "t1", { _tag: "Go", data: "test" }))
+    await Effect.runPromise(runtime.task("taskA").send("t1", { _tag: "Go", data: "test" }))
 
-    const bState = await Effect.runPromise(runtime.getState("taskB", "t1"))
+    const bState = await Effect.runPromise(runtime.task("taskB").getState("t1"))
     expect(bState).toEqual({ received: "tag-based", forwarded: true })
   })
 
@@ -143,15 +143,15 @@ describe("Sibling dispatch", () => {
     })
     const runtime = makeInMemoryRuntime(selfConfig)
 
-    await Effect.runPromise(runtime.sendEvent("taskC", "main", { _tag: "Append", value: "origin" }))
+    await Effect.runPromise(runtime.task("taskC").send("main", { _tag: "Append", value: "origin" }))
 
     // Main instance has its own state
-    expect(await Effect.runPromise(runtime.getState("taskC", "main"))).toEqual({
+    expect(await Effect.runPromise(runtime.task("taskC").getState("main"))).toEqual({
       chain: ["origin"],
     })
 
     // Other instance got the dispatched event
-    expect(await Effect.runPromise(runtime.getState("taskC", "other-instance"))).toEqual({
+    expect(await Effect.runPromise(runtime.task("taskC").getState("other-instance"))).toEqual({
       chain: ["from-origin"],
     })
   })
@@ -159,7 +159,7 @@ describe("Sibling dispatch", () => {
   it("getState on non-existent instance returns null", async () => {
     const runtime = makeInMemoryRuntime(config)
 
-    const state = await Effect.runPromise(runtime.getState("taskA", "does-not-exist"))
+    const state = await Effect.runPromise(runtime.task("taskA").getState("does-not-exist"))
     expect(state).toBeNull()
   })
 })

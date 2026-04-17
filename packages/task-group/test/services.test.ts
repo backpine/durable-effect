@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { Effect, Layer, Schema, ServiceMap } from "effect"
+import { Effect, Layer, Schema, Context } from "effect"
 import {
   Task,
   TaskRegistry,
@@ -11,7 +11,7 @@ import {
 // External service
 // ============================================================================
 
-class Notifier extends ServiceMap.Service<Notifier, {
+class Notifier extends Context.Service<Notifier, {
   readonly notify: (message: string) => Effect.Effect<void>
 }>()("@test/Notifier") {}
 
@@ -74,8 +74,8 @@ describe("Services", () => {
     notifierCalls.length = 0
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("order", "o1", { _tag: "Place", amount: 99 }))
-    const state = await Effect.runPromise(runtime.getState("order", "o1"))
+    await Effect.runPromise(runtime.task("order").send("o1", { _tag: "Place", amount: 99 }))
+    const state = await Effect.runPromise(runtime.task("order").getState("o1"))
 
     expect(state).toEqual({ total: 99, notified: true })
     expect(notifierCalls).toEqual(["Order placed: $99"])
@@ -85,11 +85,11 @@ describe("Services", () => {
     notifierCalls.length = 0
     const runtime = makeInMemoryRuntime(config)
 
-    await Effect.runPromise(runtime.sendEvent("order", "o1", { _tag: "Place", amount: 50 }))
-    await Effect.runPromise(runtime.sendEvent("inbox", "i1", { _tag: "Receive", text: "hello" }))
+    await Effect.runPromise(runtime.task("order").send("o1", { _tag: "Place", amount: 50 }))
+    await Effect.runPromise(runtime.task("inbox").send("i1", { _tag: "Receive", text: "hello" }))
 
-    expect(await Effect.runPromise(runtime.getState("order", "o1"))).toEqual({ total: 50, notified: true })
-    expect(await Effect.runPromise(runtime.getState("inbox", "i1"))).toEqual({ messages: ["hello"] })
+    expect(await Effect.runPromise(runtime.task("order").getState("o1"))).toEqual({ total: 50, notified: true })
+    expect(await Effect.runPromise(runtime.task("inbox").getState("i1"))).toEqual({ messages: ["hello"] })
     expect(notifierCalls).toEqual(["Order placed: $50"])
   })
 })

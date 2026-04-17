@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Task, TaskRegistry } from "@durable-effect/task-group";
+import { Task, TaskRegistry } from "@durable-effect/task";
 
 // ── Task Declarations ────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import { Effect, Layer, ServiceMap } from "effect"
+import { Effect, Layer, Context } from "effect"
 import type { TaskRegistryConfig } from "./TaskRegistry.js"
 import type { DispatchFn, HandlerContext } from "./RegisteredTask.js"
 import { Storage } from "./services/Storage.js"
@@ -16,7 +16,7 @@ import {
 // InMemoryRuntime instead.
 // ---------------------------------------------------------------------------
 
-export class TaskRunner extends ServiceMap.Service<TaskRunner, {
+export class TaskRunner extends Context.Service<TaskRunner, {
   readonly handleEvent: (
     name: string,
     id: string,

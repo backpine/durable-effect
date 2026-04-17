@@ -10,11 +10,14 @@ export const OnboardingGroupLive = HttpApiBuilder.group(
     handlers
       .handle("start", ({ payload }) =>
         Effect.gen(function* () {
-          yield* onboardingRuntime.sendEvent("onboarding", payload.userId, {
-            _tag: "Start",
-            userId: payload.userId,
-            email: payload.email,
-          }).pipe(Effect.orDie)
+          yield* onboardingRuntime
+            .task("onboarding")
+            .send(payload.userId, {
+              _tag: "Start",
+              userId: payload.userId,
+              email: payload.email,
+            })
+            .pipe(Effect.orDie)
 
           return { status: "ok" as const, userId: payload.userId }
         }),
@@ -22,10 +25,12 @@ export const OnboardingGroupLive = HttpApiBuilder.group(
       .handle("status", ({ params }) =>
         Effect.gen(function* () {
           const onboarding = yield* onboardingRuntime
-            .getState("onboarding", params.userId)
+            .task("onboarding")
+            .getState(params.userId)
             .pipe(Effect.orDie)
           const welcomeEmail = yield* onboardingRuntime
-            .getState("welcomeEmail", params.userId)
+            .task("welcomeEmail")
+            .getState(params.userId)
             .pipe(Effect.orDie)
 
           return { onboarding, welcomeEmail }
@@ -33,16 +38,18 @@ export const OnboardingGroupLive = HttpApiBuilder.group(
       )
       .handle("complete", ({ params }) =>
         Effect.gen(function* () {
-          // Fire the follow-up alarm immediately (simulates time passing)
           yield* onboardingRuntime
-            .fireAlarm("onboarding", params.userId)
+            .task("onboarding")
+            .fireAlarm(params.userId)
             .pipe(Effect.orDie)
 
           const onboarding = yield* onboardingRuntime
-            .getState("onboarding", params.userId)
+            .task("onboarding")
+            .getState(params.userId)
             .pipe(Effect.orDie)
           const welcomeEmail = yield* onboardingRuntime
-            .getState("welcomeEmail", params.userId)
+            .task("welcomeEmail")
+            .getState(params.userId)
             .pipe(Effect.orDie)
 
           return { onboarding, welcomeEmail }

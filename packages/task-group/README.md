@@ -267,6 +267,78 @@ export const OrdersDO = taskGroup.DO
 export const tasks = taskGroup.client(env.ORDERS_DO)
 ```
 
+### Deferred Services (cloudflareServices)
+
+Cloudflare Workers ban async I/O in global scope. If your service layers do I/O during construction (database connections, API client setup), use `cloudflareServices` to defer layer construction to the DO constructor where `env` is available.
+
+**1. Create the helper once per project:**
+
+```typescript
+// services/cloudflare.ts
+import { cloudflareServices } from "@durable-effect/task/cloudflare"
+import type { Env } from "../env" // wrangler-generated
+
+export const withCloudflareServices = cloudflareServices<Env>()
+```
+
+**2. Use in handlers — env is fully typed:**
+
+```typescript
+// tasks/handlers/order.ts
+import { withCloudflareServices } from "../../services/cloudflare"
+
+export const orderHandler = registry.handler("order",
+  withCloudflareServices(
+    {
+      onEvent: (ctx, event) =>
+        Effect.gen(function* () {
+          const db = yield* DbClient
+          const payment = yield* PaymentService
+          // ... handler code uses services normally
+        }),
+      onAlarm: (ctx) => Effect.void,
+    },
+    // Factory is stored, NOT called at module scope.
+    // Runs in the DO constructor where env is available.
+    (env) =>
+      Layer.mergeAll(
+        makeDbLayer(env.HYPERDRIVE.connectionString),
+        makePaymentLayer(env.PAYMENT_API_KEY),
+      ),
+  ),
+)
+```
+
+**3. Testing — provide a mock env:**
+
+```typescript
+import { CloudflareEnv } from "@durable-effect/task/cloudflare"
+
+const runtime = makeInMemoryRuntime(built, {
+  services: Layer.succeed(CloudflareEnv)({
+    HYPERDRIVE: { connectionString: "postgres://test" },
+    PAYMENT_API_KEY: "test-key",
+  }),
+})
+```
+
+**Composing pure + env-dependent services:**
+
+Include all services in the deferred factory. Pure layers don't need `env` but can live alongside those that do:
+
+```typescript
+const handler = registry.handler("order",
+  withCloudflareServices(
+    handlerConfig,
+    (env) => Layer.mergeAll(
+      LoggingLive,                              // pure — doesn't need env
+      makeDbLayer(env.HYPERDRIVE.connectionString), // env-dependent
+      makePaymentLayer(env.PAYMENT_API_KEY),        // env-dependent
+    ),
+  ),
+)
+```
+
 ### Wire into wrangler
 
 Export the DO class from your worker's entry point:
