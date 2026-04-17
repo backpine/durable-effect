@@ -137,6 +137,7 @@ export const BillingGroup = HttpApiGroup.make("billing")
 
 export class WorkerApi extends HttpApi.make("WorkerApi")
   .add(HealthGroup)
+  .add(CounterGroup)
   .add(OnboardingGroup)
   .add(BillingGroup)
   .middleware(CloudflareBindingsMiddleware)

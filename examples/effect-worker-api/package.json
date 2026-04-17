@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@durable-effect/task": "workspace:*",
-    "effect": "4.0.0-beta.46"
+    "effect": "4.0.0-beta.50"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",
