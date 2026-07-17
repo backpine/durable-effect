@@ -1,4 +1,5 @@
-import { Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema, Layer } from "effect"
+import type { Scope } from "effect"
 import type { TaskCtx, SiblingHandle } from "./TaskCtx.js"
 import type { AnyTaskTag, EventOf, TaskTag } from "./TaskTag.js"
 import {
@@ -42,6 +43,35 @@ export interface HandlerContext {
   readonly id: string
   readonly name: string
   readonly systemFailure: SystemFailure | null
+  /**
+   * Per-instance build cache. Hook layers are built through this MemoMap so a
+   * layer (e.g. a DB pool) is constructed once per instance and reused across
+   * every event and alarm on that instance.
+   */
+  readonly memoMap: Layer.MemoMap
+  /**
+   * Per-instance, long-lived scope. Resources acquired while building hook
+   * layers are registered here, so they persist across invocations for the
+   * lifetime of the instance (not torn down after each handler call).
+   */
+  readonly scope: Scope.Scope
+}
+
+// ---------------------------------------------------------------------------
+// provideHook — build a hook's service Layer through the per-instance MemoMap
+// and provide it to the hook effect. The layer is built lazily (only when the
+// hook runs) and memoized (once per instance). R_hook is erased on build; the
+// only residual is the layer's own requirement (the platform env), RL.
+// ---------------------------------------------------------------------------
+
+function provideHook<A, EE, RH, RP, RL>(
+  effect: Effect.Effect<A, EE, RH>,
+  layer: Layer.Layer<RP, never, RL>,
+  hctx: HandlerContext,
+): Effect.Effect<A, EE, Exclude<RH, RP> | RL> {
+  return Layer.buildWithMemoMap(layer, hctx.memoMap, hctx.scope).pipe(
+    Effect.flatMap((ctx) => Effect.provide(effect, ctx)),
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -65,17 +95,36 @@ export interface RegisteredTask<R = never> {
 }
 
 // ---------------------------------------------------------------------------
-// ResolvedHandlerConfig — handler functions after normalization.
-// R defaults to never (all services resolved). When using platform-specific
-// helpers like cloudflareServices(), R may be a platform context service.
+// ResolvedHandlerConfig — handler functions after normalization, each channel
+// paired with the Layer that provides its services.
+//
+// Type params, per channel (e=event, a=alarm):
+//   RH* — the handler's own service requirements
+//   RP* — services the channel's `provide` Layer supplies
+//   RL* — the Layer's own requirement (the platform env), which becomes residual
+//
+// After `provideHook`, each channel's residual is `Exclude<RH, RP> | RL`.
 // ---------------------------------------------------------------------------
 
-export interface ResolvedHandlerConfig<S, E, EErr, AErr, Tags extends AnyTaskTag, OEErr = never, OAErr = never, R = never> {
-  readonly onEvent: (ctx: TaskCtx<S, Tags>, event: E) => Effect.Effect<void, EErr, R>
-  readonly onAlarm: (ctx: TaskCtx<S, Tags>) => Effect.Effect<void, AErr, R>
-  readonly onEventError?: ((ctx: TaskCtx<S, Tags>, error: EErr) => Effect.Effect<void, OEErr, R>) | undefined
-  readonly onAlarmError?: ((ctx: TaskCtx<S, Tags>, error: AErr) => Effect.Effect<void, OAErr, R>) | undefined
+export interface ResolvedHandlerConfig<
+  S, E, EErr, AErr, Tags extends AnyTaskTag,
+  OEErr = never, OAErr = never,
+  RHe = never, RHa = never,
+  RPe = never, RPa = never,
+  RLe = never, RLa = never,
+> {
+  readonly onEvent: (ctx: TaskCtx<S, Tags>, event: E) => Effect.Effect<void, EErr, RHe>
+  readonly onAlarm: (ctx: TaskCtx<S, Tags>) => Effect.Effect<void, AErr, RHa>
+  readonly onEventError?: ((ctx: TaskCtx<S, Tags>, error: EErr) => Effect.Effect<void, OEErr, RHe>) | undefined
+  readonly onAlarmError?: ((ctx: TaskCtx<S, Tags>, error: AErr) => Effect.Effect<void, OAErr, RHa>) | undefined
+  readonly onEventLayer: Layer.Layer<RPe, never, RLe>
+  readonly onAlarmLayer: Layer.Layer<RPa, never, RLa>
 }
+
+/** Residual requirement a registered task exposes after per-hook layers resolve. */
+export type ResidualEnv<RHe, RHa, RPe, RPa, RLe, RLa> =
+  | Exclude<RHe, RPe> | RLe
+  | Exclude<RHa, RPa> | RLa
 
 // ---------------------------------------------------------------------------
 // Internal: build a typed TaskCtx from an adapter-provided HandlerContext
@@ -224,11 +273,15 @@ function handleError<S, HErr, OErr, Tags extends AnyTaskTag, R>(
 // RegisteredTask for the runtime to dispatch to.
 // ---------------------------------------------------------------------------
 
-export function buildRegisteredTask<S, E, EErr, AErr, Tags extends AnyTaskTag, OEErr, OAErr, R = never>(
+export function buildRegisteredTask<
+  S, E, EErr, AErr, Tags extends AnyTaskTag,
+  OEErr, OAErr,
+  RHe, RHa, RPe, RPa, RLe, RLa,
+>(
   tag: TaskTag<string, S, E>,
-  config: ResolvedHandlerConfig<S, E, EErr, AErr, Tags, OEErr, OAErr, R>,
+  config: ResolvedHandlerConfig<S, E, EErr, AErr, Tags, OEErr, OAErr, RHe, RHa, RPe, RPa, RLe, RLa>,
   tagsByName: ReadonlyMap<string, AnyTaskTag>,
-): RegisteredTask<R> {
+): RegisteredTask<ResidualEnv<RHe, RHa, RPe, RPa, RLe, RLa>> {
   const decodeEvent = Schema.decodeUnknownEffect(tag.event)
   const decodeState = Schema.decodeUnknownEffect(tag.state)
   const encodeState = Schema.encodeUnknownEffect(tag.state)
@@ -236,7 +289,7 @@ export function buildRegisteredTask<S, E, EErr, AErr, Tags extends AnyTaskTag, O
   const handleEvent = (
     hctx: HandlerContext,
     rawEvent: unknown,
-  ): Effect.Effect<void, TaskValidationError | TaskExecutionError, R> =>
+  ): Effect.Effect<void, TaskValidationError | TaskExecutionError, Exclude<RHe, RPe> | RLe> =>
     Effect.gen(function* () {
       const event = yield* decodeEvent(rawEvent).pipe(
         Effect.mapError((e) => new TaskValidationError({ message: String(e.message), cause: e })),
@@ -244,16 +297,19 @@ export function buildRegisteredTask<S, E, EErr, AErr, Tags extends AnyTaskTag, O
 
       const ctx = buildTaskCtx<S, Tags>(hctx, decodeState, encodeState, tagsByName)
 
-      yield* config.onEvent(ctx, event).pipe(
+      const program = config.onEvent(ctx, event).pipe(
         Effect.catch((error) =>
           handleError(ctx, error, config.onEventError, hctx.storage, hctx.alarm),
         ),
       )
+
+      // Build the event channel's services through the per-instance MemoMap.
+      yield* provideHook(program, config.onEventLayer, hctx)
     })
 
   const handleAlarm = (
     hctx: HandlerContext,
-  ): Effect.Effect<void, TaskExecutionError, R> =>
+  ): Effect.Effect<void, TaskExecutionError, Exclude<RHa, RPa> | RLa> =>
     Effect.gen(function* () {
       yield* hctx.storage.delete(ALARM_KEY).pipe(
         Effect.mapError((e) => new TaskExecutionError({ cause: e })),
@@ -261,16 +317,18 @@ export function buildRegisteredTask<S, E, EErr, AErr, Tags extends AnyTaskTag, O
 
       const ctx = buildTaskCtx<S, Tags>(hctx, decodeState, encodeState, tagsByName)
 
-      yield* config.onAlarm(ctx).pipe(
+      const program = config.onAlarm(ctx).pipe(
         Effect.catch((error) =>
           handleError(ctx, error, config.onAlarmError, hctx.storage, hctx.alarm),
         ),
       )
+
+      yield* provideHook(program, config.onAlarmLayer, hctx)
     })
 
   const handleGetState = (
     hctx: HandlerContext,
-  ): Effect.Effect<unknown, TaskExecutionError, R> =>
+  ): Effect.Effect<unknown, TaskExecutionError, never> =>
     Effect.gen(function* () {
       const ctx = buildTaskCtx<S, Tags>(hctx, decodeState, encodeState, tagsByName)
       const raw = yield* ctx.recall().pipe(

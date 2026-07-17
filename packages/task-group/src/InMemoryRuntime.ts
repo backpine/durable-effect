@@ -1,6 +1,5 @@
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Scope } from "effect"
 import type { BuiltRegistry, TaskRegistryConfig } from "./TaskRegistry.js"
-import type { RegisteredTask } from "./RegisteredTask.js"
 import type { DispatchFn, HandlerContext } from "./RegisteredTask.js"
 import type { Storage } from "./services/Storage.js"
 import type { Alarm } from "./services/Alarm.js"
@@ -16,13 +15,17 @@ import type {
 } from "./errors.js"
 
 // ---------------------------------------------------------------------------
-// Instance — per-task-instance state, mirroring a Durable Object.
+// Instance — per-task-instance state, mirroring a Durable Object. Each instance
+// owns a MemoMap + long-lived Scope so hook layers (e.g. a DB pool) build once
+// per instance and are reused across every event and alarm.
 // ---------------------------------------------------------------------------
 
 interface Instance {
   readonly storage: Map<string, unknown>
   scheduledAlarm: number | null
   systemFailure: SystemFailure | null
+  readonly memoMap: Layer.MemoMap
+  readonly scope: Scope.Closeable
 }
 
 // ---------------------------------------------------------------------------
@@ -47,26 +50,6 @@ function makeInstanceAlarm(instance: Instance): Alarm["Service"] {
 }
 
 // ---------------------------------------------------------------------------
-// resolveRegistry — wraps each registered task's effects with
-// Effect.provide(layer) to eliminate R, producing a TaskRegistryConfig<never>.
-// ---------------------------------------------------------------------------
-
-function resolveRegistry<R>(
-  config: TaskRegistryConfig<R>,
-  layer: Layer.Layer<R>,
-): TaskRegistryConfig<never> {
-  const resolved: TaskRegistryConfig<never> = {}
-  for (const [name, task] of Object.entries(config)) {
-    resolved[name] = {
-      handleEvent: (hctx, event) => Effect.provide(task.handleEvent(hctx, event), layer),
-      handleAlarm: (hctx) => Effect.provide(task.handleAlarm(hctx), layer),
-      handleGetState: (hctx) => Effect.provide(task.handleGetState(hctx), layer),
-    }
-  }
-  return resolved
-}
-
-// ---------------------------------------------------------------------------
 // ScheduledAlarm
 // ---------------------------------------------------------------------------
 
@@ -77,20 +60,22 @@ export interface ScheduledAlarm {
 }
 
 // ---------------------------------------------------------------------------
-// InMemoryRuntime — always operates on fully resolved effects (R = never).
-// When the user has deferred services, the factory resolves them before
-// constructing the runtime.
+// InMemoryRuntime — multi-instance test runtime. Handlers keep their residual
+// requirement (the platform env, Renv); the runtime provides it via a single
+// `services` Layer while per-hook service layers build/memoize per instance.
 // ---------------------------------------------------------------------------
 
-export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntime<Tags> {
+export class InMemoryRuntime<Tags extends AnyTaskTag, Renv = never> implements TypedTaskRuntime<Tags> {
   private readonly instances = new Map<string, Instance>()
   private readonly dispatchFn: DispatchFn
-  private readonly registryConfig: TaskRegistryConfig<never>
+  private readonly registryConfig: TaskRegistryConfig<Renv>
   private readonly tagMap: ReadonlyMap<string, Tags>
+  private readonly servicesLayer: Layer.Layer<Renv>
 
-  constructor(built: BuiltRegistry<Tags, never>) {
+  constructor(built: BuiltRegistry<Tags, Renv>, servicesLayer: Layer.Layer<Renv>) {
     this.registryConfig = built.registryConfig
     this.tagMap = built.tags
+    this.servicesLayer = servicesLayer
     const self = this
     this.dispatchFn = {
       send(name: string, id: string, event: unknown): Effect.Effect<void, TaskError> {
@@ -100,8 +85,10 @@ export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntim
             return yield* Effect.fail(new TaskError({ message: `Sibling task "${name}" not found in registry` }))
           }
           const hctx = self.makeHandlerContext(name, id)
-          yield* task.handleEvent(hctx, event).pipe(
-            Effect.mapError((e) => new TaskError({ message: `Sibling dispatch error`, cause: e })),
+          yield* self.run(
+            task.handleEvent(hctx, event).pipe(
+              Effect.mapError((e) => new TaskError({ message: `Sibling dispatch error`, cause: e })),
+            ),
           )
         })
       },
@@ -112,12 +99,22 @@ export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntim
             return yield* Effect.fail(new TaskError({ message: `Sibling task "${name}" not found in registry` }))
           }
           const hctx = self.makeHandlerContext(name, id)
-          return yield* task.handleGetState(hctx).pipe(
-            Effect.mapError((e) => new TaskError({ message: `Sibling getState error`, cause: e })),
+          return yield* self.run(
+            task.handleGetState(hctx).pipe(
+              Effect.mapError((e) => new TaskError({ message: `Sibling getState error`, cause: e })),
+            ),
           )
         })
       },
     }
+  }
+
+  // ── Residual env provision ───────────────────────────────
+  // Provide the platform env (Renv) to a handler effect. Per-hook service
+  // layers are already built via the instance MemoMap inside the handler; this
+  // only resolves the residual env so the effect can run with R = never.
+  private run<A, E>(eff: Effect.Effect<A, E, Renv>): Effect.Effect<A, E> {
+    return Effect.provide(eff, this.servicesLayer)
   }
 
   // ── Instance management ──────────────────────────────────
@@ -130,7 +127,13 @@ export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntim
     const key = this.instanceKey(name, id)
     let instance = this.instances.get(key)
     if (!instance) {
-      instance = { storage: new Map(), scheduledAlarm: null, systemFailure: null }
+      instance = {
+        storage: new Map(),
+        scheduledAlarm: null,
+        systemFailure: null,
+        memoMap: Layer.makeMemoMapUnsafe(),
+        scope: Scope.makeUnsafe(),
+      }
       this.instances.set(key, instance)
     }
     return instance
@@ -145,6 +148,8 @@ export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntim
       id,
       name,
       systemFailure: instance.systemFailure,
+      memoMap: instance.memoMap,
+      scope: instance.scope,
     }
   }
 
@@ -164,7 +169,7 @@ export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntim
           const task = self.registryConfig[name]
           if (!task) return yield* Effect.fail(new TaskExecutionError({ cause: `Task "${name}" not found` }))
           const hctx = self.makeHandlerContext(name, id)
-          yield* task.handleEvent(hctx, event)
+          yield* self.run(task.handleEvent(hctx, event))
           self.getOrCreateInstance(name, id).systemFailure = null
         })
       },
@@ -173,7 +178,7 @@ export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntim
           const task = self.registryConfig[name]
           if (!task) return yield* Effect.fail(new TaskExecutionError({ cause: `Task "${name}" not found` }))
           const hctx = self.makeHandlerContext(name, id)
-          const raw = yield* task.handleGetState(hctx)
+          const raw = yield* self.run(task.handleGetState(hctx))
           if (raw === null) return null
           if (!tag) return yield* Effect.fail(new TaskExecutionError({ cause: `Tag "${name}" not found` }))
           return yield* Schema.decodeUnknownEffect(tag.state)(raw).pipe(
@@ -188,7 +193,7 @@ export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntim
           const instance = self.getOrCreateInstance(name, id)
           instance.scheduledAlarm = null
           const hctx = self.makeHandlerContext(name, id)
-          yield* task.handleAlarm(hctx)
+          yield* self.run(task.handleAlarm(hctx))
           instance.systemFailure = null
         })
       },
@@ -214,7 +219,7 @@ export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntim
         if (task) {
           instance.scheduledAlarm = null
           const hctx = self.makeHandlerContext(name, id)
-          yield* task.handleAlarm(hctx)
+          yield* self.run(task.handleAlarm(hctx))
           instance.systemFailure = null
         }
       }
@@ -256,31 +261,17 @@ export class InMemoryRuntime<Tags extends AnyTaskTag> implements TypedTaskRuntim
 // Factory
 // ---------------------------------------------------------------------------
 
-/** Create from a fully resolved registry (R = never). */
-export function makeInMemoryRuntime<Tags extends AnyTaskTag>(
-  built: BuiltRegistry<Tags, never>,
-): InMemoryRuntime<Tags>
-
-/** Create from a registry with deferred services — the layer resolves R. */
-export function makeInMemoryRuntime<Tags extends AnyTaskTag, R>(
+/**
+ * Create an in-memory runtime. When the registry has a residual env (R != never
+ * — e.g. handlers use env-dependent service layers), `services` is required and
+ * provides it; when R = never, no options are needed.
+ */
+export function makeInMemoryRuntime<Tags extends AnyTaskTag, R = never>(
   built: BuiltRegistry<Tags, R>,
-  options: { services: Layer.Layer<R> },
-): InMemoryRuntime<Tags>
-
-// Implementation
-export function makeInMemoryRuntime<Tags extends AnyTaskTag, R>(
-  built: BuiltRegistry<Tags, R>,
-  options?: { services: Layer.Layer<R> },
-): InMemoryRuntime<Tags> {
-  if (options?.services) {
-    // Resolve R by wrapping each task's effects with Effect.provide(layer).
-    // Effect.provide(Effect<A, E, R>, Layer<R>) → Effect<A, E, never>
-    const resolved: BuiltRegistry<Tags, never> = {
-      registryConfig: resolveRegistry(built.registryConfig, options.services),
-      tags: built.tags,
-    }
-    return new InMemoryRuntime(resolved)
-  }
-  // R = never (enforced by overload), so built is already BuiltRegistry<Tags, never>
-  return new InMemoryRuntime(built as BuiltRegistry<Tags, never>)
+  ...options: [R] extends [never] ? [] : [{ readonly services: Layer.Layer<R> }]
+): InMemoryRuntime<Tags, R> {
+  const opts = options as ReadonlyArray<{ readonly services: Layer.Layer<R> }>
+  // No residual env (R = never) → the empty layer provides nothing.
+  const servicesLayer = opts[0]?.services ?? (Layer.empty as unknown as Layer.Layer<R>)
+  return new InMemoryRuntime<Tags, R>(built, servicesLayer)
 }

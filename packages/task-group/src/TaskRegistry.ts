@@ -1,12 +1,13 @@
-import { Effect, type Layer } from "effect"
+import { Effect, Layer } from "effect"
 import type { TaskCtx } from "./TaskCtx.js"
 import type { AnyTaskTag, StateFor, EventFor } from "./TaskTag.js"
-import type { RegisteredTask, ResolvedHandlerConfig } from "./RegisteredTask.js"
+import type { RegisteredTask, ResolvedHandlerConfig, ResidualEnv } from "./RegisteredTask.js"
 import { buildRegisteredTask } from "./RegisteredTask.js"
 
 // ---------------------------------------------------------------------------
 // TaskHandler — opaque result of registry.handler(). Carries the task name
-// as a type-level literal so build() can validate completeness.
+// as a type-level literal so build() can validate completeness. R is the
+// residual requirement (the platform env) left after per-hook layers resolve.
 // ---------------------------------------------------------------------------
 
 export interface TaskHandler<K extends string, R = never> {
@@ -32,116 +33,157 @@ export interface BuiltRegistry<Tags extends AnyTaskTag, R = never> {
 }
 
 // ---------------------------------------------------------------------------
-// Handler definitions — each channel (event/alarm) can be either a plain
-// function (no error handler) or an object with { handler, onError }.
+// Per-hook service provision.
 //
-// The nested object form ensures TypeScript infers the error type from
-// `handler` and applies it to `onError` within the same inference scope,
-// regardless of property ordering.
+// Each channel (event/alarm) can be either a plain function (no error handler,
+// no services) or an object form { handler, onError?, provide? }. The `provide`
+// field attaches the service Layer(s) for THAT channel — the core feature that
+// lets onEvent and onAlarm require different services. `provide` accepts a
+// single Layer or an array (auto-merged).
+//
+// Type params per channel:
+//   RH — the handler's own requirements
+//   RP — services the `provide` layer supplies
+//   RL — the layer's own requirement (the platform env), which flows to residual
 // ---------------------------------------------------------------------------
 
-/** Plain function — no error handler for this channel */
-type EventHandlerFn<S, E, EErr, Tags extends AnyTaskTag, R> =
-  (ctx: TaskCtx<S, Tags>, event: E) => Effect.Effect<void, EErr, R>
+/**
+ * The service Layer attached to a hook via `provide`. To provide several
+ * services, merge them: `provide: Layer.mergeAll(DbLive, SlackLive)`.
+ */
+export type ProvideInput<RP, RL> = Layer.Layer<RP, never, RL>
 
-/** Object with co-located error handler — error type flows from handler to onError */
-interface EventHandlerWithError<S, E, EErr, Tags extends AnyTaskTag, R, OEErr = never> {
-  readonly handler: (ctx: TaskCtx<S, Tags>, event: E) => Effect.Effect<void, EErr, R>
-  readonly onError: (ctx: TaskCtx<S, Tags>, error: EErr) => Effect.Effect<void, OEErr, R>
+/** Plain function — no error handler, no services for this channel */
+type EventHandlerFn<S, E, EErr, Tags extends AnyTaskTag, RH> =
+  (ctx: TaskCtx<S, Tags>, event: E) => Effect.Effect<void, EErr, RH>
+
+/** Object form — co-located error handler and/or per-hook services */
+export interface EventHandlerObject<S, E, EErr, Tags extends AnyTaskTag, RH, OEErr = never, RP = never, RL = never> {
+  readonly handler: (ctx: TaskCtx<S, Tags>, event: E) => Effect.Effect<void, EErr, RH>
+  readonly onError?: (ctx: TaskCtx<S, Tags>, error: EErr) => Effect.Effect<void, OEErr, RH>
+  readonly provide?: ProvideInput<RP, RL>
 }
 
 /** Either form */
-type EventDef<S, E, EErr, Tags extends AnyTaskTag, R, OEErr = never> =
-  | EventHandlerFn<S, E, EErr, Tags, R>
-  | EventHandlerWithError<S, E, EErr, Tags, R, OEErr>
+type EventDef<S, E, EErr, Tags extends AnyTaskTag, RH, OEErr = never, RP = never, RL = never> =
+  | EventHandlerFn<S, E, EErr, Tags, RH>
+  | EventHandlerObject<S, E, EErr, Tags, RH, OEErr, RP, RL>
 
-/** Plain function — no error handler for this channel */
-type AlarmHandlerFn<S, AErr, Tags extends AnyTaskTag, R> =
-  (ctx: TaskCtx<S, Tags>) => Effect.Effect<void, AErr, R>
+/** Plain function — no error handler, no services for this channel */
+type AlarmHandlerFn<S, AErr, Tags extends AnyTaskTag, RH> =
+  (ctx: TaskCtx<S, Tags>) => Effect.Effect<void, AErr, RH>
 
-/** Object with co-located error handler */
-interface AlarmHandlerWithError<S, AErr, Tags extends AnyTaskTag, R, OAErr = never> {
-  readonly handler: (ctx: TaskCtx<S, Tags>) => Effect.Effect<void, AErr, R>
-  readonly onError: (ctx: TaskCtx<S, Tags>, error: AErr) => Effect.Effect<void, OAErr, R>
+/** Object form — co-located error handler and/or per-hook services */
+export interface AlarmHandlerObject<S, AErr, Tags extends AnyTaskTag, RH, OAErr = never, RP = never, RL = never> {
+  readonly handler: (ctx: TaskCtx<S, Tags>) => Effect.Effect<void, AErr, RH>
+  readonly onError?: (ctx: TaskCtx<S, Tags>, error: AErr) => Effect.Effect<void, OAErr, RH>
+  readonly provide?: ProvideInput<RP, RL>
 }
 
 /** Either form */
-type AlarmDef<S, AErr, Tags extends AnyTaskTag, R, OAErr = never> =
-  | AlarmHandlerFn<S, AErr, Tags, R>
-  | AlarmHandlerWithError<S, AErr, Tags, R, OAErr>
+type AlarmDef<S, AErr, Tags extends AnyTaskTag, RH, OAErr = never, RP = never, RL = never> =
+  | AlarmHandlerFn<S, AErr, Tags, RH>
+  | AlarmHandlerObject<S, AErr, Tags, RH, OAErr, RP, RL>
 
 // ---------------------------------------------------------------------------
-// HandlerConfig — what the user passes to registry.handler()
+// HandlerConfig — what the user passes to registry.handler(). Each channel
+// carries its own requirement (RH*), provided services (RP*), and layer
+// input / residual env (RL*).
 // ---------------------------------------------------------------------------
 
-export interface HandlerConfig<S, E, EErr, AErr, Tags extends AnyTaskTag, R = never, OEErr = never, OAErr = never> {
-  readonly onEvent: EventDef<S, E, EErr, Tags, R, OEErr>
-  readonly onAlarm: AlarmDef<S, AErr, Tags, R, OAErr>
+export interface HandlerConfig<
+  S, E, EErr, AErr, Tags extends AnyTaskTag,
+  RHe = never, RHa = never,
+  OEErr = never, OAErr = never,
+  RPe = never, RPa = never, RLe = never, RLa = never,
+> {
+  readonly onEvent: EventDef<S, E, EErr, Tags, RHe, OEErr, RPe, RLe>
+  readonly onAlarm: AlarmDef<S, AErr, Tags, RHa, OAErr, RPa, RLa>
 }
 
 // ---------------------------------------------------------------------------
-// Type guards — discriminate function vs object form
+// Type guard — discriminate function vs object form. The union narrows to the
+// object member (a plain function has no `handler` property), preserving the
+// precise handler/onError/provide types.
 // ---------------------------------------------------------------------------
 
-function isHandlerObject<T>(def: T | { handler: T }): def is { handler: T; onError?: unknown } {
+function isHandlerObject<T>(def: T | { handler: T }): def is { handler: T; onError?: unknown; provide?: unknown } {
   return typeof def !== "function" && def !== null && typeof def === "object" && "handler" in def
 }
 
 // ---------------------------------------------------------------------------
-// Normalization — convert either form into the flat ResolvedHandlerConfig
-// that buildRegisteredTask expects. No type casts — the union narrowing
-// gives us the correct types.
+// toLayer — normalize a `provide` input (Layer | Layer[] | undefined) into a
+// single Layer. Missing provide → the empty layer (requires/provides nothing).
 // ---------------------------------------------------------------------------
 
-function normalizeConfig<S, E, EErr, AErr, Tags extends AnyTaskTag, R, OEErr, OAErr>(
-  config: HandlerConfig<S, E, EErr, AErr, Tags, R, OEErr, OAErr>,
-): ResolvedHandlerConfig<S, E, EErr, AErr, Tags, OEErr, OAErr, R> {
+function toLayer<RP, RL>(provide: ProvideInput<RP, RL> | undefined): Layer.Layer<RP, never, RL> {
+  // Layer.empty requires and provides nothing, so widening its (never) params
+  // to (RP, RL) here is sound — it is only used when no services are attached.
+  return provide ?? (Layer.empty as unknown as Layer.Layer<RP, never, RL>)
+}
+
+// ---------------------------------------------------------------------------
+// Normalization — convert either form into the flat ResolvedHandlerConfig
+// (handlers + per-channel layers) that buildRegisteredTask expects.
+// ---------------------------------------------------------------------------
+
+function normalizeConfig<
+  S, E, EErr, AErr, Tags extends AnyTaskTag,
+  RHe, RHa, OEErr, OAErr, RPe, RPa, RLe, RLa,
+>(
+  config: HandlerConfig<S, E, EErr, AErr, Tags, RHe, RHa, OEErr, OAErr, RPe, RPa, RLe, RLa>,
+): ResolvedHandlerConfig<S, E, EErr, AErr, Tags, OEErr, OAErr, RHe, RHa, RPe, RPa, RLe, RLa> {
   const eventDef = config.onEvent
   const alarmDef = config.onAlarm
 
   const onEvent = isHandlerObject(eventDef) ? eventDef.handler : eventDef
   const onEventError = isHandlerObject(eventDef) ? eventDef.onError : undefined
+  const onEventLayer = toLayer<RPe, RLe>(isHandlerObject(eventDef) ? eventDef.provide : undefined)
+
   const onAlarm = isHandlerObject(alarmDef) ? alarmDef.handler : alarmDef
   const onAlarmError = isHandlerObject(alarmDef) ? alarmDef.onError : undefined
+  const onAlarmLayer = toLayer<RPa, RLa>(isHandlerObject(alarmDef) ? alarmDef.provide : undefined)
 
-  return { onEvent, onAlarm, onEventError, onAlarmError }
+  return { onEvent, onAlarm, onEventError, onAlarmError, onEventLayer, onAlarmLayer }
 }
 
 // ---------------------------------------------------------------------------
-// withServices — wraps handler functions with Effect.provide to eliminate R.
-// Handles both plain function and object forms.
+// wrapEventDef / wrapAlarmDef — attach a service Layer to a hook's `provide`.
+// Building/memoization happens in the runtime (per instance), so these are
+// pure data transforms. Public for adapters and advanced per-hook wiring.
 // ---------------------------------------------------------------------------
 
-export function wrapEventDef<S, E, EErr, Tags extends AnyTaskTag, R, RIn, OEErr>(
-  def: EventDef<S, E, EErr, Tags, R, OEErr>,
-  layer: Layer.Layer<R, never, RIn>,
-): EventDef<S, E, EErr, Tags, RIn, OEErr> {
+export function wrapEventDef<S, E, EErr, Tags extends AnyTaskTag, RH, OEErr, RP, RL>(
+  def: EventDef<S, E, EErr, Tags, RH, OEErr>,
+  layer: Layer.Layer<RP, never, RL>,
+): EventHandlerObject<S, E, EErr, Tags, RH, OEErr, RP, RL> {
   if (isHandlerObject(def)) {
-    return {
-      handler: (ctx, event) => Effect.provide(def.handler(ctx, event), layer),
-      onError: (ctx, error) => Effect.provide(def.onError(ctx, error), layer),
-    }
+    return { handler: def.handler, onError: def.onError, provide: layer }
   }
-  return (ctx, event) => Effect.provide(def(ctx, event), layer)
+  return { handler: def, provide: layer }
 }
 
-export function wrapAlarmDef<S, AErr, Tags extends AnyTaskTag, R, RIn, OAErr>(
-  def: AlarmDef<S, AErr, Tags, R, OAErr>,
-  layer: Layer.Layer<R, never, RIn>,
-): AlarmDef<S, AErr, Tags, RIn, OAErr> {
+export function wrapAlarmDef<S, AErr, Tags extends AnyTaskTag, RH, OAErr, RP, RL>(
+  def: AlarmDef<S, AErr, Tags, RH, OAErr>,
+  layer: Layer.Layer<RP, never, RL>,
+): AlarmHandlerObject<S, AErr, Tags, RH, OAErr, RP, RL> {
   if (isHandlerObject(def)) {
-    return {
-      handler: (ctx) => Effect.provide(def.handler(ctx), layer),
-      onError: (ctx, error) => Effect.provide(def.onError(ctx, error), layer),
-    }
+    return { handler: def.handler, onError: def.onError, provide: layer }
   }
-  return (ctx) => Effect.provide(def(ctx), layer)
+  return { handler: def, provide: layer }
 }
 
-export function withServices<S, E, EErr, AErr, Tags extends AnyTaskTag, R, OEErr, OAErr>(
-  config: HandlerConfig<S, E, EErr, AErr, Tags, R, OEErr, OAErr>,
-  layer: Layer.Layer<R>,
-): HandlerConfig<S, E, EErr, AErr, Tags, never, OEErr, OAErr> {
+// ---------------------------------------------------------------------------
+// withServices — attach one Layer to BOTH channels. Convenience for the
+// "wrap the whole task" case; the layer is built once per instance (memoized)
+// just like per-hook `provide`. For different services per channel, use the
+// per-hook `provide` field instead.
+// ---------------------------------------------------------------------------
+
+export function withServices<S, E, EErr, AErr, Tags extends AnyTaskTag, RHe, RHa, OEErr, OAErr>(
+  config: HandlerConfig<S, E, EErr, AErr, Tags, RHe, RHa, OEErr, OAErr>,
+  layer: Layer.Layer<RHe | RHa>,
+): HandlerConfig<S, E, EErr, AErr, Tags, RHe, RHa, OEErr, OAErr, RHe | RHa, RHe | RHa, never, never> {
   return {
     onEvent: wrapEventDef(config.onEvent, layer),
     onAlarm: wrapAlarmDef(config.onAlarm, layer),
@@ -180,10 +222,15 @@ export interface TaskRegistry<Tags extends AnyTaskTag> {
    */
   for<K extends Tags["name"]>(name: K): TaskHelpers<StateFor<Tags, K>, EventFor<Tags, K>, Tags>
 
-  handler<K extends Tags["name"], EErr, AErr, R = never, OEErr = never, OAErr = never>(
+  handler<
+    K extends Tags["name"], EErr, AErr,
+    RHe = never, RHa = never,
+    OEErr = never, OAErr = never,
+    RPe = never, RPa = never, RLe = never, RLa = never,
+  >(
     name: K,
-    config: HandlerConfig<StateFor<Tags, K>, EventFor<Tags, K>, EErr, AErr, Tags, R, OEErr, OAErr>,
-  ): TaskHandler<K, R>
+    config: HandlerConfig<StateFor<Tags, K>, EventFor<Tags, K>, EErr, AErr, Tags, RHe, RHa, OEErr, OAErr, RPe, RPa, RLe, RLa>,
+  ): TaskHandler<K, ResidualEnv<RHe, RHa, RPe, RPa, RLe, RLa>>
 
   build<R = never>(
     handlers: { readonly [K in Tags["name"]]: TaskHandler<K, R> },
@@ -211,10 +258,15 @@ export const TaskRegistry = {
         }
       },
 
-      handler<K extends Tags["name"], EErr, AErr, R = never, OEErr = never, OAErr = never>(
+      handler<
+        K extends Tags["name"], EErr, AErr,
+        RHe = never, RHa = never,
+        OEErr = never, OAErr = never,
+        RPe = never, RPa = never, RLe = never, RLa = never,
+      >(
         name: K,
-        config: HandlerConfig<StateFor<Tags, K>, EventFor<Tags, K>, EErr, AErr, Tags, R, OEErr, OAErr>,
-      ): TaskHandler<K, R> {
+        config: HandlerConfig<StateFor<Tags, K>, EventFor<Tags, K>, EErr, AErr, Tags, RHe, RHa, OEErr, OAErr, RPe, RPa, RLe, RLa>,
+      ): TaskHandler<K, ResidualEnv<RHe, RHa, RPe, RPa, RLe, RLa>> {
         const tag = tagMap.get(name)
         if (!tag) throw new Error(`Task "${name}" not found in registry`)
         const resolved = normalizeConfig(config)

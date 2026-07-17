@@ -41,7 +41,6 @@ const config = registry.build({ job: jobHandler })
 describe("Alarms", () => {
   it("schedules an alarm that fires on tick", async () => {
     const runtime = makeInMemoryRuntime(config)
-    const futureTime = Date.now() + 5000
 
     await Effect.runPromise(runtime.task("job").send("j1", { _tag: "Start", delayMs: 5000 }))
 
@@ -57,8 +56,9 @@ describe("Alarms", () => {
       attempts: 0,
     })
 
-    // Tick past the alarm time — alarm fires
-    await Effect.runPromise(runtime.tick(futureTime + 1))
+    // Tick past the ACTUAL scheduled time (relative to send-time now, not a
+    // pre-captured estimate) — alarm fires. Deterministic, no timing race.
+    await Effect.runPromise(runtime.tick(alarms[0].timestamp + 1))
 
     expect(await Effect.runPromise(runtime.task("job").getState("j1"))).toEqual({
       status: "completed",

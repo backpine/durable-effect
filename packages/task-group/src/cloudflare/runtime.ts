@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Context, Scope } from "effect"
 import type { BuiltRegistry, TaskRegistryConfig } from "../TaskRegistry.js"
 import type { DispatchFn, HandlerContext } from "../RegisteredTask.js"
 import type { AnyTaskTag, StateFor, EventFor } from "../TaskTag.js"
@@ -44,13 +44,24 @@ interface TaskGroupDO<Tags extends AnyTaskTag> {
   readonly client: (namespace: DurableObjectNamespaceLike) => TypedTaskRuntime<Tags>
 }
 
-// Overloads: R = never (all services pre-resolved) or R = CloudflareEnv (deferred)
+// Overloads:
+//   • R = never              — no services required
+//   • R = CloudflareEnv      — legacy deferred services (cloudflareServices)
+//   • R = EnvId (+ opts.env) — new typed env: the DO provides your env service
 export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags, never>): TaskGroupDO<Tags>
 export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags, CloudflareEnv>): TaskGroupDO<Tags>
-// Implementation: R is concretely CloudflareEnv (never is a subtype, so both overloads are covered)
-export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags, CloudflareEnv>): TaskGroupDO<Tags> {
+export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId, EnvShape>(
+  built: BuiltRegistry<Tags, CloudflareEnv | EnvId>,
+  opts: { readonly env: Context.Key<EnvId, EnvShape> },
+): TaskGroupDO<Tags>
+// Implementation
+export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId = never, EnvShape = unknown>(
+  built: BuiltRegistry<Tags, CloudflareEnv | EnvId>,
+  opts?: { readonly env?: Context.Key<EnvId, EnvShape> },
+): TaskGroupDO<Tags> {
   const registryConfig = built.registryConfig
   const tagMap = built.tags
+  const envKey = opts?.env
   let sharedNamespace: DurableObjectNamespaceLike | null = null
 
   // ── Dispatch function builder ──────────────────────────
@@ -91,18 +102,35 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Ta
     private dispatchFn: DispatchFn
     private currentSystemFailure: SystemFailure | null = null
 
-    // Layer that provides CloudflareEnv from the DO's env parameter.
-    // Effect.provide(effect, envLayer) uses Exclude<R, CloudflareEnvId> to
-    // naturally eliminate R when R = CloudflareEnvId, and is a no-op when
-    // R = never. No type assertions needed.
-    private envLayer: Layer.Layer<CloudflareEnv>
+    // Per-DO-instance build cache + long-lived scope. Both created
+    // synchronously here — no async I/O, timers, or RNG — so this is safe in
+    // the Cloudflare DO constructor. Hook service layers build through this
+    // MemoMap once and are reused across every event and alarm on this instance.
+    private memoMap: Layer.MemoMap
+    private scope: Scope.Closeable
+
+    // Context that provides the residual env: always CloudflareEnv (legacy,
+    // untyped) and, when `opts.env` is given, the user's typed env service.
+    // Providing this context eliminates the handler's residual R with no
+    // per-call rebuild (it is a plain value, not a rebuilt layer).
+    private envContext: Context.Context<CloudflareEnv | EnvId>
 
     constructor(ctx: DurableObjectStateLike, env: unknown) {
       super(ctx, env)
       this.doStorage = ctx.storage
       this.storageService = makeCloudflareStorage(this.doStorage)
       this.alarmService = makeCloudflareAlarm(this.doStorage)
-      this.envLayer = Layer.succeed(CloudflareEnv)(env)
+      this.memoMap = Layer.makeMemoMapUnsafe()
+      this.scope = Scope.makeUnsafe()
+
+      const base = Context.make(CloudflareEnv, env)
+      // The single unavoidable coercion: Cloudflare hands `env` untyped, and
+      // the user declared its shape via `opts.env`. Localized to the adapter.
+      // The `: base` branch is reached only when no `opts.env` was given, i.e.
+      // EnvId = never, so `base` (Context<CloudflareEnv>) is the full context.
+      this.envContext = envKey
+        ? Context.add(base, envKey, env as EnvShape)
+        : (base as Context.Context<CloudflareEnv | EnvId>)
 
       if (sharedNamespace) {
         this.dispatchFn = makeDispatchForNamespace(sharedNamespace)
@@ -126,6 +154,8 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Ta
         id,
         name,
         systemFailure: this.currentSystemFailure,
+        memoMap: this.memoMap,
+        scope: this.scope,
       }
     }
 
@@ -138,7 +168,7 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Ta
 
       const hctx = this.makeHandlerContext(name, id)
       await Effect.runPromise(
-        Effect.provide(task.handleEvent(hctx, event), this.envLayer),
+        Effect.provide(task.handleEvent(hctx, event), this.envContext),
       )
 
       this.currentSystemFailure = null
@@ -150,7 +180,7 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Ta
 
       const hctx = this.makeHandlerContext(name, id)
       await Effect.runPromise(
-        Effect.provide(task.handleAlarm(hctx), this.envLayer),
+        Effect.provide(task.handleAlarm(hctx), this.envContext),
       )
 
       this.currentSystemFailure = null
@@ -162,7 +192,7 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Ta
 
       const hctx = this.makeHandlerContext(name, id)
       return await Effect.runPromise(
-        Effect.provide(task.handleGetState(hctx), this.envLayer),
+        Effect.provide(task.handleGetState(hctx), this.envContext),
       )
     }
 
