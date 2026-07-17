@@ -208,13 +208,15 @@ registry.handler("order", {
 
 ## External Services
 
-If a handler needs external services (database, API client, etc.), use `withServices`:
+If a handler needs external services (database, API client, etc.), attach the
+service `Layer` **per hook** with `provide`. `onEvent` and `onAlarm` can require
+different services — each hook builds only what it uses, once per instance.
 
 ```typescript
-import { Effect, Layer, ServiceMap } from "effect"
-import { withServices } from "@durable-effect/task"
+import { Effect, Layer, Context } from "effect"
+import { registry } from "../registry"
 
-class PaymentService extends ServiceMap.Service<PaymentService, {
+class PaymentService extends Context.Service<PaymentService, {
   readonly charge: (userId: string, amount: number) => Effect.Effect<void>
 }>()("PaymentService") {}
 
@@ -222,20 +224,70 @@ const PaymentServiceLive = Layer.succeed(PaymentService, {
   charge: (userId, amount) => Effect.log(`Charged ${userId} $${amount}`),
 })
 
-const orderHandler = registry.handler("order",
-  withServices({
-    onEvent: (ctx, event) =>
+const orderHandler = registry.handler("order", {
+  onEvent: {
+    handler: (ctx, event) =>
       Effect.gen(function* () {
         const payment = yield* PaymentService
         yield* payment.charge(event.userId, event.total)
         yield* ctx.save({ ... })
       }),
-    onAlarm: (ctx) => ...,
-  }, PaymentServiceLive),
+    provide: PaymentServiceLive, // built once per instance, only for events
+  },
+  onAlarm: (ctx) => ..., // needs no services → never builds PaymentService
+})
+```
+
+- To provide several services to a hook, merge them:
+  `provide: Layer.mergeAll(DbLive, ApiLive)`.
+- `provide` composes with the object form's `onError`:
+  `{ handler, onError, provide }`.
+- If a handler uses a service its `provide` doesn't cover, it's a compile error.
+
+**Whole-task convenience.** When *both* channels need the same layer, `withServices`
+attaches it to both:
+
+```typescript
+import { withServices } from "@durable-effect/task"
+
+const orderHandler = registry.handler("order",
+  withServices(
+    { onEvent: (ctx, e) => ..., onAlarm: (ctx) => ... },
+    PaymentServiceLive,
+  ),
 )
 ```
 
-If you forget to provide the layer, TypeScript errors at compile time.
+### Env-dependent services (databases, API clients)
+
+When a service needs values only available at runtime (a DB URL, an API key), it
+should depend on a **typed platform-env service** rather than being constructed at
+module scope. Declare the env once, then have layers read it:
+
+```typescript
+// env.ts — declared once per project (Env is your wrangler-generated type)
+import { Context } from "effect"
+export class AppEnv extends Context.Service<AppEnv, Env>()("@app/Env") {}
+
+// services.ts — platform-agnostic; reads the TYPED env, no cast
+export const DbLive = Layer.effect(Database, Effect.gen(function* () {
+  const env = yield* AppEnv
+  return makePool(env.HYPERDRIVE.connectionString)
+}))
+```
+
+```typescript
+// handler.ts — provide it per hook, exactly like any other layer
+registry.handler("report", {
+  onEvent: { handler: (ctx, e) => ..., provide: DbLive },
+  onAlarm: (ctx) => ...,
+})
+```
+
+The registry's residual requirement becomes `AppEnv`; the runtime provides it
+(see below). This replaces the older `cloudflareServices` helper — see
+[docs/service-injection.md](./docs/service-injection.md) for the old vs. new model
+and how to migrate.
 
 ---
 
@@ -267,77 +319,72 @@ export const OrdersDO = taskGroup.DO
 export const tasks = taskGroup.client(env.ORDERS_DO)
 ```
 
-### Deferred Services (cloudflareServices)
+### Env-dependent services on Cloudflare
 
-Cloudflare Workers ban async I/O in global scope. If your service layers do I/O during construction (database connections, API client setup), use `cloudflareServices` to defer layer construction to the DO constructor where `env` is available.
+Cloudflare Workers ban async I/O in global scope, so service layers that open
+connections or read secrets must be built where `env` is available — not at module
+scope. The library handles this: env-dependent layers read a **typed env service**
+(`AppEnv`), and the runtime provides it from the DO's `env` and builds each hook's
+layer once per DO instance (through a shared `MemoMap`).
 
-**1. Create the helper once per project:**
+**1. Declare the typed env once, and write env-dependent layers:**
 
 ```typescript
-// services/cloudflare.ts
-import { cloudflareServices } from "@durable-effect/task/cloudflare"
-import type { Env } from "../env" // wrangler-generated
+// env.ts
+import { Context } from "effect"
+export class AppEnv extends Context.Service<AppEnv, Env>()("@app/Env") {}
 
-export const withCloudflareServices = cloudflareServices<Env>()
+// services.ts — platform-agnostic; reads TYPED env, no cast
+export const DbLive = Layer.effect(Database, Effect.gen(function* () {
+  const env = yield* AppEnv
+  return makePool(env.HYPERDRIVE.connectionString)
+}))
 ```
 
-**2. Use in handlers — env is fully typed:**
+**2. Provide services per hook (same as any other layer):**
 
 ```typescript
-// tasks/handlers/order.ts
-import { withCloudflareServices } from "../../services/cloudflare"
-
-export const orderHandler = registry.handler("order",
-  withCloudflareServices(
-    {
-      onEvent: (ctx, event) =>
-        Effect.gen(function* () {
-          const db = yield* DbClient
-          const payment = yield* PaymentService
-          // ... handler code uses services normally
-        }),
-      onAlarm: (ctx) => Effect.void,
-    },
-    // Factory is stored, NOT called at module scope.
-    // Runs in the DO constructor where env is available.
-    (env) =>
-      Layer.mergeAll(
-        makeDbLayer(env.HYPERDRIVE.connectionString),
-        makePaymentLayer(env.PAYMENT_API_KEY),
-      ),
-  ),
-)
-```
-
-**3. Testing — provide a mock env:**
-
-```typescript
-import { CloudflareEnv } from "@durable-effect/task/cloudflare"
-
-const runtime = makeInMemoryRuntime(built, {
-  services: Layer.succeed(CloudflareEnv)({
-    HYPERDRIVE: { connectionString: "postgres://test" },
-    PAYMENT_API_KEY: "test-key",
-  }),
+export const orderHandler = registry.handler("order", {
+  onEvent: {
+    handler: (ctx, event) =>
+      Effect.gen(function* () {
+        const db = yield* Database
+        // ...
+      }),
+    provide: DbLive, // built once per DO instance, only when an event runs
+  },
+  onAlarm: (ctx) => Effect.void, // needs no services → never builds the pool
 })
 ```
 
-**Composing pure + env-dependent services:**
-
-Include all services in the deferred factory. Pure layers don't need `env` but can live alongside those that do:
+**3. Wire the env when creating the group — the ONE place `env` is bridged:**
 
 ```typescript
-const handler = registry.handler("order",
-  withCloudflareServices(
-    handlerConfig,
-    (env) => Layer.mergeAll(
-      LoggingLive,                              // pure — doesn't need env
-      makeDbLayer(env.HYPERDRIVE.connectionString), // env-dependent
-      makePaymentLayer(env.PAYMENT_API_KEY),        // env-dependent
-    ),
-  ),
-)
+const config = registry.build({ order: orderHandler, /* ... */ })
+
+// `{ env: AppEnv }` tells the DO to populate AppEnv from its `env` parameter.
+const taskGroup = makeTaskGroupDO(config, { env: AppEnv })
+export const OrdersDO = taskGroup.DO
+export const tasks = taskGroup.client(env.ORDERS_DO)
 ```
+
+**4. Testing / local dev — provide a mock env:**
+
+```typescript
+const runtime = makeInMemoryRuntime(config, {
+  services: Layer.succeed(AppEnv, {
+    HYPERDRIVE: { connectionString: "postgres://test" },
+    // ...other Env fields your layers read
+  } as Env),
+})
+```
+
+The same handler code runs in both — only *who provides `AppEnv`* differs.
+
+> **Migrating from `cloudflareServices` / `withCloudflareServices`?** That helper
+> (and `CloudflareEnv`) still works unchanged, but the per-hook + typed-env model
+> above is preferred. See [docs/service-injection.md](./docs/service-injection.md)
+> for a side-by-side of the old and new models and a step-by-step migration.
 
 ### Wire into wrangler
 

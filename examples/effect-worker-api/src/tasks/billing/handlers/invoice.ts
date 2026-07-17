@@ -1,17 +1,22 @@
 import { Effect, Layer, Context } from "effect";
 import { registry } from "../registry.js";
-import { withCloudflareServices } from "../../../services/task-services.js";
+import { AppEnv } from "../../../services/task-services.js";
 
-// ── Service that reads from Cloudflare env ───────────────
+// ── Service that reads from the (typed) platform env ─────
+// Platform-agnostic: it reads AppEnv via the Effect context. No cast, and it
+// builds only when the hook that needs it runs (onEvent), never for onAlarm.
 
 class BillingConfig extends Context.Service<BillingConfig, {
   readonly currency: string
 }>()("@app/BillingConfig") {}
 
-const makeBillingConfigLayer = (env: Env) =>
-  Layer.succeed(BillingConfig)({
-    currency: env.BILLING_CURRENCY ?? "USD",
-  });
+const BillingConfigLive = Layer.effect(
+  BillingConfig,
+  Effect.gen(function* () {
+    const env = yield* AppEnv; // typed as Env — no cast
+    return { currency: env.BILLING_CURRENCY ?? "USD" };
+  }),
+);
 
 // ── Handler ──────────────────────────────────────────────
 
@@ -62,12 +67,17 @@ const onAlarm = o.onAlarm((ctx) =>
   }),
 );
 
-export const invoiceHandler = registry.handler("invoice",
-  withCloudflareServices(
-    {
-      onEvent: { handler: onEvent, onError: (ctx, error) => Effect.log(`[invoice] Error: ${error}`) },
-      onAlarm: { handler: onAlarm, onError: (ctx, error) => Effect.log(`[invoice] Alarm error: ${error}`) },
-    },
-    (env) => makeBillingConfigLayer(env),
-  ),
-);
+// Per-hook service provision: onEvent needs BillingConfig (env-derived), so it
+// `provide`s the layer — built once per instance. onAlarm needs no services, so
+// it provides nothing and never builds the BillingConfig layer.
+export const invoiceHandler = registry.handler("invoice", {
+  onEvent: {
+    handler: onEvent,
+    onError: (ctx, error) => Effect.log(`[invoice] Error: ${error}`),
+    provide: BillingConfigLive,
+  },
+  onAlarm: {
+    handler: onAlarm,
+    onError: (ctx, error) => Effect.log(`[invoice] Alarm error: ${error}`),
+  },
+});

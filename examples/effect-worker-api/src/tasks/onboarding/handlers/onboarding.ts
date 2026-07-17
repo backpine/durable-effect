@@ -1,5 +1,4 @@
 import { Effect, Layer, Context } from "effect";
-import { withServices } from "@durable-effect/task";
 import { registry } from "../registry.js";
 
 // ── Service ──────────────────────────────────────────────
@@ -64,13 +63,9 @@ const onAlarm = o.onAlarm((ctx) =>
 
 // ── Register ─────────────────────────────────────────────
 
-export const onboardingHandler = registry.handler(
-  "onboarding",
-  withServices(
-    {
-      onEvent: { handler: onEvent, onError: (ctx, error) => Effect.void },
-      onAlarm: { handler: onAlarm, onError: (ctx, error) => Effect.void },
-    },
-    OnboardingAnalyticsLive,
-  ),
-);
+// Both channels use OnboardingAnalytics, so both `provide` it. The layer is
+// pure (no env) and builds once per instance.
+export const onboardingHandler = registry.handler("onboarding", {
+  onEvent: { handler: onEvent, onError: (ctx, error) => Effect.void, provide: OnboardingAnalyticsLive },
+  onAlarm: { handler: onAlarm, onError: (ctx, error) => Effect.void, provide: OnboardingAnalyticsLive },
+});

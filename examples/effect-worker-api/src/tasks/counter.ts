@@ -3,7 +3,6 @@ import {
   Task,
   TaskRegistry,
   makeInMemoryRuntime,
-  withServices,
 } from "@durable-effect/task";
 
 // ── Service ──────────────────────────────────────────────
@@ -68,16 +67,12 @@ const onAlarm = c.onAlarm((ctx) =>
   }),
 );
 
-const counterHandler = registry.handler(
-  "counter",
-  withServices(
-    {
-      onEvent: { handler: onEvent, onError: () => Effect.void },
-      onAlarm: { handler: onAlarm, onError: () => Effect.void },
-    },
-    AnalyticsLive,
-  ),
-);
+// onEvent tracks analytics; onAlarm doesn't touch it. Per-hook `provide` means
+// the Analytics layer is only ever built for events, never for alarms.
+const counterHandler = registry.handler("counter", {
+  onEvent: { handler: onEvent, onError: () => Effect.void, provide: AnalyticsLive },
+  onAlarm: { handler: onAlarm, onError: () => Effect.void },
+});
 
 // ── Runtime ──────────────────────────────────────────────
 
