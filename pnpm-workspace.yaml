@@ -2,6 +2,12 @@ packages:
   - packages/*
   - examples/*
 
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: true
+  sharp: true
+  workerd: true
+
 catalog:
   '@effect/platform': ^0.75.0
   '@effect/schema': ^0.75.0
