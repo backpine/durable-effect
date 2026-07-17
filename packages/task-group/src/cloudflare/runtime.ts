@@ -13,7 +13,6 @@ import {
 import type { TaskValidationError } from "../errors.js"
 import { makeCloudflareStorage } from "./storage.js"
 import { makeCloudflareAlarm } from "./alarm.js"
-import { CloudflareEnv } from "./CloudflareEnv.js"
 import type {
   DurableObjectStateLike,
   DurableObjectStorageLike,
@@ -46,17 +45,15 @@ interface TaskGroupDO<Tags extends AnyTaskTag> {
 
 // Overloads:
 //   • R = never              — no services required
-//   • R = CloudflareEnv      — legacy deferred services (cloudflareServices)
-//   • R = EnvId (+ opts.env) — new typed env: the DO provides your env service
+//   • R = EnvId (+ opts.env) — typed env: the DO provides your env service
 export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags, never>): TaskGroupDO<Tags>
-export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags, CloudflareEnv>): TaskGroupDO<Tags>
 export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId, EnvShape>(
-  built: BuiltRegistry<Tags, CloudflareEnv | EnvId>,
+  built: BuiltRegistry<Tags, EnvId>,
   opts: { readonly env: Context.Key<EnvId, EnvShape> },
 ): TaskGroupDO<Tags>
 // Implementation
 export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId = never, EnvShape = unknown>(
-  built: BuiltRegistry<Tags, CloudflareEnv | EnvId>,
+  built: BuiltRegistry<Tags, EnvId>,
   opts?: { readonly env?: Context.Key<EnvId, EnvShape> },
 ): TaskGroupDO<Tags> {
   const registryConfig = built.registryConfig
@@ -109,11 +106,10 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId = never, EnvShape
     private memoMap: Layer.MemoMap
     private scope: Scope.Closeable
 
-    // Context that provides the residual env: always CloudflareEnv (legacy,
-    // untyped) and, when `opts.env` is given, the user's typed env service.
-    // Providing this context eliminates the handler's residual R with no
-    // per-call rebuild (it is a plain value, not a rebuilt layer).
-    private envContext: Context.Context<CloudflareEnv | EnvId>
+    // Context that provides the residual env service (when `opts.env` is given),
+    // built once from the DO's `env`. Providing this context eliminates the
+    // handler's residual R with no per-call rebuild (it is a plain value).
+    private envContext: Context.Context<EnvId>
 
     constructor(ctx: DurableObjectStateLike, env: unknown) {
       super(ctx, env)
@@ -123,14 +119,12 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId = never, EnvShape
       this.memoMap = Layer.makeMemoMapUnsafe()
       this.scope = Scope.makeUnsafe()
 
-      const base = Context.make(CloudflareEnv, env)
       // The single unavoidable coercion: Cloudflare hands `env` untyped, and
       // the user declared its shape via `opts.env`. Localized to the adapter.
-      // The `: base` branch is reached only when no `opts.env` was given, i.e.
-      // EnvId = never, so `base` (Context<CloudflareEnv>) is the full context.
+      // No `opts.env` (EnvId = never) → an empty context (nothing to provide).
       this.envContext = envKey
-        ? Context.add(base, envKey, env as EnvShape)
-        : (base as Context.Context<CloudflareEnv | EnvId>)
+        ? Context.make(envKey, env as EnvShape)
+        : (Context.empty() as Context.Context<EnvId>)
 
       if (sharedNamespace) {
         this.dispatchFn = makeDispatchForNamespace(sharedNamespace)

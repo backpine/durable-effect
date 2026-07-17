@@ -47,7 +47,7 @@ export { InMemoryRuntime, makeInMemoryRuntime } from "./InMemoryRuntime.js"
 export type { ScheduledAlarm } from "./InMemoryRuntime.js"
 
 // Cloudflare adapter
-export { makeTaskGroupDO, CloudflareEnv, cloudflareServices } from "./cloudflare/index.js"
+export { makeTaskGroupDO } from "./cloudflare/index.js"
 export { makeCloudflareStorage } from "./cloudflare/storage.js"
 export { makeCloudflareAlarm } from "./cloudflare/alarm.js"
 export type {

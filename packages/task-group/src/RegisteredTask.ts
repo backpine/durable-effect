@@ -76,9 +76,8 @@ function provideHook<A, EE, RH, RP, RL>(
 
 // ---------------------------------------------------------------------------
 // RegisteredTask — pre-built handler closures with types captured.
-// R defaults to never (all services resolved). Platform adapters like
-// Cloudflare may set R to a platform context service (e.g. CloudflareEnv)
-// that the runtime provides automatically.
+// R defaults to never (all services resolved). Platform adapters may set R to
+// a typed platform-env service that the runtime provides automatically.
 // ---------------------------------------------------------------------------
 
 export interface RegisteredTask<R = never> {

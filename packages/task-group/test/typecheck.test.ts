@@ -64,10 +64,10 @@ registry.handler("foo", {
   onAlarm: (ctx) => Effect.void,
 })
 
-// ── 4. Handler that uses service WITHOUT withServices — now allowed ──
+// ── 4. Handler that uses a service WITHOUT provide — now allowed ──
 // R flows through the handler and must be resolved at the runtime level
-// (makeInMemoryRuntime or makeTaskGroupDO). This enables deferred services
-// via cloudflareServices<Env>().
+// (makeInMemoryRuntime's `services` or makeTaskGroupDO's `env`), or by
+// attaching a per-hook `provide` layer.
 
 registry.handler("foo", {
   onEvent: (ctx, event) =>

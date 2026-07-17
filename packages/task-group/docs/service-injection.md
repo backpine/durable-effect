@@ -3,15 +3,16 @@
 `@durable-effect/task` handlers are Effect programs, so they get their
 dependencies (databases, API clients, config) as Effect **services** provided by
 **layers**. This doc explains the original Cloudflare-specific injection helper,
-why it fell short, and the new model that replaces it.
+why it fell short, and the new model that replaced it.
 
-**Nothing below is breaking.** `cloudflareServices` / `withCloudflareServices` /
-`CloudflareEnv` and `withServices` all still work. The new model is preferred for
-new code and is a small, mechanical migration.
+> **Removed in 0.0.18.** `cloudflareServices` / `withCloudflareServices` and the
+> `CloudflareEnv` service no longer exist — use the new model below. `withServices`
+> (attach one layer to both channels) is **not** removed; it's still the concise
+> choice when both hooks need the same layer. The migration is small and mechanical.
 
 ---
 
-## The old model — `cloudflareServices` / `withCloudflareServices`
+## The old model — `cloudflareServices` / `withCloudflareServices` (removed)
 
 Cloudflare Workers forbid async I/O (`fetch`, `connect`), timers, and RNG in
 global (module) scope. A layer that opens a DB pool at module scope crashes the

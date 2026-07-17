@@ -232,9 +232,10 @@ function provideHook<A, E, RHook, RProvided, RLayerIn>(
   existing `build<R>({ [K]: TaskHandler<K, R> })` shape, so inference is unchanged.
 - `makeTaskGroupDO` / `makeInMemoryRuntime` gain `{ env }` and own the per-instance
   `memoMap` + `scope`.
-- **Backward compat:** every new type param defaults such that existing
-  `withServices` handlers resolve to `Renv = never` and compile untouched.
-  `cloudflareServices` / `CloudflareEnv` remain (deprecated) as thin shims.
+- **`withServices` is preserved:** every new type param defaults such that
+  existing `withServices` handlers resolve to `Renv = never` and compile untouched.
+  `cloudflareServices` / `CloudflareEnv` were **removed** in favor of per-hook
+  `provide` + a typed env service (see `docs/service-injection.md`).
 
 ### Sibling dispatch
 
@@ -278,8 +279,9 @@ in the core is Cloudflare-specific. Node / Lambda / Deno follow the same three s
    `memoMap` + `scope` and an `{ env }` option. Migrate the existing per-call
    `Effect.provide` path onto it (this alone fixes the no-memoization bug for
    `withServices` too).
-3. **Typed env.** Ship `AppEnv`/`defineEnv<Env>()`; deprecate the `unknown`-typed
-   `CloudflareEnv` + `cloudflareServices` (keep as shims for one release).
+3. **Typed env.** Users declare `class AppEnv extends Context.Service<AppEnv, Env>()(id)`;
+   `makeTaskGroupDO(config, { env: AppEnv })` provides it. The `unknown`-typed
+   `CloudflareEnv` + `cloudflareServices` were removed.
 4. **Docs + codemod note.** Update README; show the `withCloudflareServices(cfg, env=>layer)`
    → per-hook `provide` migration (the `googleReviewBatch`-style handler is the
    canonical example).

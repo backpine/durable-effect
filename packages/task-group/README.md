@@ -381,10 +381,10 @@ const runtime = makeInMemoryRuntime(config, {
 
 The same handler code runs in both — only *who provides `AppEnv`* differs.
 
-> **Migrating from `cloudflareServices` / `withCloudflareServices`?** That helper
-> (and `CloudflareEnv`) still works unchanged, but the per-hook + typed-env model
-> above is preferred. See [docs/service-injection.md](./docs/service-injection.md)
-> for a side-by-side of the old and new models and a step-by-step migration.
+> **Upgrading from `cloudflareServices` / `CloudflareEnv`?** Those were removed in
+> favor of the per-hook + typed-env model above. See
+> [docs/service-injection.md](./docs/service-injection.md) for a side-by-side of the
+> old and new models and a step-by-step migration.
 
 ### Wire into wrangler
 
