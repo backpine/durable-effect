@@ -1,7 +1,7 @@
 import { Duration, Effect, Schema, Layer } from "effect"
 import type { Scope } from "effect"
 import type { TaskCtx, SiblingHandle } from "./TaskCtx.js"
-import type { AnyTaskTag, EventOf, TaskTag } from "./TaskTag.js"
+import type { AnyTaskTag, EventOf, StateOf, EventFor, StateFor, TaskTag } from "./TaskTag.js"
 import {
   TaskError,
   PurgeSignal,
@@ -194,7 +194,9 @@ function buildTaskCtx<S, Tags extends AnyTaskTag>(
   const purge = (): Effect.Effect<never, PurgeSignal> =>
     Effect.fail(new PurgeSignal())
 
-  const task = (ref: AnyTaskTag | string): SiblingHandle<any, any> => {
+  function task<T extends Tags>(ref: T): SiblingHandle<StateOf<T>, EventOf<T>>
+  function task<K extends Tags["name"]>(ref: K): SiblingHandle<StateFor<Tags, K>, EventFor<Tags, K>>
+  function task(ref: AnyTaskTag | string): SiblingHandle<unknown, unknown> {
     const targetName = typeof ref === "string" ? ref : ref.name
     return {
       send: (targetId: string, event: unknown): Effect.Effect<void, TaskError> =>

@@ -1,6 +1,6 @@
 {
   "name": "@durable-effect/task",
-  "version": "0.0.18",
+  "version": "0.0.21",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,15 +23,16 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "peerDependencies": {
-    "effect": "^4.0.0-beta.98"
+    "effect": "^4.0.5"
   },
   "devDependencies": {
-    "effect": "4.0.0-beta.98",
-    "vitest": "^2.1.0"
+    "effect": "4.0.5",
+    "vitest": "^2.1.0",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,5 +1,8 @@
 import { Schema as S, Context } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware } from "effect/http-api"
+import { Counter } from "@/tasks/counter"
+import { Invoice, Receipt } from "@/tasks/billing/registry"
+import { Onboarding, WelcomeEmail } from "@/tasks/onboarding/registry"
 
 // ---------------------------------------------------------------------------
 // Services
@@ -12,14 +15,14 @@ export interface WorkerExecutionContext {
 
 export class CloudflareBindings extends Context.Service<
   CloudflareBindings,
-  { readonly env: unknown; readonly ctx: WorkerExecutionContext }
+  { readonly env: Env; readonly ctx: WorkerExecutionContext }
 >()("@app/CloudflareBindings") {}
 
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
 
-export class CloudflareBindingsError extends S.TaggedErrorClass<CloudflareBindingsError>()(
+export class CloudflareBindingsError extends S.TaggedError<CloudflareBindingsError>()(
   "CloudflareBindingsError",
   { message: S.String },
   { httpApiStatus: 500 }
@@ -63,6 +66,12 @@ export const CounterGroup = HttpApiGroup.make("counter")
       success: CounterResponseSchema,
     }),
   )
+  .add(
+    HttpApiEndpoint.get("status", "/status/:counterId", {
+      params: S.Struct({ counterId: S.String }),
+      success: S.Struct({ counter: S.NullOr(Counter.state) }),
+    }),
+  )
   .prefix("/counter")
 
 // Onboarding group — demonstrates task-group with sibling dispatch
@@ -73,8 +82,8 @@ export const OnboardingStartResponseSchema = S.Struct({
 })
 
 export const OnboardingStateResponseSchema = S.Struct({
-  onboarding: S.Unknown,
-  welcomeEmail: S.Unknown,
+  onboarding: S.NullOr(Onboarding.state),
+  welcomeEmail: S.NullOr(WelcomeEmail.state),
 })
 
 export const OnboardingGroup = HttpApiGroup.make("onboarding")
@@ -106,8 +115,8 @@ export const BillingCreateResponseSchema = S.Struct({
 })
 
 export const BillingStateResponseSchema = S.Struct({
-  invoice: S.Unknown,
-  receipt: S.Unknown,
+  invoice: S.NullOr(Invoice.state),
+  receipt: S.NullOr(Receipt.state),
 })
 
 export const BillingGroup = HttpApiGroup.make("billing")

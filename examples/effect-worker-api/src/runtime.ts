@@ -1,6 +1,6 @@
 import { Layer } from "effect"
-import { HttpRouter, HttpServer } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpRouter, HttpServer } from "effect/http"
+import { HttpApiBuilder } from "effect/http-api"
 import { WorkerApi } from "@/api"
 import { HttpGroupsLive } from "@/handlers"
 import { MiddlewareLive } from "@/services"

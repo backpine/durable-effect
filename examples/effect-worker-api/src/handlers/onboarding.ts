@@ -1,7 +1,7 @@
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { Effect } from "effect"
-import { WorkerApi } from "@/api"
-import { onboardingRuntime } from "@/tasks/onboarding/index"
+import { WorkerApi, CloudflareBindings, OnboardingStartResponseSchema } from "@/api"
+import { onboardingClient } from "@/tasks/onboarding/index"
 
 export const OnboardingGroupLive = HttpApiBuilder.group(
   WorkerApi,
@@ -10,6 +10,8 @@ export const OnboardingGroupLive = HttpApiBuilder.group(
     handlers
       .handle("start", ({ payload }) =>
         Effect.gen(function* () {
+          const { env } = yield* CloudflareBindings
+          const onboardingRuntime = onboardingClient(env.ONBOARDING_DO)
           yield* onboardingRuntime
             .task("onboarding")
             .send(payload.userId, {
@@ -19,11 +21,13 @@ export const OnboardingGroupLive = HttpApiBuilder.group(
             })
             .pipe(Effect.orDie)
 
-          return { status: "ok" as const, userId: payload.userId }
+          return { status: "ok", userId: payload.userId } satisfies typeof OnboardingStartResponseSchema.Type
         }),
       )
       .handle("status", ({ params }) =>
         Effect.gen(function* () {
+          const { env } = yield* CloudflareBindings
+          const onboardingRuntime = onboardingClient(env.ONBOARDING_DO)
           const onboarding = yield* onboardingRuntime
             .task("onboarding")
             .getState(params.userId)
@@ -38,6 +42,8 @@ export const OnboardingGroupLive = HttpApiBuilder.group(
       )
       .handle("complete", ({ params }) =>
         Effect.gen(function* () {
+          const { env } = yield* CloudflareBindings
+          const onboardingRuntime = onboardingClient(env.ONBOARDING_DO)
           yield* onboardingRuntime
             .task("onboarding")
             .fireAlarm(params.userId)

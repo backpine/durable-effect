@@ -13,7 +13,7 @@ class BillingConfig extends Context.Service<BillingConfig, {
 const BillingConfigLive = Layer.effect(
   BillingConfig,
   Effect.gen(function* () {
-    const env = yield* AppEnv; // typed as Env — no cast
+    const env = yield* AppEnv;
     return { currency: env.BILLING_CURRENCY ?? "USD" };
   }),
 );

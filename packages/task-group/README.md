@@ -7,7 +7,7 @@ Define tasks as schemas. Group them in a registry. Each task can invoke any sibl
 ## Install
 
 ```bash
-pnpm add @durable-effect/task effect
+pnpm add @durable-effect/task effect@^4.0.5
 ```
 
 ## Quick Start
@@ -267,7 +267,10 @@ module scope. Declare the env once, then have layers read it:
 ```typescript
 // env.ts — declared once per project (Env is your wrangler-generated type)
 import { Context } from "effect"
-export class AppEnv extends Context.Service<AppEnv, Env>()("@app/Env") {}
+interface TaskEnv {
+  readonly HYPERDRIVE: { readonly connectionString: string }
+}
+export class AppEnv extends Context.Service<AppEnv, TaskEnv>()("@app/Env") {}
 
 // services.ts — platform-agnostic; reads the TYPED env, no cast
 export const DbLive = Layer.effect(Database, Effect.gen(function* () {
@@ -332,7 +335,10 @@ layer once per DO instance (through a shared `MemoMap`).
 ```typescript
 // env.ts
 import { Context } from "effect"
-export class AppEnv extends Context.Service<AppEnv, Env>()("@app/Env") {}
+interface TaskEnv {
+  readonly HYPERDRIVE: { readonly connectionString: string }
+}
+export class AppEnv extends Context.Service<AppEnv, TaskEnv>()("@app/Env") {}
 
 // services.ts — platform-agnostic; reads TYPED env, no cast
 export const DbLive = Layer.effect(Database, Effect.gen(function* () {
@@ -363,10 +369,17 @@ export const orderHandler = registry.handler("order", {
 const config = registry.build({ order: orderHandler, /* ... */ })
 
 // `{ env: AppEnv }` tells the DO to populate AppEnv from its `env` parameter.
-const taskGroup = makeTaskGroupDO(config, { env: AppEnv })
+const taskGroup = makeTaskGroupDO(config, {
+  env: AppEnv,
+  namespace: (env: Env) => env.ORDERS_DO,
+})
 export const OrdersDO = taskGroup.DO
 export const tasks = taskGroup.client(env.ORDERS_DO)
 ```
+
+The namespace selector resolves sibling RPC directly from the Durable Object's
+environment, including when a persisted alarm wakes an object before any client
+request. The returned DO constructor keeps the environment type.
 
 **4. Testing / local dev — provide a mock env:**
 
@@ -374,8 +387,7 @@ export const tasks = taskGroup.client(env.ORDERS_DO)
 const runtime = makeInMemoryRuntime(config, {
   services: Layer.succeed(AppEnv, {
     HYPERDRIVE: { connectionString: "postgres://test" },
-    // ...other Env fields your layers read
-  } as Env),
+  }),
 })
 ```
 

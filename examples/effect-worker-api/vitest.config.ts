@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 export default defineConfig({
   test: {
     globals: true,
+    server: { deps: { inline: ["@durable-effect/task"] } },
     environment: "node",
     include: ["test/**/*.test.ts"],
   },

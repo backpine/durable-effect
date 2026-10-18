@@ -17,7 +17,7 @@ export const CloudflareBindingsMiddlewareLive = Layer.succeed(
         return yield* Effect.fail(
           new CloudflareBindingsError({
             message:
-              "Cloudflare bindings not available. Ensure the worker entry point passes env/ctx via ServiceMap.",
+              "Cloudflare bindings not available. Ensure the worker entry point passes env/ctx via Context.",
           }),
         )
       }

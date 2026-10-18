@@ -1,6 +1,7 @@
 import { Effect, Layer } from "effect"
 import type { TaskCtx } from "./TaskCtx.js"
 import type { AnyTaskTag, StateFor, EventFor } from "./TaskTag.js"
+import { findTaskTag } from "./TaskTag.js"
 import type { RegisteredTask, ResolvedHandlerConfig, ResidualEnv } from "./RegisteredTask.js"
 import { buildRegisteredTask } from "./RegisteredTask.js"
 
@@ -39,7 +40,7 @@ export interface BuiltRegistry<Tags extends AnyTaskTag, R = never> {
 // no services) or an object form { handler, onError?, provide? }. The `provide`
 // field attaches the service Layer(s) for THAT channel — the core feature that
 // lets onEvent and onAlarm require different services. `provide` accepts a
-// single Layer or an array (auto-merged).
+// single Layer; combine services with Layer.mergeAll.
 //
 // Type params per channel:
 //   RH — the handler's own requirements
@@ -112,14 +113,12 @@ function isHandlerObject<T>(def: T | { handler: T }): def is { handler: T; onErr
 }
 
 // ---------------------------------------------------------------------------
-// toLayer — normalize a `provide` input (Layer | Layer[] | undefined) into a
+// toLayer — normalize an optional `provide` layer into a
 // single Layer. Missing provide → the empty layer (requires/provides nothing).
 // ---------------------------------------------------------------------------
 
 function toLayer<RP, RL>(provide: ProvideInput<RP, RL> | undefined): Layer.Layer<RP, never, RL> {
-  // Layer.empty requires and provides nothing, so widening its (never) params
-  // to (RP, RL) here is sound — it is only used when no services are attached.
-  return provide ?? (Layer.empty as unknown as Layer.Layer<RP, never, RL>)
+  return Layer.mergeAll(provide ?? Layer.empty)
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +266,7 @@ export const TaskRegistry = {
         name: K,
         config: HandlerConfig<StateFor<Tags, K>, EventFor<Tags, K>, EErr, AErr, Tags, RHe, RHa, OEErr, OAErr, RPe, RPa, RLe, RLa>,
       ): TaskHandler<K, ResidualEnv<RHe, RHa, RPe, RPa, RLe, RLa>> {
-        const tag = tagMap.get(name)
+        const tag = findTaskTag(tagMap, name)
         if (!tag) throw new Error(`Task "${name}" not found in registry`)
         const resolved = normalizeConfig(config)
         const registered = buildRegisteredTask(tag, resolved, tagMap)
@@ -278,9 +277,9 @@ export const TaskRegistry = {
         handlers: { readonly [K in Tags["name"]]: TaskHandler<K, R> },
       ): BuiltRegistry<Tags, R> {
         const config: TaskRegistryConfig<R> = {}
-        for (const name of tagMap.keys()) {
-          const handler: TaskHandler<string, R> = handlers[name as Tags["name"]]
-          config[name] = handler.registered
+        for (const tag of tagMap.values()) {
+          const name: Tags["name"] = tag.name
+          config[name] = handlers[name].registered
         }
         return { registryConfig: config, tags: tagMap }
       },

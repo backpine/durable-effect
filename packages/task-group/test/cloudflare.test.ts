@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest"
-import { Effect, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import {
   Task,
   TaskRegistry,
 } from "../src/index.js"
 import { makeTaskGroupDO } from "../src/cloudflare/index.js"
-import type { DurableObjectNamespaceLike, DurableObjectStateLike } from "../src/cloudflare/types.js"
+import type { DurableObjectNamespaceLike, DurableObjectStateLike, TaskGroupStubLike } from "../src/cloudflare/types.js"
 
 // ============================================================================
 // Task declarations
@@ -68,30 +68,25 @@ const registryConfig = registry.build({
 function mockDOState(): DurableObjectStateLike {
   const data = new Map<string, unknown>()
   let alarm: number | null = null
+  function get(key: string): Promise<unknown>
+  function get(keys: string[]): Promise<Map<string, unknown>>
+  function get(keyOrKeys: string | string[]): Promise<unknown> {
+    if (typeof keyOrKeys === "string") return Promise.resolve(data.get(keyOrKeys))
+    const entries = new Map<string, unknown>()
+    for (const key of keyOrKeys) {
+      if (data.has(key)) entries.set(key, data.get(key))
+    }
+    return Promise.resolve(entries)
+  }
   return {
     id: { toString: () => "mock-do-id" },
     storage: {
-      get: ((keyOrKeys: string | string[]) => {
-        if (Array.isArray(keyOrKeys)) {
-          const map = new Map<string, unknown>()
-          for (const k of keyOrKeys) {
-            const v = data.get(k)
-            if (v !== undefined) map.set(k, v)
-          }
-          return Promise.resolve(map)
-        }
-        return Promise.resolve(data.get(keyOrKeys))
-      }) as DurableObjectStateLike["storage"]["get"],
-      put: ((keyOrEntries: string | Record<string, unknown>, value?: unknown) => {
-        if (typeof keyOrEntries === "string") {
-          data.set(keyOrEntries, value)
-        } else {
-          for (const [k, v] of Object.entries(keyOrEntries)) {
-            data.set(k, v)
-          }
-        }
+      get,
+      put: (keyOrEntries: string | Record<string, unknown>, value?: unknown) => {
+        if (typeof keyOrEntries === "string") data.set(keyOrEntries, value)
+        else for (const [key, entry] of Object.entries(keyOrEntries)) data.set(key, entry)
         return Promise.resolve()
-      }) as DurableObjectStateLike["storage"]["put"],
+      },
       delete: (key: string) => {
         const existed = data.has(key)
         data.delete(key)
@@ -120,7 +115,7 @@ function mockDOState(): DurableObjectStateLike {
  * isolation at the test level.
  */
 function mockNamespace(
-  DOClass: { new (ctx: DurableObjectStateLike, env: unknown): any },
+  DOClass: { new (ctx: DurableObjectStateLike, env: unknown): TaskGroupStubLike },
 ): DurableObjectNamespaceLike {
   const instances = new Map<string, InstanceType<typeof DOClass>>()
 
@@ -280,5 +275,63 @@ describe("Cloudflare adapter", () => {
       status: "recovered",
       failure: "Alarm retry #2 — previous attempt failed",
     })
+  })
+})
+
+
+describe("Cloudflare environment provision", () => {
+  it("resolves hook services and sibling RPC on a cold alarm without a client call", async () => {
+    interface Env {
+      readonly prefix: string
+      readonly namespace: DurableObjectNamespaceLike
+    }
+    class AppEnv extends Context.Service<AppEnv, Env>()("@test/ColdEnv") {}
+    class Prefix extends Context.Service<Prefix, string>()("@test/Prefix") {}
+    let builds = 0
+    const PrefixLive = Layer.effect(Prefix, Effect.gen(function* () {
+      const env = yield* AppEnv
+      builds++
+      return env.prefix
+    }))
+    const coldRegistry = TaskRegistry.make(Counter, Logger)
+    const built = coldRegistry.build({
+      counter: coldRegistry.handler("counter", {
+        onEvent: (ctx, event) => ctx.save({ count: event.amount }),
+        onAlarm: {
+          handler: (ctx) => Effect.gen(function* () {
+            const prefix = yield* Prefix
+            yield* ctx.task(Logger).send(ctx.id, { _tag: "Log", message: prefix })
+            const sibling = yield* ctx.task("logger").getState(ctx.id)
+            yield* ctx.save({ count: sibling?.entries.length ?? 0 })
+          }),
+          provide: PrefixLive,
+        },
+      }),
+      logger: loggerHandler,
+    })
+    const group = makeTaskGroupDO(built, { env: AppEnv, namespace: (env) => env.namespace })
+    const instances = new Map<string, TaskGroupStubLike>()
+    const namespace: DurableObjectNamespaceLike = {
+      idFromName: (name) => ({ toString: () => name }),
+      get: (id) => {
+        const key = id.toString()
+        const cached = instances.get(key)
+        if (cached) return cached
+        const instance = new group.DO(mockDOState(), { prefix: "cold", namespace })
+        instances.set(key, instance)
+        return instance
+      },
+    }
+    const storage = mockDOState()
+    const env: Env = { prefix: "cold", namespace }
+    await new group.DO(storage, env).handleEvent("counter", "c1", { _tag: "Inc", amount: 5 })
+    // Reconstruct the object as Cloudflare does when waking a persisted alarm.
+    const restarted = new group.DO(storage, env)
+    await restarted.alarm()
+    await restarted.handleAlarm("counter", "c1")
+    expect(await restarted.handleGetState("counter", "c1")).toEqual({ count: 2 })
+    expect(await namespace.get(namespace.idFromName("logger:c1")).handleGetState("logger", "c1"))
+      .toEqual({ entries: ["cold", "cold"] })
+    expect(builds).toBe(1)
   })
 })

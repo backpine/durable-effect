@@ -3,6 +3,8 @@ import { handler } from "@/runtime"
 import { currentEnv, currentCtx } from "@/services/cloudflare"
 
 // Export Durable Object classes for wrangler
+export { CounterDO } from "./tasks/counter.js"
+export { OnboardingDO } from "./tasks/onboarding/index.js"
 export { BillingDO } from "./tasks/billing/index.js"
 
 export default {

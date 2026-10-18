@@ -3,13 +3,38 @@
   "name": "effect-worker-api",
   "main": "src/index.ts",
   "compatibility_date": "2024-11-27",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "vars": {
     "ENVIRONMENT": "development",
     "LOG_LEVEL": "debug",
     "BILLING_CURRENCY": "USD"
   },
   "durable_objects": {
-    "bindings": []
-  }
+    "bindings": [
+      {
+        "name": "COUNTER_DO",
+        "class_name": "CounterDO"
+      },
+      {
+        "name": "ONBOARDING_DO",
+        "class_name": "OnboardingDO"
+      },
+      {
+        "name": "BILLING_DO",
+        "class_name": "BillingDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "CounterDO",
+        "OnboardingDO",
+        "BillingDO"
+      ]
+    }
+  ]
 }

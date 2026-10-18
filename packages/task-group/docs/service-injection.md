@@ -79,13 +79,16 @@ Two changes fix all three problems:
   rules). A hook only builds the services it actually uses, when it first runs.
 
 ```typescript
-// env.ts — declared once; Env is your wrangler-generated type
+// env.ts — declare only the bindings the task services use
 import { Context } from "effect"
-export class AppEnv extends Context.Service<AppEnv, Env>()("@app/Env") {}
+interface TaskEnv {
+  readonly HYPERDRIVE: { readonly connectionString: string }
+}
+export class AppEnv extends Context.Service<AppEnv, TaskEnv>()("@app/Env") {}
 
 // services.ts — platform-agnostic; env-dependent layers read the TYPED env
 export const DbLive = Layer.effect(Database, Effect.gen(function* () {
-  const env = yield* AppEnv            // typed as Env, no cast
+  const env = yield* AppEnv            // typed as TaskEnv, no cast
   return makePool(env.HYPERDRIVE.connectionString)
 }))
 
@@ -103,7 +106,10 @@ export const orderHandler = registry.handler("order", {
 
 // tasks/index.ts — bridge the env ONCE, at the runtime
 const config = registry.build({ order: orderHandler /* , ... */ })
-const taskGroup = makeTaskGroupDO(config, { env: AppEnv })
+const taskGroup = makeTaskGroupDO(config, {
+  env: AppEnv,
+  namespace: (env: Env) => env.ORDERS_DO,
+})
 export const OrdersDO = taskGroup.DO
 export const orders = taskGroup.client(env.ORDERS_DO)
 ```
@@ -112,7 +118,7 @@ For local dev / tests, provide a mock env to the in-memory runtime:
 
 ```typescript
 export const orders = makeInMemoryRuntime(config, {
-  services: Layer.succeed(AppEnv, { HYPERDRIVE: { connectionString: "postgres://test" } } as Env),
+  services: Layer.succeed(AppEnv, { HYPERDRIVE: { connectionString: "postgres://test" } }),
 })
 ```
 
@@ -133,8 +139,10 @@ To provide several services to one hook, merge them:
 | Platform coupling | Cloudflare-specific helper | plain layers + one context service |
 | Compile-time safety | layer must cover the shared `R` | residual `R` = env; unmet service is a type error |
 
-The single unavoidable coercion (Cloudflare hands `env` untyped) now lives inside
-the adapter, not your code.
+The adapter preserves the constructor's environment type and provides it through
+`Context.make`, without coercion. A namespace selector lets cold alarms dispatch
+to siblings directly from the environment, before a client request initializes
+the task group.
 
 ---
 
@@ -169,7 +177,7 @@ the adapter, not your code.
 4. **Pass the env at the runtime.** Add `{ env: AppEnv }` to `makeTaskGroupDO`, and
    change the dev/test runtime from
    `makeInMemoryRuntime(config, { services: Layer.succeed(CloudflareEnv)(mock) })`
-   to `makeInMemoryRuntime(config, { services: Layer.succeed(AppEnv, mock as Env) })`.
+   to `makeInMemoryRuntime(config, { services: Layer.succeed(AppEnv, mock) })`.
 
 5. **Delete the `cloudflareServices` helper import.** Done.
 

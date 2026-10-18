@@ -2,10 +2,10 @@
  * This file verifies compile-time type safety via @ts-expect-error directives.
  * If this file compiles, all type assertions hold.
  */
-import { describe, it } from "vitest"
+import { describe, it, expectTypeOf } from "vitest"
 describe("Type safety", () => { it("compiles", () => {}) })
-import { Effect, Schema, Context } from "effect"
-import { Task, TaskRegistry, withServices } from "../src/index.js"
+import { Effect, Layer, Schema, Context } from "effect"
+import { Task, TaskRegistry, withServices, makeInMemoryRuntime, makeTaskGroupDO, type TaskExecutionError } from "../src/index.js"
 
 // ── Setup ────────────────────────────────────────────────
 
@@ -113,3 +113,45 @@ registry.handler("foo", {
     }),
   onAlarm: (ctx) => Effect.void,
 })
+
+// Runtime factories must resolve every remaining service requirement.
+function _runtimeAssertions() {
+  const needsService = registry.handler("foo", {
+    onEvent: () => Effect.asVoid(MyService),
+    onAlarm: () => Effect.void,
+  })
+  const built = registry.build({ foo: needsService, bar: barHandler })
+
+  // @ts-expect-error — missing residual service
+  makeInMemoryRuntime(built)
+  // @ts-expect-error — an empty layer cannot provide MyService
+  makeInMemoryRuntime(built, { services: Layer.empty })
+  // @ts-expect-error — an env-dependent DO needs its env service key
+  makeTaskGroupDO(built)
+
+  class WrongEnv extends Context.Service<WrongEnv, { readonly token: string }>()("@test/WrongEnv") {}
+  // @ts-expect-error — a different env key cannot satisfy MyService
+  makeTaskGroupDO(built, { env: WrongEnv })
+
+  const pure = registry.build({ foo: fooHandler, bar: barHandler })
+  const runtime = makeInMemoryRuntime(pure)
+  // @ts-expect-error — unknown task name
+  runtime.task("missing")
+  // @ts-expect-error — wrong event for the selected task
+  runtime.task("bar").send("b1", { _tag: "Go" })
+  expectTypeOf(runtime.task("foo").getState("f1")).toEqualTypeOf<
+    Effect.Effect<{ readonly value: string } | null, TaskExecutionError>
+  >()
+
+  registry.handler("foo", {
+    onEvent: (ctx) => Effect.gen(function* () {
+      expectTypeOf(yield* ctx.task("bar").getState("b1"))
+        .toEqualTypeOf<{ readonly count: number } | null>()
+      expectTypeOf(yield* ctx.task(Bar).getState("b1"))
+        .toEqualTypeOf<{ readonly count: number } | null>()
+      // @ts-expect-error — a sibling's state remains typed
+      const wrong: string = (yield* ctx.task("bar").getState("b1"))?.count
+    }),
+    onAlarm: () => Effect.void,
+  })
+}

@@ -14,9 +14,12 @@ const registryConfig = registry.build({
 });
 
 // The DO class + client. `{ env: AppEnv }` tells the runtime to populate the
-// AppEnv service from the DO's `env` — the one place the untyped CF env is
-// bridged to the typed service the handlers depend on.
-const taskGroup = makeTaskGroupDO(registryConfig, { env: AppEnv });
+// AppEnv service from the DO's typed env. The namespace selector also works
+// when Cloudflare wakes an alarm without first receiving a client request.
+const taskGroup = makeTaskGroupDO(registryConfig, {
+  env: AppEnv,
+  namespace: (env: Env) => env.BILLING_DO,
+});
 
 // Export the DO class for wrangler
 export const BillingDO = taskGroup.DO;
@@ -25,8 +28,8 @@ export const BillingDO = taskGroup.DO;
 // env-derived BillingConfig layer can resolve.
 export const billing = makeInMemoryRuntime(registryConfig, {
   services: Layer.succeed(AppEnv, {
-    ENVIRONMENT: "development",
-    LOG_LEVEL: "debug",
     BILLING_CURRENCY: "USD",
-  } as Env),
+  }),
 });
+
+export const billingClient = taskGroup.client;

@@ -4,6 +4,7 @@ import type { DispatchFn, HandlerContext } from "./RegisteredTask.js"
 import type { Storage } from "./services/Storage.js"
 import type { Alarm } from "./services/Alarm.js"
 import type { AnyTaskTag, StateFor, EventFor } from "./TaskTag.js"
+import { findTaskTag } from "./TaskTag.js"
 import type { TypedTaskRuntime, ExternalTaskHandle } from "./TaskRuntime.js"
 import {
   TaskError,
@@ -162,7 +163,7 @@ export class InMemoryRuntime<Tags extends AnyTaskTag, Renv = never> implements T
 
   task<K extends Tags["name"]>(name: K): ExternalTaskHandle<StateFor<Tags, K>, EventFor<Tags, K>> {
     const self = this
-    const tag = this.tagMap.get(name)
+    const tag = findTaskTag(this.tagMap, name)
     return {
       send(id: string, event: EventFor<Tags, K>): Effect.Effect<void, TaskValidationError | TaskExecutionError> {
         return Effect.gen(function* () {
@@ -266,12 +267,20 @@ export class InMemoryRuntime<Tags extends AnyTaskTag, Renv = never> implements T
  * — e.g. handlers use env-dependent service layers), `services` is required and
  * provides it; when R = never, no options are needed.
  */
-export function makeInMemoryRuntime<Tags extends AnyTaskTag, R = never>(
+export function makeInMemoryRuntime<Tags extends AnyTaskTag>(
+  built: BuiltRegistry<Tags>,
+): InMemoryRuntime<Tags>
+export function makeInMemoryRuntime<Tags extends AnyTaskTag, R>(
   built: BuiltRegistry<Tags, R>,
-  ...options: [R] extends [never] ? [] : [{ readonly services: Layer.Layer<R> }]
-): InMemoryRuntime<Tags, R> {
-  const opts = options as ReadonlyArray<{ readonly services: Layer.Layer<R> }>
-  // No residual env (R = never) → the empty layer provides nothing.
-  const servicesLayer = opts[0]?.services ?? (Layer.empty as unknown as Layer.Layer<R>)
-  return new InMemoryRuntime<Tags, R>(built, servicesLayer)
+  options: { readonly services: Layer.Layer<R> },
+): InMemoryRuntime<Tags, R>
+export function makeInMemoryRuntime<Tags extends AnyTaskTag, R>(
+  ...args:
+    | [built: BuiltRegistry<Tags>]
+    | [built: BuiltRegistry<Tags, R>, options: { readonly services: Layer.Layer<R> }]
+): InMemoryRuntime<Tags> | InMemoryRuntime<Tags, R> {
+  if (args.length === 1) {
+    return new InMemoryRuntime(args[0], Layer.empty)
+  }
+  return new InMemoryRuntime(args[0], args[1].services)
 }

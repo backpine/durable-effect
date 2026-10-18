@@ -8,15 +8,18 @@
     "deploy": "wrangler deploy",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "cf-typegen": "wrangler types --env-interface Env"
+    "cf-typegen": "wrangler types --env-interface Env",
+    "typecheck": "tsc --noEmit",
+    "build": "wrangler deploy --dry-run",
+    "test:local": "node scripts/test-local.mjs"
   },
   "dependencies": {
     "@durable-effect/task": "workspace:*",
-    "effect": "4.0.0-beta.98"
+    "effect": "4.0.5"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241127.0",
-    "typescript": "^5.7.0",
+    "@types/node": "^22.19.3",
+    "typescript": "^5.9.3",
     "vitest": "^2.1.0",
     "wrangler": "^4.55.0"
   }

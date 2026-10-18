@@ -11,21 +11,21 @@ export function makeCloudflareStorage(doStorage: DurableObjectStorageLike): Stor
   return {
     get: (key) =>
       Effect.tryPromise({
-        try: () => doStorage.get(key) as Promise<unknown>,
+        try: () => doStorage.get(key),
         catch: (cause) =>
           new StorageError({ message: `Failed to get key "${key}"`, cause }),
       }).pipe(Effect.map((v) => v ?? null)),
 
     set: (key, value) =>
       Effect.tryPromise({
-        try: () => (doStorage as { put(k: string, v: unknown): Promise<void> }).put(key, value),
+        try: () => doStorage.put(key, value),
         catch: (cause) =>
           new StorageError({ message: `Failed to set key "${key}"`, cause }),
       }),
 
     delete: (key) =>
       Effect.tryPromise({
-        try: async () => { await (doStorage as { delete(k: string): Promise<boolean> }).delete(key) },
+        try: async () => { await doStorage.delete(key) },
         catch: (cause) =>
           new StorageError({ message: `Failed to delete key "${key}"`, cause }),
       }),

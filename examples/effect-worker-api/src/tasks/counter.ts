@@ -1,3 +1,5 @@
+import { makeTaskGroupDO } from "@durable-effect/task/cloudflare";
+import { AppEnv } from "../services/task-services.js";
 import { Effect, Layer, Schema, Context } from "effect";
 import {
   Task,
@@ -81,3 +83,10 @@ const registryConfig = registry.build({
 });
 
 export const counter = makeInMemoryRuntime(registryConfig);
+
+const taskGroup = makeTaskGroupDO(registryConfig, {
+  env: AppEnv,
+  namespace: (env: Env) => env.COUNTER_DO,
+});
+export const CounterDO = taskGroup.DO;
+export const counterClient = taskGroup.client;

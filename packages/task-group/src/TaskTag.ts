@@ -26,20 +26,17 @@ export interface TaskTag<Name extends string, S, E> {
 // AnyTaskTag — existential shorthand
 // ---------------------------------------------------------------------------
 
-export type AnyTaskTag = TaskTag<string, any, any>
+export type AnyTaskTag = TaskTag<string, unknown, unknown>
 
 // ---------------------------------------------------------------------------
 // Type helpers — extract S, E, Name from a tag or tag union
 // ---------------------------------------------------------------------------
 
-export type StateOf<T extends AnyTaskTag> =
-  T extends TaskTag<any, infer S, any> ? S : never
+export type StateOf<T extends AnyTaskTag> = T["state"]["Type"]
 
-export type EventOf<T extends AnyTaskTag> =
-  T extends TaskTag<any, any, infer E> ? E : never
+export type EventOf<T extends AnyTaskTag> = T["event"]["Type"]
 
-export type NameOf<T extends AnyTaskTag> =
-  T extends TaskTag<infer N, any, any> ? N : never
+export type NameOf<T extends AnyTaskTag> = T["name"]
 
 /** Extract state type for a specific task name from a tag union */
 export type StateFor<Tags extends AnyTaskTag, K extends string> =
@@ -65,4 +62,15 @@ export const Task = {
       event: schemas.event,
     }
   },
+}
+
+/** Look up a tag while preserving the relationship between its name and schemas. */
+export function findTaskTag<Tags extends AnyTaskTag, K extends Tags["name"]>(
+  tags: ReadonlyMap<string, Tags>,
+  name: K,
+): Extract<Tags, { name: K }> | undefined {
+  const tag = tags.get(name)
+  const matches = (candidate: Tags): candidate is Extract<Tags, { name: K }> =>
+    candidate.name === name
+  return tag && matches(tag) ? tag : undefined
 }

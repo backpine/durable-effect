@@ -1,12 +1,12 @@
 import { DurableObject } from "cloudflare:workers"
 import { Effect, Layer, Schema, Context, Scope } from "effect"
-import type { BuiltRegistry, TaskRegistryConfig } from "../TaskRegistry.js"
+import type { BuiltRegistry } from "../TaskRegistry.js"
 import type { DispatchFn, HandlerContext } from "../RegisteredTask.js"
 import type { AnyTaskTag, StateFor, EventFor } from "../TaskTag.js"
+import { findTaskTag } from "../TaskTag.js"
 import type { TypedTaskRuntime, ExternalTaskHandle } from "../TaskRuntime.js"
 import {
   TaskError,
-  TaskNotFoundError,
   TaskExecutionError,
   SystemFailure,
 } from "../errors.js"
@@ -31,9 +31,9 @@ const ROUTING_ID_KEY = "__tg:id"
 // makeTaskGroupDO
 // ---------------------------------------------------------------------------
 
-interface TaskGroupDO<Tags extends AnyTaskTag> {
+interface TaskGroupDO<Tags extends AnyTaskTag, Env = unknown> {
   readonly DO: {
-    new (ctx: DurableObjectStateLike, env: unknown): {
+    new (ctx: DurableObjectStateLike, env: Env): {
       handleEvent(name: string, id: string, event: unknown): Promise<void>
       handleAlarm(name: string, id: string): Promise<void>
       handleGetState(name: string, id: string): Promise<unknown>
@@ -43,22 +43,37 @@ interface TaskGroupDO<Tags extends AnyTaskTag> {
   readonly client: (namespace: DurableObjectNamespaceLike) => TypedTaskRuntime<Tags>
 }
 
-// Overloads:
-//   • R = never              — no services required
-//   • R = EnvId (+ opts.env) — typed env: the DO provides your env service
-export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags, never>): TaskGroupDO<Tags>
-export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId, EnvShape>(
+/** Create a Durable Object class and a typed client for a task registry. */
+export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags>): TaskGroupDO<Tags>
+export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId, EnvShape, Env extends EnvShape = EnvShape>(
   built: BuiltRegistry<Tags, EnvId>,
-  opts: { readonly env: Context.Key<EnvId, EnvShape> },
-): TaskGroupDO<Tags>
-// Implementation
-export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId = never, EnvShape = unknown>(
+  opts: {
+    readonly env: Context.Key<EnvId, EnvShape>
+    readonly namespace?: (env: Env) => DurableObjectNamespaceLike
+  },
+): TaskGroupDO<Tags, Env>
+export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId, EnvShape, Env extends EnvShape>(
+  ...args:
+    | [built: BuiltRegistry<Tags>]
+    | [built: BuiltRegistry<Tags, EnvId>, opts: {
+        readonly env: Context.Key<EnvId, EnvShape>
+        readonly namespace?: (env: Env) => DurableObjectNamespaceLike
+      }]
+): TaskGroupDO<Tags, Env> {
+  if (args.length === 1) {
+    return buildTaskGroupDO(args[0], (_env: Env) => Context.empty())
+  }
+  const [built, opts] = args
+  return buildTaskGroupDO(built, (env: Env) => Context.make(opts.env, env), opts.namespace)
+}
+
+function buildTaskGroupDO<Tags extends AnyTaskTag, EnvId, Env>(
   built: BuiltRegistry<Tags, EnvId>,
-  opts?: { readonly env?: Context.Key<EnvId, EnvShape> },
-): TaskGroupDO<Tags> {
+  makeEnvContext: (env: Env) => Context.Context<EnvId>,
+  namespaceFromEnv?: (env: Env) => DurableObjectNamespaceLike,
+): TaskGroupDO<Tags, Env> {
   const registryConfig = built.registryConfig
   const tagMap = built.tags
-  const envKey = opts?.env
   let sharedNamespace: DurableObjectNamespaceLike | null = null
 
   // ── Dispatch function builder ──────────────────────────
@@ -111,7 +126,7 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId = never, EnvShape
     // handler's residual R with no per-call rebuild (it is a plain value).
     private envContext: Context.Context<EnvId>
 
-    constructor(ctx: DurableObjectStateLike, env: unknown) {
+    constructor(ctx: DurableObjectStateLike, env: Env) {
       super(ctx, env)
       this.doStorage = ctx.storage
       this.storageService = makeCloudflareStorage(this.doStorage)
@@ -119,15 +134,11 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId = never, EnvShape
       this.memoMap = Layer.makeMemoMapUnsafe()
       this.scope = Scope.makeUnsafe()
 
-      // The single unavoidable coercion: Cloudflare hands `env` untyped, and
-      // the user declared its shape via `opts.env`. Localized to the adapter.
-      // No `opts.env` (EnvId = never) → an empty context (nothing to provide).
-      this.envContext = envKey
-        ? Context.make(envKey, env as EnvShape)
-        : (Context.empty() as Context.Context<EnvId>)
+      this.envContext = makeEnvContext(env)
 
-      if (sharedNamespace) {
-        this.dispatchFn = makeDispatchForNamespace(sharedNamespace)
+      const namespace = namespaceFromEnv?.(env) ?? sharedNamespace
+      if (namespace) {
+        this.dispatchFn = makeDispatchForNamespace(namespace)
       } else {
         this.dispatchFn = {
           send: () => Effect.fail(new TaskError({
@@ -213,7 +224,7 @@ export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId = never, EnvShape
 
     return {
       task<K extends Tags["name"]>(name: K): ExternalTaskHandle<StateFor<Tags, K>, EventFor<Tags, K>> {
-        const tag = tagMap.get(name)
+        const tag = findTaskTag(tagMap, name)
 
         function getStub(id: string) {
           const doId = namespace.idFromName(`${name}:${id}`)
