@@ -7,6 +7,8 @@ export default defineConfig({
     server: { deps: { inline: ["@durable-effect/task"] } },
     environment: "node",
     include: ["test/**/*.test.ts"],
+    // The database-backed checks have their own config (`pnpm test:integration`).
+    exclude: ["test/integration/**", "node_modules/**"],
   },
   resolve: {
     alias: {

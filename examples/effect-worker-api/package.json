@@ -11,10 +11,15 @@
     "cf-typegen": "wrangler types --env-interface Env",
     "typecheck": "tsc --noEmit",
     "build": "wrangler deploy --dry-run",
-    "test:local": "node scripts/test-local.mjs"
+    "test:local": "node scripts/test-local.mjs",
+    "db:up": "node scripts/postgres.mjs up",
+    "db:down": "node scripts/postgres.mjs down",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:db": "node scripts/test-db.mjs"
   },
   "dependencies": {
     "@durable-effect/task": "workspace:*",
+    "@effect/sql-pg": "4.0.5",
     "effect": "4.0.5"
   },
   "devDependencies": {

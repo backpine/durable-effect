@@ -3,6 +3,7 @@ import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware } from "effec
 import { Counter } from "@/tasks/counter"
 import { Invoice, Receipt } from "@/tasks/billing/registry"
 import { Onboarding, WelcomeEmail } from "@/tasks/onboarding/registry"
+import { LedgerGroup } from "@/ledger/api"
 
 // ---------------------------------------------------------------------------
 // Services
@@ -149,5 +150,6 @@ export class WorkerApi extends HttpApi.make("WorkerApi")
   .add(CounterGroup)
   .add(OnboardingGroup)
   .add(BillingGroup)
+  .add(LedgerGroup)
   .middleware(CloudflareBindingsMiddleware)
   .prefix("/api") {}

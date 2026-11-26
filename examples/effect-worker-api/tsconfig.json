@@ -24,6 +24,7 @@
     "src/**/*",
     "test/**/*",
     "vitest.config.ts",
+    "vitest.integration.config.ts",
     "worker-configuration.d.ts"
   ],
   "exclude": ["node_modules"]

@@ -60,6 +60,9 @@ importers:
       '@durable-effect/task':
         specifier: workspace:*
         version: link:../../packages/task-group
+      '@effect/sql-pg':
+        specifier: 4.0.5
+        version: 4.0.5(effect@4.0.5)
       effect:
         specifier: 4.0.5
         version: 4.0.5
@@ -305,6 +308,11 @@ packages:
     deprecated: this package has been merged into the main effect package
     peerDependencies:
       effect: ^3.9.2
+
+  '@effect/sql-pg@4.0.5':
+    resolution: {integrity: sha512-F9tG76H+aryhYcp5pvgd+MwWrNltv3XAuLcZSBsOOX6q+PEl+IM4zkQKzx0TF9OsEMH/SQ+3gZRdYWOsDF+vJQ==}
+    peerDependencies:
+      effect: ^4.0.5
 
   '@emnapi/runtime@1.7.1':
     resolution: {integrity: sha512-PVtJr5CmLwYAU9PZDMITZoR5iAOShYREoR45EyyLrbntV50mdePTgUn4AmOw90Ifcj+x2kRjdzr1HP3RrNiHGA==}
@@ -1633,6 +1641,10 @@ snapshots:
     dependencies:
       effect: 3.19.8
       fast-check: 3.23.2
+
+  '@effect/sql-pg@4.0.5(effect@4.0.5)':
+    dependencies:
+      effect: 4.0.5
 
   '@emnapi/runtime@1.7.1':
     dependencies:

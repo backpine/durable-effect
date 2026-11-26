@@ -15,6 +15,7 @@ Wrangler runs locally with SQLite Durable Objects for counter, billing, and
 onboarding. Alarms fire automatically. Each task instance has its own persistent
 state. Billing and onboarding dispatch to sibling tasks through Durable Object
 RPC. Hook services build lazily and reuse their instance's layer memo map.
+The ledger tasks (below) also use Postgres, and are the only part that needs it.
 
 ```sh
 curl http://localhost:8787/api/health/
@@ -59,6 +60,67 @@ Workerd does not resume locally scheduled alarms after a process restart
 check verifies automatic alarms before restarting, then verifies stored state.
 The library's Cloudflare tests separately reconstruct a Durable Object and call
 its persisted alarm lifecycle to verify cold sibling RPC and service provision.
+
+## The ledger tasks: Postgres, and the two layer lifetimes
+
+`src/tasks/ledger` is a database-heavy task group registered TWICE, as two
+Durable Object classes that share every handler and every table:
+
+| Group | `layerLifetime` | What its hooks leave behind |
+|---|---|---|
+| `LedgerInstanceDO` (`/api/ledger/instance/…`) | `"instance"` (the library's default) | the Postgres pool a hook opened stays connected after the hook returns |
+| `LedgerInvocationDO` (`/api/ledger/invocation/…`) | `"invocation"` | nothing: the pool is closed before the event or alarm returns |
+
+The `settlement` task opens a batch (one transaction, one bulk insert), posts it
+a chunk per alarm (row locks, a balance upsert, counters and an audit row in one
+transaction), then closes the books. It also has a failure drill (`poison`: a
+transaction that must roll back) and a purge (`close`). The `audit` task names
+its own `lifetime: "invocation"`, which wins over its group's default.
+
+Everything is typed end to end: task state and events, every row read back from
+Postgres (decoded through a Schema), every API payload and response, and every
+failure, as a tagged error with its HTTP status (`BatchNotFound` 404,
+`BatchAlreadyOpen` 409, `TaskDispatchFailed` 502, `LedgerDatabaseError` 503, …;
+see `src/ledger/errors.ts`).
+
+Each pool carries its group's name as its Postgres `application_name`, so you can
+watch the difference yourself:
+
+```sh
+pnpm --filter effect-worker-api db:up      # Postgres in Docker, schema applied
+pnpm --filter effect-worker-api dev        # in another terminal
+
+for mode in instance invocation; do
+  curl -X POST "http://localhost:8787/api/ledger/$mode/batches" \
+    -H 'content-type: application/json' \
+    -d '{"batchId":"demo-'$mode'","chunkSize":2,"autoRun":true,
+         "entries":[{"account":"a","amountCents":100},{"account":"b","amountCents":-40},{"account":"a","amountCents":7}]}'
+done
+sleep 3
+curl http://localhost:8787/api/ledger/invocation/batches/demo-invocation   # settled
+curl http://localhost:8787/api/ledger/connections
+# {"pools":[{"applicationName":"ledger-instance","connections":1}]}
+#   the instance group still holds its pool; the invocation group holds none
+
+pnpm --filter effect-worker-api db:down
+```
+
+The whole comparison is automated, against the packed library:
+
+```sh
+pnpm --filter effect-worker-api test:db
+```
+
+`test:db` starts Postgres in Docker, builds and packs `@durable-effect/task`,
+installs the tarball into a copy of this app outside the workspace, typechecks
+it, then runs `test/integration` twice over: on the in-memory runtime, and
+through a Worker under local Wrangler (real Durable Objects and alarms, Postgres
+through the Hyperdrive binding, the API's own typed client). The checks count
+connections in `pg_stat_activity`: under `"invocation"` none is open once any
+hook has returned, after a success, a rolled-back failure or a purge; under
+`"instance"` each task instance still holds its pool twenty seconds after its
+last alarm. It needs Docker and nothing else. Add `--keep-database` to keep
+Postgres up afterwards.
 
 After editing Wrangler bindings, regenerate the checked-in runtime types:
 

@@ -6,6 +6,7 @@ import { currentEnv, currentCtx } from "@/services/cloudflare"
 export { CounterDO } from "./tasks/counter.js"
 export { OnboardingDO } from "./tasks/onboarding/index.js"
 export { BillingDO } from "./tasks/billing/index.js"
+export { LedgerInstanceDO, LedgerInvocationDO } from "./tasks/ledger/index.js"
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {

@@ -11,8 +11,26 @@
     "LOG_LEVEL": "debug",
     "BILLING_CURRENCY": "USD"
   },
+  // The ledger tasks' Postgres. Locally this is the `scripts/postgres.mjs`
+  // database (same port). The id is a placeholder: create a Hyperdrive config
+  // and put its id here before deploying.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgres://postgres:postgres@127.0.0.1:54417/task_example"
+    }
+  ],
   "durable_objects": {
     "bindings": [
+      {
+        "name": "LEDGER_INSTANCE_DO",
+        "class_name": "LedgerInstanceDO"
+      },
+      {
+        "name": "LEDGER_INVOCATION_DO",
+        "class_name": "LedgerInvocationDO"
+      },
       {
         "name": "COUNTER_DO",
         "class_name": "CounterDO"
@@ -34,6 +52,13 @@
         "CounterDO",
         "OnboardingDO",
         "BillingDO"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "LedgerInstanceDO",
+        "LedgerInvocationDO"
       ]
     }
   ]
