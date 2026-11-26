@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect"
 import type { TaskCtx } from "./TaskCtx.js"
 import type { AnyTaskTag, StateFor, EventFor } from "./TaskTag.js"
 import { findTaskTag } from "./TaskTag.js"
-import type { RegisteredTask, ResolvedHandlerConfig, ResidualEnv } from "./RegisteredTask.js"
+import type { LayerLifetime, RegisteredTask, ResolvedHandlerConfig, ResidualEnv } from "./RegisteredTask.js"
 import { buildRegisteredTask } from "./RegisteredTask.js"
 
 // ---------------------------------------------------------------------------
@@ -63,6 +63,13 @@ export interface EventHandlerObject<S, E, EErr, Tags extends AnyTaskTag, RH, OEE
   readonly handler: (ctx: TaskCtx<S, Tags>, event: E) => Effect.Effect<void, EErr, RH>
   readonly onError?: (ctx: TaskCtx<S, Tags>, error: EErr) => Effect.Effect<void, OEErr, RH>
   readonly provide?: ProvideInput<RP, RL>
+  /**
+   * How long this hook's `provide` layer lives: "instance" (built once per task
+   * instance and reused) or "invocation" (built for each run of the hook and
+   * released when it ends). Absent, the runtime's `layerLifetime` decides, and
+   * that defaults to "instance".
+   */
+  readonly lifetime?: LayerLifetime | undefined
 }
 
 /** Either form */
@@ -79,6 +86,13 @@ export interface AlarmHandlerObject<S, AErr, Tags extends AnyTaskTag, RH, OAErr 
   readonly handler: (ctx: TaskCtx<S, Tags>) => Effect.Effect<void, AErr, RH>
   readonly onError?: (ctx: TaskCtx<S, Tags>, error: AErr) => Effect.Effect<void, OAErr, RH>
   readonly provide?: ProvideInput<RP, RL>
+  /**
+   * How long this hook's `provide` layer lives: "instance" (built once per task
+   * instance and reused) or "invocation" (built for each run of the hook and
+   * released when it ends). Absent, the runtime's `layerLifetime` decides, and
+   * that defaults to "instance".
+   */
+  readonly lifetime?: LayerLifetime | undefined
 }
 
 /** Either form */
@@ -108,7 +122,7 @@ export interface HandlerConfig<
 // precise handler/onError/provide types.
 // ---------------------------------------------------------------------------
 
-function isHandlerObject<T>(def: T | { handler: T }): def is { handler: T; onError?: unknown; provide?: unknown } {
+function isHandlerObject<T>(def: T | { handler: T }): def is { handler: T; onError?: unknown; provide?: unknown; lifetime?: unknown } {
   return typeof def !== "function" && def !== null && typeof def === "object" && "handler" in def
 }
 
@@ -138,16 +152,19 @@ function normalizeConfig<
   const onEvent = isHandlerObject(eventDef) ? eventDef.handler : eventDef
   const onEventError = isHandlerObject(eventDef) ? eventDef.onError : undefined
   const onEventLayer = toLayer<RPe, RLe>(isHandlerObject(eventDef) ? eventDef.provide : undefined)
+  const onEventLifetime = isHandlerObject(eventDef) ? eventDef.lifetime : undefined
 
   const onAlarm = isHandlerObject(alarmDef) ? alarmDef.handler : alarmDef
   const onAlarmError = isHandlerObject(alarmDef) ? alarmDef.onError : undefined
   const onAlarmLayer = toLayer<RPa, RLa>(isHandlerObject(alarmDef) ? alarmDef.provide : undefined)
+  const onAlarmLifetime = isHandlerObject(alarmDef) ? alarmDef.lifetime : undefined
 
-  return { onEvent, onAlarm, onEventError, onAlarmError, onEventLayer, onAlarmLayer }
+  return { onEvent, onAlarm, onEventError, onAlarmError, onEventLayer, onAlarmLayer, onEventLifetime, onAlarmLifetime }
 }
 
 // ---------------------------------------------------------------------------
-// wrapEventDef / wrapAlarmDef — attach a service Layer to a hook's `provide`.
+// wrapEventDef / wrapAlarmDef — attach a service Layer to a hook's `provide`,
+// keeping the hook's own `lifetime`.
 // Building/memoization happens in the runtime (per instance), so these are
 // pure data transforms. Public for adapters and advanced per-hook wiring.
 // ---------------------------------------------------------------------------
@@ -157,7 +174,7 @@ export function wrapEventDef<S, E, EErr, Tags extends AnyTaskTag, RH, OEErr, RP,
   layer: Layer.Layer<RP, never, RL>,
 ): EventHandlerObject<S, E, EErr, Tags, RH, OEErr, RP, RL> {
   if (isHandlerObject(def)) {
-    return { handler: def.handler, onError: def.onError, provide: layer }
+    return { handler: def.handler, onError: def.onError, provide: layer, lifetime: def.lifetime }
   }
   return { handler: def, provide: layer }
 }
@@ -167,7 +184,7 @@ export function wrapAlarmDef<S, AErr, Tags extends AnyTaskTag, RH, OAErr, RP, RL
   layer: Layer.Layer<RP, never, RL>,
 ): AlarmHandlerObject<S, AErr, Tags, RH, OAErr, RP, RL> {
   if (isHandlerObject(def)) {
-    return { handler: def.handler, onError: def.onError, provide: layer }
+    return { handler: def.handler, onError: def.onError, provide: layer, lifetime: def.lifetime }
   }
   return { handler: def, provide: layer }
 }

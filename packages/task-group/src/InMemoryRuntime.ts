@@ -1,6 +1,6 @@
 import { Effect, Layer, Schema, Scope } from "effect"
 import type { BuiltRegistry, TaskRegistryConfig } from "./TaskRegistry.js"
-import type { DispatchFn, HandlerContext } from "./RegisteredTask.js"
+import type { DispatchFn, HandlerContext, LayerLifetime } from "./RegisteredTask.js"
 import type { Storage } from "./services/Storage.js"
 import type { Alarm } from "./services/Alarm.js"
 import type { AnyTaskTag, StateFor, EventFor } from "./TaskTag.js"
@@ -72,11 +72,13 @@ export class InMemoryRuntime<Tags extends AnyTaskTag, Renv = never> implements T
   private readonly registryConfig: TaskRegistryConfig<Renv>
   private readonly tagMap: ReadonlyMap<string, Tags>
   private readonly servicesLayer: Layer.Layer<Renv>
+  private readonly layerLifetime: LayerLifetime | undefined
 
-  constructor(built: BuiltRegistry<Tags, Renv>, servicesLayer: Layer.Layer<Renv>) {
+  constructor(built: BuiltRegistry<Tags, Renv>, servicesLayer: Layer.Layer<Renv>, layerLifetime?: LayerLifetime) {
     this.registryConfig = built.registryConfig
     this.tagMap = built.tags
     this.servicesLayer = servicesLayer
+    this.layerLifetime = layerLifetime
     const self = this
     this.dispatchFn = {
       send(name: string, id: string, event: unknown): Effect.Effect<void, TaskError> {
@@ -151,6 +153,7 @@ export class InMemoryRuntime<Tags extends AnyTaskTag, Renv = never> implements T
       systemFailure: instance.systemFailure,
       memoMap: instance.memoMap,
       scope: instance.scope,
+      layerLifetime: this.layerLifetime,
     }
   }
 
@@ -269,18 +272,30 @@ export class InMemoryRuntime<Tags extends AnyTaskTag, Renv = never> implements T
  */
 export function makeInMemoryRuntime<Tags extends AnyTaskTag>(
   built: BuiltRegistry<Tags>,
+  options?: { readonly layerLifetime?: LayerLifetime | undefined },
 ): InMemoryRuntime<Tags>
 export function makeInMemoryRuntime<Tags extends AnyTaskTag, R>(
   built: BuiltRegistry<Tags, R>,
-  options: { readonly services: Layer.Layer<R> },
+  options: { readonly services: Layer.Layer<R>; readonly layerLifetime?: LayerLifetime | undefined },
 ): InMemoryRuntime<Tags, R>
 export function makeInMemoryRuntime<Tags extends AnyTaskTag, R>(
-  ...args:
-    | [built: BuiltRegistry<Tags>]
-    | [built: BuiltRegistry<Tags, R>, options: { readonly services: Layer.Layer<R> }]
+  ...args: PlainRuntimeArgs<Tags> | ServicesRuntimeArgs<Tags, R>
 ): InMemoryRuntime<Tags> | InMemoryRuntime<Tags, R> {
-  if (args.length === 1) {
-    return new InMemoryRuntime(args[0], Layer.empty)
+  if (hasServices(args)) {
+    return new InMemoryRuntime(args[0], args[1].services, args[1].layerLifetime)
   }
-  return new InMemoryRuntime(args[0], args[1].services)
+  return new InMemoryRuntime(args[0], Layer.empty, args[1]?.layerLifetime)
+}
+
+type PlainRuntimeArgs<Tags extends AnyTaskTag> =
+  [built: BuiltRegistry<Tags>, options?: { readonly layerLifetime?: LayerLifetime | undefined }]
+type ServicesRuntimeArgs<Tags extends AnyTaskTag, R> =
+  [built: BuiltRegistry<Tags, R>, options: { readonly services: Layer.Layer<R>; readonly layerLifetime?: LayerLifetime | undefined }]
+
+/** The `services` form: the one whose options carry the env layer. */
+function hasServices<Tags extends AnyTaskTag, R>(
+  args: PlainRuntimeArgs<Tags> | ServicesRuntimeArgs<Tags, R>,
+): args is ServicesRuntimeArgs<Tags, R> {
+  const options = args[1]
+  return options !== undefined && "services" in options
 }

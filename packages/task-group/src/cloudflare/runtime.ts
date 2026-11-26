@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers"
 import { Effect, Layer, Schema, Context, Scope } from "effect"
 import type { BuiltRegistry } from "../TaskRegistry.js"
-import type { DispatchFn, HandlerContext } from "../RegisteredTask.js"
+import type { DispatchFn, HandlerContext, LayerLifetime } from "../RegisteredTask.js"
 import type { AnyTaskTag, StateFor, EventFor } from "../TaskTag.js"
 import { findTaskTag } from "../TaskTag.js"
 import type { TypedTaskRuntime, ExternalTaskHandle } from "../TaskRuntime.js"
@@ -43,34 +43,58 @@ interface TaskGroupDO<Tags extends AnyTaskTag, Env = unknown> {
   readonly client: (namespace: DurableObjectNamespaceLike) => TypedTaskRuntime<Tags>
 }
 
-/** Create a Durable Object class and a typed client for a task registry. */
-export function makeTaskGroupDO<Tags extends AnyTaskTag>(built: BuiltRegistry<Tags>): TaskGroupDO<Tags>
+/**
+ * Create a Durable Object class and a typed client for a task registry.
+ *
+ * `layerLifetime` is the default for every hook's `provide` layer: "instance"
+ * (the default: built once per Durable Object instance and reused) or
+ * "invocation" (built for each event / alarm and released when it ends). A
+ * hook's own `lifetime` wins over it.
+ */
+export function makeTaskGroupDO<Tags extends AnyTaskTag>(
+  built: BuiltRegistry<Tags>,
+  opts?: { readonly layerLifetime?: LayerLifetime | undefined },
+): TaskGroupDO<Tags>
 export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId, EnvShape, Env extends EnvShape = EnvShape>(
   built: BuiltRegistry<Tags, EnvId>,
   opts: {
     readonly env: Context.Key<EnvId, EnvShape>
     readonly namespace?: (env: Env) => DurableObjectNamespaceLike
+    readonly layerLifetime?: LayerLifetime | undefined
   },
 ): TaskGroupDO<Tags, Env>
 export function makeTaskGroupDO<Tags extends AnyTaskTag, EnvId, EnvShape, Env extends EnvShape>(
-  ...args:
-    | [built: BuiltRegistry<Tags>]
-    | [built: BuiltRegistry<Tags, EnvId>, opts: {
-        readonly env: Context.Key<EnvId, EnvShape>
-        readonly namespace?: (env: Env) => DurableObjectNamespaceLike
-      }]
+  ...args: PlainGroupArgs<Tags> | EnvGroupArgs<Tags, EnvId, EnvShape, Env>
 ): TaskGroupDO<Tags, Env> {
-  if (args.length === 1) {
-    return buildTaskGroupDO(args[0], (_env: Env) => Context.empty())
+  if (hasEnv(args)) {
+    const [built, opts] = args
+    return buildTaskGroupDO(built, (env: Env) => Context.make(opts.env, env), opts.namespace, opts.layerLifetime)
   }
-  const [built, opts] = args
-  return buildTaskGroupDO(built, (env: Env) => Context.make(opts.env, env), opts.namespace)
+  return buildTaskGroupDO(args[0], (_env: Env) => Context.empty(), undefined, args[1]?.layerLifetime)
+}
+
+type PlainGroupArgs<Tags extends AnyTaskTag> =
+  [built: BuiltRegistry<Tags>, opts?: { readonly layerLifetime?: LayerLifetime | undefined }]
+type EnvGroupArgs<Tags extends AnyTaskTag, EnvId, EnvShape, Env extends EnvShape> =
+  [built: BuiltRegistry<Tags, EnvId>, opts: {
+    readonly env: Context.Key<EnvId, EnvShape>
+    readonly namespace?: (env: Env) => DurableObjectNamespaceLike
+    readonly layerLifetime?: LayerLifetime | undefined
+  }]
+
+/** The typed-env form: the one whose options name the env service. */
+function hasEnv<Tags extends AnyTaskTag, EnvId, EnvShape, Env extends EnvShape>(
+  args: PlainGroupArgs<Tags> | EnvGroupArgs<Tags, EnvId, EnvShape, Env>,
+): args is EnvGroupArgs<Tags, EnvId, EnvShape, Env> {
+  const opts = args[1]
+  return opts !== undefined && "env" in opts
 }
 
 function buildTaskGroupDO<Tags extends AnyTaskTag, EnvId, Env>(
   built: BuiltRegistry<Tags, EnvId>,
   makeEnvContext: (env: Env) => Context.Context<EnvId>,
   namespaceFromEnv?: (env: Env) => DurableObjectNamespaceLike,
+  layerLifetime?: LayerLifetime,
 ): TaskGroupDO<Tags, Env> {
   const registryConfig = built.registryConfig
   const tagMap = built.tags
@@ -161,6 +185,7 @@ function buildTaskGroupDO<Tags extends AnyTaskTag, EnvId, Env>(
         systemFailure: this.currentSystemFailure,
         memoMap: this.memoMap,
         scope: this.scope,
+        layerLifetime,
       }
     }
 

@@ -1,6 +1,6 @@
 import { Effect, Layer, Context, Scope } from "effect"
 import type { TaskRegistryConfig } from "./TaskRegistry.js"
-import type { DispatchFn, HandlerContext } from "./RegisteredTask.js"
+import type { DispatchFn, HandlerContext, LayerLifetime } from "./RegisteredTask.js"
 import { Storage } from "./services/Storage.js"
 import { Alarm } from "./services/Alarm.js"
 import {
@@ -50,6 +50,7 @@ export class TaskRunner extends Context.Service<TaskRunner, {
 
 export function makeTaskRunnerLayer(
   registryConfig: TaskRegistryConfig,
+  options?: { readonly layerLifetime?: LayerLifetime | undefined },
 ): Layer.Layer<TaskRunner, never, Storage | Alarm> {
   return Layer.effect(
     TaskRunner,
@@ -60,6 +61,7 @@ export function makeTaskRunnerLayer(
       // Per-runner build cache + long-lived scope for hook layers.
       const memoMap = Layer.makeMemoMapUnsafe()
       const scope = Scope.makeUnsafe()
+      const layerLifetime = options?.layerLifetime
 
       const dispatchFn: DispatchFn = {
         send: function dispatchSend(name: string, id: string, event: unknown): Effect.Effect<void, TaskError> {
@@ -68,7 +70,7 @@ export function makeTaskRunnerLayer(
             if (!task) {
               return yield* Effect.fail(new TaskError({ message: `Sibling task "${name}" not found in registry` }))
             }
-            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope }
+            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope, layerLifetime }
             yield* task.handleEvent(hctx, event).pipe(
               Effect.mapError((e) => new TaskError({ message: `Sibling dispatch error`, cause: e })),
             )
@@ -80,7 +82,7 @@ export function makeTaskRunnerLayer(
             if (!task) {
               return yield* Effect.fail(new TaskError({ message: `Sibling task "${name}" not found in registry` }))
             }
-            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope }
+            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope, layerLifetime }
             return yield* task.handleGetState(hctx).pipe(
               Effect.mapError((e) => new TaskError({ message: `Sibling getState error`, cause: e })),
             )
@@ -93,7 +95,7 @@ export function makeTaskRunnerLayer(
           Effect.gen(function* () {
             const task = registryConfig[name]
             if (!task) return yield* Effect.fail(new TaskNotFoundError({ name }))
-            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope }
+            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope, layerLifetime }
             yield* task.handleEvent(hctx, event)
           }),
 
@@ -101,7 +103,7 @@ export function makeTaskRunnerLayer(
           Effect.gen(function* () {
             const task = registryConfig[name]
             if (!task) return yield* Effect.fail(new TaskNotFoundError({ name }))
-            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope }
+            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope, layerLifetime }
             yield* task.handleAlarm(hctx)
           }),
 
@@ -109,7 +111,7 @@ export function makeTaskRunnerLayer(
           Effect.gen(function* () {
             const task = registryConfig[name]
             if (!task) return yield* Effect.fail(new TaskNotFoundError({ name }))
-            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope }
+            const hctx: HandlerContext = { storage, alarm, dispatch: dispatchFn, id, name, systemFailure: null, memoMap, scope, layerLifetime }
             return yield* task.handleGetState(hctx)
           }),
       }

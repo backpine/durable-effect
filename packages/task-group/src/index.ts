@@ -31,6 +31,7 @@ export type { TaskCtx, SiblingHandle } from "./TaskCtx.js"
 // Registration
 export { TaskRegistry, withServices, wrapEventDef, wrapAlarmDef } from "./TaskRegistry.js"
 export type { TaskHandler, TaskRegistryConfig, BuiltRegistry, HandlerConfig, TaskHelpers, ProvideInput } from "./TaskRegistry.js"
+export type { LayerLifetime } from "./RegisteredTask.js"
 
 // Internal (for adapters)
 export type { RegisteredTask, DispatchFn, HandlerContext, ResolvedHandlerConfig, ResidualEnv } from "./RegisteredTask.js"

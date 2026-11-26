@@ -133,7 +133,7 @@ To provide several services to one hook, merge them:
 |---|---|---|
 | Services per hook | one layer for **both** hooks | each hook `provide`s its own |
 | Light `onEvent` next to heavy `onAlarm` | event builds the heavy graph too | event builds only what it uses |
-| Layer/pool lifetime | rebuilt every invocation | built **once per instance** (MemoMap) |
+| Layer/pool lifetime | rebuilt every invocation | your choice per hook: once per instance (default), or per invocation and released when the hook ends |
 | Env typing | `CloudflareEnv` = `unknown` + `env as Env` | typed `AppEnv`, no cast in your code |
 | Env → service wiring | per handler (`(env) => layer`) | once, at `makeTaskGroupDO(config, { env })` |
 | Platform coupling | Cloudflare-specific helper | plain layers + one context service |
@@ -143,6 +143,41 @@ The adapter preserves the constructor's environment type and provides it through
 `Context.make`, without coercion. A namespace selector lets cold alarms dispatch
 to siblings directly from the environment, before a client request initializes
 the task group.
+
+---
+
+## Layer lifetime (0.0.22)
+
+"Built once per instance" is the right default for a pure service, and the wrong
+one for a layer that holds I/O open. The instance's scope is never closed, so a
+Postgres pool built in it keeps its connection after the hook returns. On
+Cloudflare that is costly: a Durable Object with a connection open is not idle,
+so the object stays in memory, billed by the second, long after an alarm that
+needed 50 ms of work.
+
+Every hook layer therefore has a lifetime:
+
+- `"instance"` (the default, and the behavior described above): built once per
+  instance through the instance's `MemoMap`, into its long-lived `Scope`.
+- `"invocation"`: built for each event / alarm through a FRESH `MemoMap`, into a
+  scope that is closed with the hook's exit. Whatever the layer acquired is
+  released before the invocation returns: after a success, a failure, a purge or
+  an interruption.
+
+```typescript
+// per hook
+onAlarm: { handler: onAlarm, provide: DbLive, lifetime: "invocation" }
+
+// or as the default of a whole group; a hook's own `lifetime` wins
+makeTaskGroupDO(config, { env: AppEnv, layerLifetime: "invocation" })
+```
+
+The option is on all three runtimes (`makeTaskGroupDO`, `makeInMemoryRuntime`,
+`makeTaskRunnerLayer`), so a test runs under the lifetime production uses.
+
+`examples/effect-worker-api` runs one ledger task group under each lifetime
+against a real Postgres and watches the connections from outside
+(`pnpm --filter effect-worker-api test:db`).
 
 ---
 

@@ -32,6 +32,22 @@ export interface DispatchFn {
 }
 
 // ---------------------------------------------------------------------------
+// LayerLifetime — how long a hook's `provide` layer lives.
+//
+//   "instance"   (default) built once per task instance through the instance's
+//                MemoMap, into the instance's long-lived scope, and reused by
+//                every later event and alarm. Its resources are never released
+//                by the library. Right for pure, in-memory services.
+//   "invocation" built fresh for each event / alarm, in a scope that closes when
+//                the hook ends (success, failure, purge or interruption), so
+//                every resource the layer acquired is released before the
+//                invocation returns. Right for anything holding I/O open: a
+//                database pool, a socket, a stream.
+// ---------------------------------------------------------------------------
+
+export type LayerLifetime = "instance" | "invocation"
+
+// ---------------------------------------------------------------------------
 // HandlerContext — everything a RegisteredTask handler needs from the
 // adapter. Grouped into a single object for clean extensibility.
 // ---------------------------------------------------------------------------
@@ -55,23 +71,49 @@ export interface HandlerContext {
    * lifetime of the instance (not torn down after each handler call).
    */
   readonly scope: Scope.Scope
+  /**
+   * The runtime's default lifetime for hook layers. A hook's own `lifetime`
+   * wins over it; absent means "instance".
+   */
+  readonly layerLifetime?: LayerLifetime | undefined
 }
 
 // ---------------------------------------------------------------------------
-// provideHook — build a hook's service Layer through the per-instance MemoMap
-// and provide it to the hook effect. The layer is built lazily (only when the
-// hook runs) and memoized (once per instance). R_hook is erased on build; the
-// only residual is the layer's own requirement (the platform env), RL.
+// provideHook — build a hook's service Layer and provide it to the hook effect.
+// The layer is built lazily (only when the hook runs). R_hook is erased on
+// build; the only residual is the layer's own requirement (the platform env), RL.
+//
+// The lifetime is the hook's own, else the runtime's default, else "instance":
+//
+//   "instance"   built through the per-instance MemoMap into the per-instance
+//                scope: once per instance, reused, never released.
+//   "invocation" built through a FRESH MemoMap into a scope of its own, closed
+//                with the hook's exit. A fresh MemoMap, never the instance's:
+//                an invocation layer must not be handed a copy an "instance"
+//                hook built (it would outlive this scope), nor leave an entry
+//                behind for one. Layers shared inside the hook's own graph are
+//                still built once per invocation.
 // ---------------------------------------------------------------------------
 
 function provideHook<A, EE, RH, RP, RL>(
   effect: Effect.Effect<A, EE, RH>,
   layer: Layer.Layer<RP, never, RL>,
   hctx: HandlerContext,
+  lifetime: LayerLifetime | undefined,
 ): Effect.Effect<A, EE, Exclude<RH, RP> | RL> {
-  return Layer.buildWithMemoMap(layer, hctx.memoMap, hctx.scope).pipe(
-    Effect.flatMap((ctx) => Effect.provide(effect, ctx)),
-  )
+  const resolved: LayerLifetime = lifetime ?? hctx.layerLifetime ?? "instance"
+  switch (resolved) {
+    case "invocation":
+      return Effect.scopedWith((scope) =>
+        Layer.buildWithMemoMap(layer, Layer.makeMemoMapUnsafe(), scope).pipe(
+          Effect.flatMap((ctx) => Effect.provide(effect, ctx)),
+        ),
+      )
+    case "instance":
+      return Layer.buildWithMemoMap(layer, hctx.memoMap, hctx.scope).pipe(
+        Effect.flatMap((ctx) => Effect.provide(effect, ctx)),
+      )
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +160,10 @@ export interface ResolvedHandlerConfig<
   readonly onAlarmError?: ((ctx: TaskCtx<S, Tags>, error: AErr) => Effect.Effect<void, OAErr, RHa>) | undefined
   readonly onEventLayer: Layer.Layer<RPe, never, RLe>
   readonly onAlarmLayer: Layer.Layer<RPa, never, RLa>
+  /** The event hook's own layer lifetime; absent defers to the runtime's default. */
+  readonly onEventLifetime?: LayerLifetime | undefined
+  /** The alarm hook's own layer lifetime; absent defers to the runtime's default. */
+  readonly onAlarmLifetime?: LayerLifetime | undefined
 }
 
 /** Residual requirement a registered task exposes after per-hook layers resolve. */
@@ -259,13 +305,15 @@ function handleError<S, HErr, OErr, Tags extends AnyTaskTag, R>(
     return Effect.fail(new TaskExecutionError({ cause: error }))
   }
 
+  // An error handler that fails ends the hook with ONE TaskExecutionError whose
+  // `cause` is the handler's own failure, the same shape a hook with no error
+  // handler ends with.
   return errorHandler(ctx, error).pipe(
     Effect.catch((oErr) =>
       isPurgeSignal(oErr)
         ? cleanup(storage, alarm)
         : Effect.fail(new TaskExecutionError({ cause: oErr })),
     ),
-    Effect.mapError((e) => new TaskExecutionError({ cause: e })),
   )
 }
 
@@ -304,8 +352,8 @@ export function buildRegisteredTask<
         ),
       )
 
-      // Build the event channel's services through the per-instance MemoMap.
-      yield* provideHook(program, config.onEventLayer, hctx)
+      // Build the event channel's services for the hook's layer lifetime.
+      yield* provideHook(program, config.onEventLayer, hctx, config.onEventLifetime)
     })
 
   const handleAlarm = (
@@ -324,7 +372,7 @@ export function buildRegisteredTask<
         ),
       )
 
-      yield* provideHook(program, config.onAlarmLayer, hctx)
+      yield* provideHook(program, config.onAlarmLayer, hctx, config.onAlarmLifetime)
     })
 
   const handleGetState = (

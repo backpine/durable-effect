@@ -210,7 +210,9 @@ registry.handler("order", {
 
 If a handler needs external services (database, API client, etc.), attach the
 service `Layer` **per hook** with `provide`. `onEvent` and `onAlarm` can require
-different services — each hook builds only what it uses, once per instance.
+different services — each hook builds only what it uses. By default a layer is
+built once per instance; see [Layer lifetime](#layer-lifetime-instance-or-invocation)
+for layers that must be released when the hook ends.
 
 ```typescript
 import { Effect, Layer, Context } from "effect"
@@ -257,6 +259,41 @@ const orderHandler = registry.handler("order",
   ),
 )
 ```
+
+### Layer lifetime: `instance` or `invocation`
+
+A hook's `provide` layer has a **lifetime**, which decides when it is built and
+when its resources are released:
+
+| Lifetime | Built | Released | Use it for |
+|---|---|---|---|
+| `"instance"` (default) | once per task instance, on the hook's first run | never, by the library: it lives as long as the instance | pure, in-memory services |
+| `"invocation"` | for every event and every alarm | when that hook ends: after a success, a failure, a purge or an interruption | anything that holds I/O open: a database pool, a socket, a stream |
+
+Set it per hook, or as the default for a whole runtime. A hook's own `lifetime`
+wins over the runtime's `layerLifetime`:
+
+```typescript
+// per hook
+registry.handler("report", {
+  onEvent: { handler: onEvent, provide: DbLive, lifetime: "invocation" },
+  onAlarm: { handler: onAlarm, provide: DbLive, lifetime: "invocation" },
+})
+
+// or once, for every hook of a group
+makeTaskGroupDO(config, { env: AppEnv, layerLifetime: "invocation" })
+makeInMemoryRuntime(config, { services: EnvLive, layerLifetime: "invocation" })
+```
+
+**On Cloudflare, give a layer that opens a connection the `"invocation"`
+lifetime.** Under `"instance"` the connection stays open after the hook returns,
+and a Durable Object with a connection open is not idle: it is kept in memory and
+billed for wall-clock time long after its work is done. With `"invocation"` the
+connection is closed before the event or alarm returns.
+
+An `"invocation"` layer is built through a memo map of its own, so it never
+shares a resource with an `"instance"` hook of the same task. A layer named more
+than once inside one hook's graph is still built once per invocation.
 
 ### Env-dependent services (databases, API clients)
 
